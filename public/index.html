@@ -604,7 +604,11 @@ body {
             const tr = document.createElement('tr');
 
             const portTd = document.createElement('td');
-            portTd.innerHTML = `<span class="code">${portInfo.port ?? '—'}</span>`;
+            if (portInfo.port) {
+              portTd.innerHTML = `<a href="http://localhost:${portInfo.port}" target="_blank" class="code" style="color: #60a5fa; text-decoration: none;">${portInfo.port}</a>`;
+            } else {
+              portTd.innerHTML = `<span class="code">—</span>`;
+            }
             tr.appendChild(portTd);
 
             const pidTd = document.createElement('td');

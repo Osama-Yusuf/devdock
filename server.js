@@ -3,7 +3,7 @@ const { exec } = require('child_process');
 const path = require('path');
 
 const app = express();
-const PORT = 4000; // dashboard port
+const PORT = 4003; // dashboard port
 
 // Serve static files (frontend)
 app.use(express.static(path.join(__dirname, 'public')));

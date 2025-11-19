@@ -30,10 +30,20 @@ function getNodePorts() {
 
         if (command !== 'node') continue;
 
-        // find host:port token (*:3000 or 127.0.0.1:5173)
-        const addr = parts.find(p => /:\d+/.test(p)) || '';
-        const portMatch = addr.match(/:(\d+)/);
-        const port = portMatch ? parseInt(portMatch[1], 10) : null;
+        // find host:port token (*:3000, 127.0.0.1:5173, [::1]:3000, etc.)
+        const addr = parts.find(p => p.includes(':')) || '';
+
+        let port = null;
+        if (addr) {
+          // take the part after the LAST colon -> handles IPv6 like [::1]:3000
+          const lastColon = addr.lastIndexOf(':');
+          if (lastColon !== -1) {
+            const candidate = addr.slice(lastColon + 1); // e.g. "3000"
+            if (/^\d+$/.test(candidate)) {
+              port = parseInt(candidate, 10);
+            }
+          }
+        }
 
         // Get process working directory (project path)
         const cwdPath = await new Promise(resolve2 => {

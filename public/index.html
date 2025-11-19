@@ -234,6 +234,143 @@ body {
     margin: 0 auto;
     }
 
+    .search-filter-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .search-box {
+      flex: 1;
+      min-width: 200px;
+      position: relative;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 8px 12px 8px 36px;
+      border-radius: 8px;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      background: rgba(15, 23, 42, 0.6);
+      color: #e5e7eb;
+      font-size: 0.85rem;
+      outline: none;
+      transition: all 0.2s;
+      box-sizing: border-box;
+    }
+
+    .search-input:focus {
+      border-color: rgba(96, 165, 250, 0.6);
+      background: rgba(15, 23, 42, 0.9);
+    }
+
+    .search-input::placeholder {
+      color: #6b7280;
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #6b7280;
+      font-size: 0.9rem;
+    }
+
+    .filter-group {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .filter-select {
+      padding: 7px 32px 7px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      background: rgba(15, 23, 42, 0.6);
+      color: #e5e7eb;
+      font-size: 0.8rem;
+      cursor: pointer;
+      outline: none;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239ca3af' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+      transition: all 0.2s;
+    }
+
+    .filter-select:hover {
+      border-color: rgba(148, 163, 184, 0.5);
+      background-color: rgba(15, 23, 42, 0.8);
+    }
+
+    .filter-select:focus {
+      border-color: rgba(96, 165, 250, 0.6);
+    }
+
+    .clear-btn {
+      padding: 7px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      background: rgba(15, 23, 42, 0.6);
+      color: #9ca3af;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .clear-btn:hover {
+      background: rgba(239, 68, 68, 0.2);
+      border-color: rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+    }
+
+    th.sortable {
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+      padding-right: 20px;
+    }
+
+    th.sortable:hover {
+      color: #c4d1ff;
+    }
+
+    th.sortable::after {
+      content: '';
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 0;
+      height: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      opacity: 0.3;
+    }
+
+    th.sortable:not(.sorted)::after {
+      border-top: 5px solid #9ca3af;
+    }
+
+    th.sortable.sorted.asc::after {
+      border-bottom: 5px solid #c4d1ff;
+      opacity: 1;
+    }
+
+    th.sortable.sorted.desc::after {
+      border-top: 5px solid #c4d1ff;
+      opacity: 1;
+    }
+
+    .result-info {
+      font-size: 0.75rem;
+      color: #9ca3af;
+      margin-left: auto;
+    }
+
     @media (max-width: 640px) {
       .card {
         padding: 16px 14px;
@@ -241,6 +378,20 @@ body {
 
       th:nth-child(4), td:nth-child(4) {
         display: none; /* hide USER on very small screens */
+      }
+
+      .search-filter-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .search-box {
+        width: 100%;
+      }
+
+      .filter-group {
+        width: 100%;
+        justify-content: space-between;
       }
     }
   </style>
@@ -272,16 +423,35 @@ body {
         <div class="updated" id="updatedAt">Last updated: —</div>
         </div>
 
+        <div class="search-filter-row">
+        <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input
+            type="text"
+            class="search-input"
+            id="searchInput"
+            placeholder="Search ports, PIDs, processes, paths..."
+            />
+        </div>
+        <div class="filter-group">
+            <select class="filter-select" id="tagFilter">
+            <option value="all">All Tags</option>
+            </select>
+            <button class="clear-btn" id="clearBtn">Clear</button>
+        </div>
+        <div class="result-info" id="resultInfo"></div>
+        </div>
+
         <div class="scroll">
         <table>
             <thead>
             <tr>
-                <th>Port</th>
-                <th>PID</th>
-                <th>User</th>
-                <th>Process</th>
-                <th>Tag</th>
-                <th>PATH</th>
+                <th class="sortable" data-column="port">Port</th>
+                <th class="sortable" data-column="pid">PID</th>
+                <th class="sortable" data-column="user">User</th>
+                <th class="sortable" data-column="command">Process</th>
+                <th class="sortable" data-column="label">Tag</th>
+                <th class="sortable" data-column="scriptPath">PATH</th>
                 <th>Action</th>
             </tr>
             </thead>
@@ -304,6 +474,14 @@ body {
     const updatedAtEl = document.getElementById('updatedAt');
     const emptyStateEl = document.getElementById('emptyState');
     const refreshBtn = document.getElementById('refreshBtn');
+    const searchInput = document.getElementById('searchInput');
+    const tagFilter = document.getElementById('tagFilter');
+    const clearBtn = document.getElementById('clearBtn');
+    const resultInfo = document.getElementById('resultInfo');
+
+    let allPorts = [];
+    let sortColumn = 'port';
+    let sortDirection = 'asc';
 
     async function killProcess(pid, btnElement) {
       if (!confirm(`Kill process ${pid}?`)) return;
@@ -331,27 +509,98 @@ body {
       }
     }
 
-    async function loadPorts() {
-      try {
-        const res = await fetch('/api/ports');
-        const data = await res.json();
+    function getFilteredAndSortedPorts() {
+      const searchTerm = searchInput.value.toLowerCase();
+      const tagFilterValue = tagFilter.value;
 
-        const ports = data.ports || [];
-        countEl.textContent = ports.length;
-        updatedAtEl.textContent = 'Last updated: ' + new Date(data.timestamp || Date.now()).toLocaleTimeString();
+      let filtered = allPorts.filter(portInfo => {
+        // Search filter
+        const matchesSearch = !searchTerm || 
+          String(portInfo.port || '').toLowerCase().includes(searchTerm) ||
+          String(portInfo.pid || '').toLowerCase().includes(searchTerm) ||
+          String(portInfo.user || '').toLowerCase().includes(searchTerm) ||
+          String(portInfo.command || '').toLowerCase().includes(searchTerm) ||
+          String(portInfo.label || '').toLowerCase().includes(searchTerm) ||
+          String(portInfo.scriptPath || '').toLowerCase().includes(searchTerm);
 
-        tableBody.innerHTML = '';
+        // Tag filter
+        const portTag = portInfo.label || 'Node';
+        const matchesTag = tagFilterValue === 'all' || portTag === tagFilterValue;
 
-        if (ports.length === 0) {
-          emptyStateEl.style.display = 'block';
-          return;
+        return matchesSearch && matchesTag;
+      });
+
+      // Sort
+      filtered.sort((a, b) => {
+        let aVal = a[sortColumn];
+        let bVal = b[sortColumn];
+
+        // Handle special cases
+        if (sortColumn === 'port' || sortColumn === 'pid') {
+          aVal = parseInt(aVal) || 0;
+          bVal = parseInt(bVal) || 0;
         } else {
-          emptyStateEl.style.display = 'none';
+          aVal = String(aVal || '').toLowerCase();
+          bVal = String(bVal || '').toLowerCase();
         }
 
-        ports
-          .sort((a, b) => (a.port || 0) - (b.port || 0))
-          .forEach(portInfo => {
+        if (sortColumn === 'port' || sortColumn === 'pid') {
+          return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+        } else {
+          if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+          if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+          return 0;
+        }
+      });
+
+      return filtered;
+    }
+
+    function updateTagFilter() {
+      const tags = new Set();
+      allPorts.forEach(p => tags.add(p.label || 'Node'));
+      
+      const currentValue = tagFilter.value;
+      tagFilter.innerHTML = '<option value="all">All Tags</option>';
+      
+      Array.from(tags).sort().forEach(tag => {
+        const option = document.createElement('option');
+        option.value = tag;
+        option.textContent = tag;
+        tagFilter.appendChild(option);
+      });
+      
+      if (currentValue !== 'all' && tags.has(currentValue)) {
+        tagFilter.value = currentValue;
+      }
+    }
+
+    function renderTable() {
+      const filtered = getFilteredAndSortedPorts();
+      tableBody.innerHTML = '';
+
+      // Update result info
+      if (allPorts.length === 0) {
+        resultInfo.textContent = '';
+      } else if (filtered.length !== allPorts.length) {
+        resultInfo.textContent = `Showing ${filtered.length} of ${allPorts.length}`;
+      } else {
+        resultInfo.textContent = '';
+      }
+
+      if (filtered.length === 0) {
+        emptyStateEl.style.display = 'block';
+        if (searchInput.value || tagFilter.value !== 'all') {
+          emptyStateEl.textContent = 'No processes match your search criteria.';
+        } else {
+          emptyStateEl.textContent = 'No Node processes currently listening on any TCP ports. Fire up a React/Vite/Node dev server and they\'ll show up here.';
+        }
+        return;
+      } else {
+        emptyStateEl.style.display = 'none';
+      }
+
+      filtered.forEach(portInfo => {
             const tr = document.createElement('tr');
 
             const portTd = document.createElement('td');
@@ -398,13 +647,66 @@ body {
             actionTd.appendChild(killBtn);
             tr.appendChild(actionTd);
 
-            tableBody.appendChild(tr);
-          });
+        tableBody.appendChild(tr);
+      });
+    }
+
+    async function loadPorts() {
+      try {
+        const res = await fetch('/api/ports');
+        const data = await res.json();
+
+        allPorts = data.ports || [];
+        countEl.textContent = allPorts.length;
+        updatedAtEl.textContent = 'Last updated: ' + new Date(data.timestamp || Date.now()).toLocaleTimeString();
+
+        updateTagFilter();
+        renderTable();
       } catch (err) {
         console.error('Failed to load ports', err);
         updatedAtEl.textContent = 'Error loading ports – check server logs.';
       }
     }
+
+    // Search and filter event listeners
+    searchInput.addEventListener('input', () => {
+      renderTable();
+    });
+
+    tagFilter.addEventListener('change', () => {
+      renderTable();
+    });
+
+    clearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      tagFilter.value = 'all';
+      renderTable();
+    });
+
+    // Sortable column headers
+    document.querySelectorAll('th.sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        const column = th.dataset.column;
+        
+        if (sortColumn === column) {
+          sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+          sortColumn = column;
+          sortDirection = 'asc';
+        }
+
+        // Update UI
+        document.querySelectorAll('th.sortable').forEach(h => {
+          h.classList.remove('sorted', 'asc', 'desc');
+        });
+        th.classList.add('sorted', sortDirection);
+
+        renderTable();
+      });
+    });
+
+    // Set initial sort indicator
+    document.querySelector(`th.sortable[data-column="${sortColumn}"]`)?.classList.add('sorted', sortDirection);
 
     refreshBtn.addEventListener('click', () => {
       loadPorts();

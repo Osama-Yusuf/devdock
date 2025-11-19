@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Node Ports Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(circle at top left, #1e293b, #020617 60%);
+  color: #e5e7eb;
+}
+.card {
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+  /* no rounded corners, no “window” look */
+  border-radius: 0;
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: none;
+  /* page padding */
+  padding: 24px 32px 40px;
+  box-sizing: border-box;
+}
+
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      gap: 12px;
+    }
+
+    .title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #c4d1ff;
+    }
+
+    .subtitle {
+      font-size: 0.8rem;
+      color: #9ca3af;
+      margin-top: 2px;
+    }
+
+    .badge {
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      color: #e5e7eb;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .badge-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #22c55e;
+      box-shadow: 0 0 10px rgba(34, 197, 94, 0.9);
+    }
+
+    .pill {
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      background: rgba(30, 64, 175, 0.75);
+      color: #bfdbfe;
+      white-space: nowrap;
+    }
+
+    .stats-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .stat {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+
+    .stat-value {
+      font-size: 1.3rem;
+      font-weight: 600;
+    }
+
+    .stat-label {
+      font-size: 0.8rem;
+      color: #9ca3af;
+    }
+
+    .updated {
+      font-size: 0.75rem;
+      color: #6b7280;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      font-size: 0.84rem;
+    }
+
+    thead {
+      background: rgba(15, 23, 42, 0.9);
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    th, td {
+      padding: 8px 6px;
+      text-align: left;
+      border-bottom: 1px solid rgba(31, 41, 55, 0.95);
+      white-space: nowrap;
+    }
+
+    th {
+      font-weight: 500;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #9ca3af;
+    }
+
+    tbody tr:hover {
+      background: rgba(15, 23, 42, 0.75);
+    }
+
+    .code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.8rem;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(21, 128, 61, 0.22);
+      color: #bbf7d0;
+      font-size: 0.7rem;
+      border: 1px solid rgba(34, 197, 94, 0.4);
+    }
+
+    .tag-secondary {
+      background: rgba(30, 64, 175, 0.28);
+      color: #bfdbfe;
+      border-color: rgba(59, 130, 246, 0.5);
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    button.refresh {
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      background: transparent;
+      color: #e5e7eb;
+      font-size: 0.8rem;
+      padding: 5px 10px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    button.refresh:hover {
+      background: rgba(15, 23, 42, 0.9);
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: #22c55e;
+    }
+
+    .empty {
+      font-size: 0.85rem;
+      color: #6b7280;
+      margin-top: 10px;
+    }
+
+    .scroll {
+      max-height: 420px;
+      overflow: auto;
+      margin-top: 4px;
+    }
+
+    @media (max-width: 640px) {
+      .card {
+        padding: 16px 14px;
+      }
+
+      th:nth-child(4), td:nth-child(4) {
+        display: none; /* hide USER on very small screens */
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="title">Node Ports Dashboard</div>
+        <div class="subtitle">Currently listening ports used by Node / React / TS dev processes</div>
+      </div>
+      <div class="actions">
+        <div class="badge">
+          <span class="badge-dot"></span> Live scan
+        </div>
+        <button class="refresh" id="refreshBtn">
+          <span class="status-dot"></span>
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat">
+        <span class="stat-value" id="count">0</span>
+        <span class="stat-label">Node listeners</span>
+      </div>
+      <div class="updated" id="updatedAt">Last updated: —</div>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Port</th>
+            <th>PID</th>
+            <th>User</th>
+            <th>Process</th>
+            <th>Tag</th>
+            <th>PATH</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+          <!-- rows injected by JS -->
+        </tbody>
+      </table>
+    </div>
+
+    <div class="empty" id="emptyState" style="display:none;">
+      No Node processes currently listening on any TCP ports.
+      Fire up a React/Vite/Node dev server and they’ll show up here.
+    </div>
+  </div>
+
+  <script>
+    const tableBody = document.getElementById('tableBody');
+    const countEl = document.getElementById('count');
+    const updatedAtEl = document.getElementById('updatedAt');
+    const emptyStateEl = document.getElementById('emptyState');
+    const refreshBtn = document.getElementById('refreshBtn');
+
+    async function loadPorts() {
+      try {
+        const res = await fetch('/api/ports');
+        const data = await res.json();
+
+        const ports = data.ports || [];
+        countEl.textContent = ports.length;
+        updatedAtEl.textContent = 'Last updated: ' + new Date(data.timestamp || Date.now()).toLocaleTimeString();
+
+        tableBody.innerHTML = '';
+
+        if (ports.length === 0) {
+          emptyStateEl.style.display = 'block';
+          return;
+        } else {
+          emptyStateEl.style.display = 'none';
+        }
+
+        ports
+          .sort((a, b) => (a.port || 0) - (b.port || 0))
+          .forEach(portInfo => {
+            const tr = document.createElement('tr');
+
+            const portTd = document.createElement('td');
+            portTd.innerHTML = `<span class="code">${portInfo.port ?? '—'}</span>`;
+            tr.appendChild(portTd);
+
+            const pidTd = document.createElement('td');
+            pidTd.innerHTML = `<span class="code">${portInfo.pid}</span>`;
+            tr.appendChild(pidTd);
+
+            const userTd = document.createElement('td');
+            userTd.textContent = portInfo.user || '—';
+            tr.appendChild(userTd);
+
+            const procTd = document.createElement('td');
+            procTd.innerHTML = `<span class="code">${portInfo.command}</span>`;
+            tr.appendChild(procTd);
+
+            const tagTd = document.createElement('td');
+            if (portInfo.label) {
+              const span = document.createElement('span');
+              span.className = 'tag';
+              span.textContent = portInfo.label;
+              tagTd.appendChild(span);
+            } else {
+              const span = document.createElement('span');
+              span.className = 'tag tag-secondary';
+              span.textContent = 'Node';
+              tagTd.appendChild(span);
+            }
+            tr.appendChild(tagTd);
+
+            const pathTd = document.createElement('td');
+            pathTd.innerHTML = portInfo.scriptPath
+            ? `<span class="code">${portInfo.scriptPath}</span>`
+            : `<span class="code">—</span>`;
+            tr.appendChild(pathTd);
+
+
+            tableBody.appendChild(tr);
+          });
+      } catch (err) {
+        console.error('Failed to load ports', err);
+        updatedAtEl.textContent = 'Error loading ports – check server logs.';
+      }
+    }
+
+    refreshBtn.addEventListener('click', () => {
+      loadPorts();
+    });
+
+    // Auto-refresh every 5 seconds
+    setInterval(loadPorts, 5000);
+
+    // Initial load
+    loadPorts();
+  </script>
+</body>
+</html>

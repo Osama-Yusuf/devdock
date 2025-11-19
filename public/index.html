@@ -195,6 +195,28 @@ body {
       background: #22c55e;
     }
 
+    button.kill-btn {
+      padding: 3px 8px;
+      border-radius: 4px;
+      border: 1px solid rgba(239, 68, 68, 0.5);
+      background: rgba(239, 68, 68, 0.15);
+      color: #fca5a5;
+      font-size: 0.7rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    button.kill-btn:hover {
+      background: rgba(239, 68, 68, 0.3);
+      border-color: rgba(239, 68, 68, 0.7);
+      color: #fee2e2;
+    }
+
+    button.kill-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
     .empty {
       font-size: 0.85rem;
       color: #6b7280;
@@ -260,6 +282,7 @@ body {
                 <th>Process</th>
                 <th>Tag</th>
                 <th>PATH</th>
+                <th>Action</th>
             </tr>
             </thead>
             <tbody id="tableBody">
@@ -281,6 +304,32 @@ body {
     const updatedAtEl = document.getElementById('updatedAt');
     const emptyStateEl = document.getElementById('emptyState');
     const refreshBtn = document.getElementById('refreshBtn');
+
+    async function killProcess(pid, btnElement) {
+      if (!confirm(`Kill process ${pid}?`)) return;
+
+      btnElement.disabled = true;
+      btnElement.textContent = 'Killing...';
+
+      try {
+        const res = await fetch(`/api/kill/${pid}`, { method: 'POST' });
+        const data = await res.json();
+
+        if (res.ok) {
+          btnElement.textContent = 'Killed';
+          setTimeout(() => loadPorts(), 1000);
+        } else {
+          alert(`Failed to kill process: ${data.error}`);
+          btnElement.disabled = false;
+          btnElement.textContent = 'Kill';
+        }
+      } catch (err) {
+        console.error('Kill failed', err);
+        alert('Failed to kill process');
+        btnElement.disabled = false;
+        btnElement.textContent = 'Kill';
+      }
+    }
 
     async function loadPorts() {
       try {
@@ -341,6 +390,13 @@ body {
             : `<span class="code">—</span>`;
             tr.appendChild(pathTd);
 
+            const actionTd = document.createElement('td');
+            const killBtn = document.createElement('button');
+            killBtn.className = 'kill-btn';
+            killBtn.textContent = 'Kill 🔪';
+            killBtn.onclick = () => killProcess(portInfo.pid, killBtn);
+            actionTd.appendChild(killBtn);
+            tr.appendChild(actionTd);
 
             tableBody.appendChild(tr);
           });

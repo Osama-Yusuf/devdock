@@ -99,6 +99,25 @@ app.get('/api/ports', async (req, res) => {
   }
 });
 
+// Kill endpoint
+app.post('/api/kill/:pid', (req, res) => {
+  const pid = req.params.pid;
+  
+  if (!pid || !/^\d+$/.test(pid)) {
+    return res.status(400).json({ error: 'Invalid PID' });
+  }
+
+  exec(`kill ${pid}`, (err, stdout, stderr) => {
+    if (err) {
+      return res.status(500).json({ 
+        error: `Failed to kill PID ${pid}`, 
+        details: stderr || err.message 
+      });
+    }
+    res.json({ success: true, pid, message: `Process ${pid} killed` });
+  });
+});
+
 // Start dashboard server
 app.listen(PORT, () => {
   console.log(`🚀 Node Ports Dashboard running at http://localhost:${PORT}`);

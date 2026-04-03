@@ -305,6 +305,34 @@
 
     .actions-divider { height: 1px; background: var(--border-row); margin: 4px 0; }
 
+    .btn-icon {
+      width: 32px; height: 32px; padding: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 8px; border: 1px solid var(--border);
+      background: transparent; color: var(--text-muted); cursor: pointer;
+      transition: all 0.2s; font-size: 1rem;
+    }
+    .btn-icon:hover { background: var(--bg-hover); color: var(--text); }
+
+    .group-header {
+      display: flex; align-items: center; gap: 8px; padding: 10px 6px 6px;
+      margin-top: 8px; cursor: pointer; user-select: none;
+    }
+    .group-header:first-child { margin-top: 0; }
+    .group-chevron {
+      transition: transform 0.2s; font-size: 0.7rem; color: var(--text-dim);
+    }
+    .group-header.collapsed .group-chevron { transform: rotate(-90deg); }
+    .group-name {
+      font-size: 0.78rem; font-weight: 600; color: var(--text-muted);
+      font-family: var(--mono);
+    }
+    .group-count {
+      font-size: 0.68rem; color: var(--text-dim);
+      padding: 1px 6px; border-radius: 999px;
+      background: var(--bg-input); border: 1px solid var(--border);
+    }
+
     .pro-tips {
       margin-top: 16px; padding-top: 10px;
       border-top: 1px solid var(--border-row);
@@ -340,6 +368,9 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
             Dashboard
           </a>
+          <button class="btn-icon" id="groupToggle" title="Group by project (G)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          </button>
           <button class="btn btn-danger" id="clearAllBtn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             Clear All
@@ -406,6 +437,7 @@
         <span>Click <strong style="color:var(--text-muted);">Path</strong> to open terminal</span>
         <span style="width:1px;height:12px;background:var(--border);"></span>
         <span><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">/</kbd> Search</span>
+        <span><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">G</kbd> Group</span>
         <span><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">D</kbd> Dashboard</span>
         <span><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">Esc</kbd> Clear</span>
       </div>
@@ -417,6 +449,8 @@
   <script>
     const $ = id => document.getElementById(id);
     let allEntries = [];
+    let groupByProject = false;
+    let groupingDepth = 1;
 
     function showToast(msg, type = 'success') {
       const t = document.createElement('div');
@@ -525,6 +559,23 @@
       loadHistory();
     }
 
+    function getGroupKey(scriptPath, depth) {
+      if (!scriptPath || scriptPath === '/') return 'Unknown';
+      const parts = scriptPath.replace(/\/$/, '').split('/');
+      if (parts.length > depth) return parts.slice(0, parts.length - depth).join('/');
+      return scriptPath;
+    }
+
+    function toggleGroupRows(headerEl) {
+      const tr = headerEl.closest('tr');
+      const collapsed = headerEl.classList.contains('collapsed');
+      let next = tr.nextElementSibling;
+      while (next && !next.querySelector('.group-header')) {
+        next.style.display = collapsed ? 'none' : '';
+        next = next.nextElementSibling;
+      }
+    }
+
     function updateFilters() {
       const runtimes = new Set();
       allEntries.forEach(e => { if (e.runtime) runtimes.add(e.runtime); });
@@ -582,7 +633,7 @@
       $('emptyState').style.display = 'none';
       $('tableContainer').style.display = 'block';
 
-      filtered.forEach(e => {
+      function buildRow(e) {
         const tr = document.createElement('tr');
         if (e.stopped) tr.classList.add('row-stopped');
 
@@ -638,8 +689,30 @@
             </div>
           </td>
         `;
-        tbody.appendChild(tr);
-      });
+        return tr;
+      }
+
+      if (groupByProject) {
+        const groups = {};
+        filtered.forEach(e => {
+          const key = getGroupKey(e.scriptPath, groupingDepth);
+          if (!groups[key]) groups[key] = [];
+          groups[key].push(e);
+        });
+        Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0])).forEach(([groupPath, entries]) => {
+          const headerTr = document.createElement('tr');
+          headerTr.innerHTML = `<td colspan="9" style="padding:0;">
+            <div class="group-header" onclick="this.classList.toggle('collapsed');toggleGroupRows(this)">
+              <span class="group-chevron">\u25BC</span>
+              <span class="group-name">${groupPath}</span>
+              <span class="group-count">${entries.length}</span>
+            </div></td>`;
+          tbody.appendChild(headerTr);
+          entries.forEach(e => tbody.appendChild(buildRow(e)));
+        });
+      } else {
+        filtered.forEach(e => tbody.appendChild(buildRow(e)));
+      }
     }
 
     async function loadHistory() {
@@ -683,6 +756,12 @@
       renderTable();
     });
     $('clearAllBtn').addEventListener('click', clearAll);
+    $('groupToggle').addEventListener('click', () => {
+      groupByProject = !groupByProject;
+      $('groupToggle').style.background = groupByProject ? 'rgba(96,165,250,0.2)' : '';
+      $('groupToggle').style.borderColor = groupByProject ? 'rgba(96,165,250,0.5)' : '';
+      renderTable();
+    });
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
@@ -693,6 +772,7 @@
       switch (e.key) {
         case '/': e.preventDefault(); $('searchInput').focus(); break;
         case 'd': window.location.href = '/'; break;
+        case 'g': $('groupToggle').click(); break;
         case 'Escape':
           closeMenus();
           $('searchInput').value = '';
@@ -711,6 +791,7 @@
         if (settings.theme) {
           document.documentElement.setAttribute('data-theme', settings.theme);
         }
+        if (settings.groupingDepth != null) groupingDepth = settings.groupingDepth;
       } catch {}
       loadHistory();
     })();

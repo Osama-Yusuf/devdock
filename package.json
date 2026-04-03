@@ -1,6 +1,7 @@
 {
-  "name": "node-ports-dashboard",
-  "version": "1.0.0",
+  "name": "devdock",
+  "version": "2.0.0",
+  "description": "A sleek dashboard to monitor all dev processes listening on TCP ports",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -9,4 +10,3 @@
     "express": "^4.19.0"
   }
 }
-

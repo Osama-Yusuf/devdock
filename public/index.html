@@ -2,584 +2,1130 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Node Ports Dashboard</title>
+  <title>DevDock</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      --bg-deep: #020617;
+      --bg-card: rgba(15, 23, 42, 0.96);
+      --bg-hover: rgba(30, 41, 59, 0.7);
+      --bg-input: rgba(15, 23, 42, 0.6);
+      --bg-modal: #0f172a;
+      --text: #e5e7eb;
+      --text-muted: #9ca3af;
+      --text-dim: #6b7280;
+      --accent: #60a5fa;
+      --accent-title: #c4d1ff;
+      --border: rgba(148, 163, 184, 0.25);
+      --border-row: rgba(31, 41, 55, 0.95);
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     }
 
-body {
-  margin: 0;
-  min-height: 100vh;
-  background: radial-gradient(circle at top left, #1e293b, #020617 60%);
-  color: #e5e7eb;
-}
-.card {
-  width: 100%;
-  max-width: none;
-  min-height: 100vh;
-  /* no rounded corners, no “window” look */
-  border-radius: 0;
-  background: rgba(15, 23, 42, 0.96);
-  box-shadow: none;
-  /* page padding */
-  padding: 24px 32px 40px;
-  box-sizing: border-box;
-}
+    html[data-theme="light"] {
+      --bg-deep: #f8fafc;
+      --bg-card: #ffffff;
+      --bg-hover: #f1f5f9;
+      --bg-input: #f1f5f9;
+      --bg-modal: #ffffff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --text-dim: #94a3b8;
+      --accent: #3b82f6;
+      --accent-title: #1e40af;
+      --border: rgba(148, 163, 184, 0.35);
+      --border-row: #e2e8f0;
+    }
 
+    * { box-sizing: border-box; margin: 0; }
 
+    body {
+      min-height: 100vh;
+      background: var(--bg-deep);
+      color: var(--text);
+      transition: background 0.3s, color 0.3s;
+      position: relative;
+    }
+
+    /* Decorative grid */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+      background-size: 64px 64px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Radial glow */
+    body::after {
+      content: '';
+      position: fixed;
+      top: -150px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 900px;
+      height: 700px;
+      background: radial-gradient(ellipse, rgba(34, 197, 94, 0.06) 0%, rgba(59, 130, 246, 0.02) 40%, transparent 70%);
+      filter: blur(80px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    html[data-theme="light"] body::before {
+      background:
+        linear-gradient(rgba(0,0,0,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.04) 1px, transparent 1px);
+      background-size: 64px 64px;
+    }
+
+    html[data-theme="light"] body::after {
+      background: radial-gradient(ellipse, rgba(59, 130, 246, 0.06) 0%, rgba(139, 92, 246, 0.03) 40%, transparent 70%);
+    }
+
+    .card {
+      width: 100%;
+      min-height: 100vh;
+      background: transparent;
+      padding: 24px 32px 40px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .inner { max-width: 1300px; margin: 0 auto; }
+
+    /* ── Header ─────────────────────────────── */
     .card-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       margin-bottom: 16px;
       gap: 12px;
+      flex-wrap: wrap;
     }
 
-    .title {
-      font-size: 1.1rem;
-      font-weight: 600;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-      color: #c4d1ff;
+    .logo-area { display: flex; align-items: center; gap: 12px; }
+
+    .logo {
+      width: 36px; height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6, #3b82f6);
+      background-size: 200% 200%;
+      animation: logoShimmer 6s ease infinite;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 0.75rem; color: #fff;
+      box-shadow: 0 2px 12px rgba(139, 92, 246, 0.3);
     }
 
-    .subtitle {
-      font-size: 0.8rem;
-      color: #9ca3af;
-      margin-top: 2px;
+    @keyframes logoShimmer {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
     }
+
+    .title { font-size: 1.2rem; font-weight: 700; color: var(--accent-title); }
+    .subtitle { font-size: 0.78rem; color: var(--text-muted); margin-top: 1px; }
+
+    .header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
     .badge {
-      padding: 4px 10px;
-      border-radius: 9999px;
-      font-size: 0.75rem;
-      border: 1px solid rgba(148, 163, 184, 0.4);
-      color: #e5e7eb;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      white-space: nowrap;
+      padding: 4px 10px; border-radius: 9999px; font-size: 0.75rem;
+      border: 1px solid rgba(148, 163, 184, 0.4); color: var(--text);
+      display: inline-flex; align-items: center; gap: 6px;
     }
 
     .badge-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 999px;
-      background: #22c55e;
+      width: 7px; height: 7px; border-radius: 999px;
+      background: var(--green);
       box-shadow: 0 0 10px rgba(34, 197, 94, 0.9);
+      animation: livePulse 2s ease-in-out infinite;
     }
 
-    .pill {
-      padding: 4px 10px;
-      border-radius: 9999px;
-      font-size: 0.75rem;
-      background: rgba(30, 64, 175, 0.75);
-      color: #bfdbfe;
-      white-space: nowrap;
+    @keyframes livePulse {
+      0%, 100% { box-shadow: 0 0 6px rgba(34, 197, 94, 0.6); }
+      50% { box-shadow: 0 0 14px rgba(34, 197, 94, 1); }
     }
 
+    .btn {
+      border-radius: 8px; border: 1px solid var(--border);
+      background: transparent; color: var(--text); font-size: 0.8rem;
+      padding: 6px 12px; cursor: pointer; display: inline-flex;
+      align-items: center; gap: 6px; transition: all 0.2s; text-decoration: none;
+    }
+    .btn:hover { background: var(--bg-hover); }
+
+    .btn-icon {
+      width: 32px; height: 32px; padding: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 8px; border: 1px solid var(--border);
+      background: transparent; color: var(--text-muted); cursor: pointer;
+      transition: all 0.2s; font-size: 1rem;
+    }
+    .btn-icon:hover { background: var(--bg-hover); color: var(--text); }
+
+    .status-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--green); }
+
+    /* ── Stats row ──────────────────────────── */
     .stats-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
-      gap: 12px;
-      flex-wrap: wrap;
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 12px; gap: 12px; flex-wrap: wrap;
     }
+    .stats-left { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .stat { display: flex; align-items: baseline; gap: 6px; }
+    .stat-value { font-size: 1.3rem; font-weight: 600; }
+    .stat-label { font-size: 0.8rem; color: var(--text-muted); }
 
-    .stat {
-      display: flex;
-      align-items: baseline;
-      gap: 6px;
+    .runtime-pills { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+    .runtime-pill {
+      padding: 2px 8px; border-radius: 9999px; font-size: 0.7rem;
+      font-weight: 500; display: inline-flex; align-items: center; gap: 4px;
+      transition: transform 0.2s, box-shadow 0.2s;
     }
-
-    .stat-value {
-      font-size: 1.3rem;
-      font-weight: 600;
+    .runtime-pill:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
     }
+    .runtime-pill .pill-count { font-weight: 700; }
 
-    .stat-label {
-      font-size: 0.8rem;
-      color: #9ca3af;
-    }
+    .updated { font-size: 0.75rem; color: var(--text-dim); }
 
-    .updated {
-      font-size: 0.75rem;
-      color: #6b7280;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 8px;
-      font-size: 0.84rem;
-    }
-
-    thead {
-      background: rgba(15, 23, 42, 0.9);
-      position: sticky;
-      top: 0;
-      z-index: 1;
-    }
-
-    th, td {
-      padding: 8px 6px;
-      text-align: left;
-      border-bottom: 1px solid rgba(31, 41, 55, 0.95);
-      white-space: nowrap;
-    }
-
-    th {
-      font-weight: 500;
-      font-size: 0.78rem;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: #9ca3af;
-    }
-
-    tbody tr:hover {
-      background: rgba(15, 23, 42, 0.75);
-    }
-
-    .code {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      font-size: 0.8rem;
-    }
-
-    .tag {
-      display: inline-flex;
-      align-items: center;
-      padding: 2px 8px;
-      border-radius: 999px;
-      background: rgba(21, 128, 61, 0.22);
-      color: #bbf7d0;
-      font-size: 0.7rem;
-      border: 1px solid rgba(34, 197, 94, 0.4);
-    }
-
-    .tag-secondary {
-      background: rgba(30, 64, 175, 0.28);
-      color: #bfdbfe;
-      border-color: rgba(59, 130, 246, 0.5);
-    }
-
-    .actions {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    button.refresh {
-      border-radius: 999px;
-      border: 1px solid rgba(148, 163, 184, 0.5);
-      background: transparent;
-      color: #e5e7eb;
-      font-size: 0.8rem;
-      padding: 5px 10px;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    button.refresh:hover {
-      background: rgba(15, 23, 42, 0.9);
-    }
-
-    .status-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 999px;
-      background: #22c55e;
-    }
-
-    button.kill-btn {
-      padding: 3px 8px;
-      border-radius: 4px;
-      border: 1px solid rgba(239, 68, 68, 0.5);
-      background: rgba(239, 68, 68, 0.15);
-      color: #fca5a5;
-      font-size: 0.7rem;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    button.kill-btn:hover {
-      background: rgba(239, 68, 68, 0.3);
-      border-color: rgba(239, 68, 68, 0.7);
-      color: #fee2e2;
-    }
-
-    button.kill-btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .empty {
-      font-size: 0.85rem;
-      color: #6b7280;
-      margin-top: 10px;
-    }
-
-    .scroll {
-      max-height: 420px;
-      overflow: auto;
-      margin-top: 4px;
-    }
-
-    .inner {
-    max-width: 1100px;
-    margin: 0 auto;
-    }
-
+    /* ── Search & filter ────────────────────── */
     .search-filter-row {
-      display: flex;
-      gap: 12px;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
-      align-items: center;
+      display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center;
     }
 
-    .search-box {
-      flex: 1;
-      min-width: 200px;
-      position: relative;
-    }
+    .search-box { flex: 1; min-width: 200px; position: relative; }
 
     .search-input {
-      width: 100%;
-      padding: 8px 12px 8px 36px;
-      border-radius: 8px;
-      border: 1px solid rgba(148, 163, 184, 0.3);
-      background: rgba(15, 23, 42, 0.6);
-      color: #e5e7eb;
-      font-size: 0.85rem;
-      outline: none;
-      transition: all 0.2s;
-      box-sizing: border-box;
+      width: 100%; padding: 8px 12px 8px 34px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg-input);
+      color: var(--text); font-size: 0.85rem; outline: none; transition: all 0.2s;
     }
-
-    .search-input:focus {
-      border-color: rgba(96, 165, 250, 0.6);
-      background: rgba(15, 23, 42, 0.9);
-    }
-
-    .search-input::placeholder {
-      color: #6b7280;
-    }
+    .search-input:focus { border-color: rgba(96, 165, 250, 0.6); }
+    .search-input::placeholder { color: var(--text-dim); }
 
     .search-icon {
-      position: absolute;
-      left: 12px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: #6b7280;
-      font-size: 0.9rem;
+      position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+      color: var(--text-dim); pointer-events: none;
     }
 
-    .filter-group {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
+    .filter-group { display: flex; gap: 8px; align-items: center; }
 
     .filter-select {
-      padding: 7px 32px 7px 12px;
-      border-radius: 8px;
-      border: 1px solid rgba(148, 163, 184, 0.3);
-      background: rgba(15, 23, 42, 0.6);
-      color: #e5e7eb;
-      font-size: 0.8rem;
-      cursor: pointer;
-      outline: none;
+      padding: 7px 30px 7px 10px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg-input);
+      color: var(--text); font-size: 0.8rem; cursor: pointer; outline: none;
       appearance: none;
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239ca3af' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 8px center;
-      transition: all 0.2s;
-    }
-
-    .filter-select:hover {
-      border-color: rgba(148, 163, 184, 0.5);
-      background-color: rgba(15, 23, 42, 0.8);
-    }
-
-    .filter-select:focus {
-      border-color: rgba(96, 165, 250, 0.6);
+      background-repeat: no-repeat; background-position: right 8px center;
     }
 
     .clear-btn {
-      padding: 7px 12px;
-      border-radius: 8px;
-      border: 1px solid rgba(148, 163, 184, 0.3);
-      background: rgba(15, 23, 42, 0.6);
-      color: #9ca3af;
-      font-size: 0.8rem;
-      cursor: pointer;
-      transition: all 0.2s;
+      padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg-input); color: var(--text-muted); font-size: 0.8rem;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .clear-btn:hover { background: rgba(239, 68, 68, 0.15); color: #fca5a5; }
+
+    .result-info { font-size: 0.75rem; color: var(--text-muted); margin-left: auto; }
+
+    /* ── Group headers ──────────────────────── */
+    .group-header {
+      display: flex; align-items: center; gap: 8px; padding: 10px 6px 6px;
+      margin-top: 8px; cursor: pointer; user-select: none;
     }
 
-    .clear-btn:hover {
-      background: rgba(239, 68, 68, 0.2);
-      border-color: rgba(239, 68, 68, 0.4);
-      color: #fca5a5;
+    .group-header:first-child { margin-top: 0; }
+
+    .group-chevron {
+      transition: transform 0.2s; font-size: 0.7rem; color: var(--text-dim);
+    }
+    .group-header.collapsed .group-chevron { transform: rotate(-90deg); }
+
+    .group-name {
+      font-size: 0.78rem; font-weight: 600; color: var(--text-muted);
+      font-family: var(--mono);
     }
 
+    .group-count {
+      font-size: 0.68rem; color: var(--text-dim);
+      padding: 1px 6px; border-radius: 999px;
+      background: var(--bg-input); border: 1px solid var(--border);
+    }
+
+    /* ── Table ──────────────────────────────── */
+    table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+
+    thead {
+      background: var(--bg-deep); position: sticky; top: 0; z-index: 2;
+    }
+
+    th, td {
+      padding: 8px 6px; text-align: left;
+      border-bottom: 1px solid var(--border-row); white-space: nowrap;
+    }
+
+    th {
+      font-weight: 500; font-size: 0.76rem; text-transform: uppercase;
+      letter-spacing: 0.04em; color: var(--text-muted);
+    }
+
+    tbody tr { transition: background 0.2s; }
+    tbody tr:hover { background: var(--bg-hover); }
+    tbody tr.is-favorite { background: rgba(250, 204, 21, 0.04); }
+
+    .code { font-family: var(--mono); font-size: 0.8rem; }
+
+    .pid-copy {
+      font-family: var(--mono); font-size: 0.8rem;
+      cursor: pointer; color: var(--text); position: relative;
+      border-bottom: 1px dashed var(--text-dim);
+      transition: color 0.2s;
+    }
+    .pid-copy:hover { color: var(--accent); }
+
+    .path-link {
+      font-family: var(--mono); font-size: 0.8rem;
+      cursor: pointer; color: var(--text);
+      border-bottom: 1px dashed var(--text-dim);
+      transition: color 0.2s; text-decoration: none;
+    }
+    .path-link:hover { color: var(--accent); }
+
+    .section-collapsible .section-chevron.open { transform: rotate(90deg); }
+
+    /* ── Runtime badge ──────────────────────── */
+    .runtime-tag {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 500;
+    }
+
+    .runtime-icon {
+      width: 16px; height: 16px; border-radius: 4px;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 0.55rem; font-weight: 700; color: #fff; flex-shrink: 0;
+    }
+
+    /* ── Health dot ──────────────────────────── */
+    .health-dot {
+      width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+      margin-right: 6px; vertical-align: middle; flex-shrink: 0;
+    }
+    .health-dot { transition: background 0.3s, box-shadow 0.3s; }
+    .health-dot.healthy { background: var(--green); box-shadow: 0 0 6px rgba(34,197,94,0.5); }
+    .health-dot.unhealthy { background: var(--red); box-shadow: 0 0 6px rgba(239,68,68,0.5); }
+    .health-dot.unreachable { background: var(--yellow); box-shadow: 0 0 6px rgba(245,158,11,0.5); }
+    .health-dot.unknown { background: var(--text-dim); }
+    .health-dot.checking { background: var(--text-dim); animation: pulse 1s infinite; }
+
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    /* ── Favorite star ──────────────────────── */
+    .fav-btn {
+      background: none; border: none; cursor: pointer; font-size: 0.9rem;
+      padding: 2px; color: var(--text-dim); transition: all 0.2s; line-height: 1;
+    }
+    .fav-btn:hover { color: #facc15; transform: scale(1.2); }
+    .fav-btn.is-fav { color: #facc15; }
+
+    /* ── Actions dropdown ───────────────────── */
+    .actions-cell { position: relative; }
+
+    .actions-trigger {
+      padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border);
+      background: transparent; color: var(--text-muted); cursor: pointer;
+      font-size: 0.8rem; transition: all 0.2s;
+    }
+    .actions-trigger:hover { background: var(--bg-hover); color: var(--text); }
+
+    .actions-menu {
+      display: none; position: fixed; z-index: 999;
+      min-width: 180px; padding: 4px; border-radius: 10px;
+      background: var(--bg-modal); border: 1px solid var(--border);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    }
+    .actions-menu.open { display: block; }
+
+    .menu-backdrop {
+      display: none; position: fixed; inset: 0; z-index: 998;
+    }
+    .menu-backdrop.open { display: block; }
+
+    .actions-menu button {
+      width: 100%; padding: 8px 12px; border: none; background: transparent;
+      color: var(--text); font-size: 0.8rem; text-align: left; cursor: pointer;
+      border-radius: 6px; display: flex; align-items: center; gap: 8px;
+      transition: background 0.15s;
+    }
+    .actions-menu button:hover { background: var(--bg-hover); }
+    .actions-menu button.danger { color: #fca5a5; }
+    .actions-menu button.danger:hover { background: rgba(239,68,68,0.15); }
+
+    .actions-divider {
+      height: 1px; background: var(--border-row); margin: 4px 0;
+    }
+
+    /* ── Sortable ───────────────────────────── */
     th.sortable {
-      cursor: pointer;
-      user-select: none;
-      position: relative;
-      padding-right: 20px;
+      cursor: pointer; user-select: none; position: relative; padding-right: 18px;
     }
-
-    th.sortable:hover {
-      color: #c4d1ff;
-    }
+    th.sortable:hover { color: var(--accent-title); }
 
     th.sortable::after {
-      content: '';
-      position: absolute;
-      right: 6px;
-      top: 50%;
-      transform: translateY(-50%);
-      width: 0;
-      height: 0;
-      border-left: 4px solid transparent;
-      border-right: 4px solid transparent;
+      content: ''; position: absolute; right: 4px; top: 50%;
+      transform: translateY(-50%); width: 0; height: 0;
+      border-left: 4px solid transparent; border-right: 4px solid transparent;
       opacity: 0.3;
     }
+    th.sortable:not(.sorted)::after { border-top: 5px solid var(--text-muted); }
+    th.sortable.sorted.asc::after { border-bottom: 5px solid var(--accent-title); opacity: 1; }
+    th.sortable.sorted.desc::after { border-top: 5px solid var(--accent-title); opacity: 1; }
 
-    th.sortable:not(.sorted)::after {
-      border-top: 5px solid #9ca3af;
+    .empty { font-size: 0.85rem; color: var(--text-dim); margin-top: 10px; }
+    .scroll { margin-top: 4px; }
+
+    /* ── Toast ──────────────────────────────── */
+    .toast {
+      position: fixed; bottom: 24px; right: 24px; padding: 10px 20px;
+      border-radius: 10px; font-size: 0.85rem; z-index: 200;
+      animation: fadeInUp 0.3s ease;
+    }
+    .toast-success { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.4); color: #bbf7d0; }
+    .toast-info { background: rgba(59,130,246,0.2); border: 1px solid rgba(59,130,246,0.4); color: #bfdbfe; }
+    .toast-warn { background: rgba(245,158,11,0.2); border: 1px solid rgba(245,158,11,0.4); color: #fef3c7; }
+
+    @keyframes fadeInUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+
+    /* ── Export menu ────────────────────────── */
+    .export-menu {
+      display: none; position: absolute; right: 0; top: 100%; z-index: 50;
+      min-width: 160px; padding: 4px; border-radius: 10px;
+      background: var(--bg-modal); border: 1px solid var(--border);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    }
+    .export-menu.open { display: block; }
+    .export-menu button {
+      width: 100%; padding: 8px 12px; border: none; background: transparent;
+      color: var(--text); font-size: 0.8rem; text-align: left; cursor: pointer;
+      border-radius: 6px; display: flex; align-items: center; gap: 8px;
+    }
+    .export-menu button:hover { background: var(--bg-hover); }
+
+    .export-wrapper { position: relative; }
+
+    /* ── Modal ──────────────────────────────── */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(4px); z-index: 100;
+      display: flex; align-items: center; justify-content: center; padding: 20px;
     }
 
-    th.sortable.sorted.asc::after {
-      border-bottom: 5px solid #c4d1ff;
-      opacity: 1;
+    .modal {
+      background: var(--bg-modal); border: 1px solid var(--border);
+      border-radius: 16px; width: 100%; max-width: 600px; max-height: 85vh;
+      overflow-y: auto; padding: 28px;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.5);
     }
 
-    th.sortable.sorted.desc::after {
-      border-top: 5px solid #c4d1ff;
-      opacity: 1;
+    .modal-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 24px;
+    }
+    .modal-title { font-size: 1.1rem; font-weight: 600; color: var(--accent-title); }
+
+    .modal-close {
+      width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border);
+      background: transparent; color: var(--text-muted); cursor: pointer;
+      display: flex; align-items: center; justify-content: center; font-size: 1.1rem;
+    }
+    .modal-close:hover { background: rgba(239,68,68,0.2); color: #fca5a5; }
+
+    .settings-section { margin-bottom: 24px; }
+    .section-title { font-size: 0.85rem; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .section-desc { font-size: 0.75rem; color: var(--text-dim); margin-bottom: 14px; }
+
+    .runtime-toggle {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border-row);
+      margin-bottom: 8px; transition: background 0.2s;
+    }
+    .runtime-toggle:hover { background: var(--bg-hover); }
+
+    .runtime-toggle-left { display: flex; align-items: center; gap: 10px; }
+    .runtime-toggle-info h4 { font-size: 0.85rem; font-weight: 500; color: var(--text); }
+    .runtime-toggle-info p { margin-top: 2px; font-size: 0.7rem; color: var(--text-dim); font-family: var(--mono); }
+
+    .toggle { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+
+    .toggle-slider {
+      position: absolute; cursor: pointer; inset: 0;
+      background: rgba(100,116,139,0.4); border-radius: 999px; transition: 0.3s;
+    }
+    .toggle-slider::before {
+      content: ''; position: absolute; height: 16px; width: 16px;
+      left: 3px; bottom: 3px; background: white;
+      border-radius: 50%; transition: 0.3s;
+    }
+    .toggle input:checked + .toggle-slider { background: var(--green); }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(18px); }
+
+    .settings-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border-row);
+      margin-bottom: 8px;
+    }
+    .settings-row label { font-size: 0.85rem; color: var(--text); }
+    .settings-row .sub { font-size: 0.72rem; color: var(--text-dim); margin-top: 2px; }
+
+    .refresh-select {
+      padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--bg-input); color: var(--text); font-size: 0.8rem; outline: none;
     }
 
-    .result-info {
-      font-size: 0.75rem;
-      color: #9ca3af;
-      margin-left: auto;
+    .bulk-actions { display: flex; gap: 8px; margin-bottom: 14px; }
+
+    .bulk-btn {
+      padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+      background: transparent; color: var(--text-muted); font-size: 0.72rem;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .bulk-btn:hover { background: var(--bg-hover); color: var(--text); }
+
+    .modal-footer {
+      display: flex; justify-content: flex-end; gap: 8px;
+      padding-top: 16px; border-top: 1px solid var(--border-row);
     }
 
-    @media (max-width: 640px) {
-      .card {
-        padding: 16px 14px;
-      }
+    .btn-save {
+      padding: 8px 20px; border-radius: 8px; border: none;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      color: #fff; font-size: 0.85rem; font-weight: 500; cursor: pointer;
+    }
+    .btn-save:hover { opacity: 0.9; }
 
-      th:nth-child(4), td:nth-child(4) {
-        display: none; /* hide USER on very small screens */
-      }
+    .btn-cancel {
+      padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border);
+      background: transparent; color: var(--text-muted); font-size: 0.85rem; cursor: pointer;
+    }
+    .btn-cancel:hover { background: var(--bg-hover); }
 
-      .search-filter-row {
-        flex-direction: column;
-        align-items: stretch;
-      }
-
-      .search-box {
-        width: 100%;
-      }
-
-      .filter-group {
-        width: 100%;
-        justify-content: space-between;
-      }
+    /* ── Responsive ─────────────────────────── */
+    @media (max-width: 900px) {
+      .col-user { display: none; }
+    }
+    @media (max-width: 768px) {
+      .card { padding: 16px 14px; }
+      .col-path { display: none; }
+      .search-filter-row { flex-direction: column; align-items: stretch; }
+      .filter-group { width: 100%; justify-content: space-between; }
+    }
+    @media (max-width: 480px) {
+      .col-cmd { display: none; }
     }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="inner">
-        <div class="card-header">
-        <div>
-            <div class="title">Node Ports Dashboard</div>
-            <div class="subtitle">Currently listening ports used by Node / React / TS dev processes</div>
+      <!-- Header -->
+      <div class="card-header">
+        <div class="logo-area">
+          <div class="logo">DD</div>
+          <div>
+            <div class="title">DevDock</div>
+            <div class="subtitle">All your dev processes, one dashboard</div>
+          </div>
         </div>
-        <div class="actions">
-            <div class="badge">
-            <span class="badge-dot"></span> Live scan
-            </div>
-            <button class="refresh" id="refreshBtn">
-            <span class="status-dot"></span>
-            Refresh
+        <div class="header-actions">
+          <div class="badge"><span class="badge-dot"></span> Live</div>
+
+          <button class="btn" id="refreshBtn"><span class="status-dot"></span> Refresh</button>
+
+          <!-- History -->
+          <button class="btn-icon" id="historyBtn" title="Port history" onclick="window.location.href='/history'">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </button>
+
+          <!-- Group toggle -->
+          <button class="btn-icon" id="groupToggle" title="Group by project">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          </button>
+
+          <!-- Export -->
+          <div class="export-wrapper">
+            <button class="btn-icon" id="exportBtn" title="Export">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             </button>
-        </div>
-        </div>
+            <div class="export-menu" id="exportMenu">
+              <button onclick="exportAs('markdown')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                Markdown
+              </button>
+              <button onclick="exportAs('json')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                JSON
+              </button>
+              <button onclick="exportAs('csv')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+                CSV
+              </button>
+            </div>
+          </div>
 
-        <div class="stats-row">
-        <div class="stat">
+          <!-- Theme toggle -->
+          <button class="btn-icon" id="themeToggle" title="Toggle theme">
+            <span id="themeIcon">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            </span>
+          </button>
+
+          <!-- Settings -->
+          <button class="btn-icon" id="settingsBtn" title="Settings (S)" style="color:#c4b5fd;border-color:rgba(139,92,246,0.4);">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats-row">
+        <div class="stats-left">
+          <div class="stat">
             <span class="stat-value" id="count">0</span>
-            <span class="stat-label">Node listeners</span>
+            <span class="stat-label">listeners</span>
+          </div>
+          <div class="runtime-pills" id="runtimePills"></div>
         </div>
-        <div class="updated" id="updatedAt">Last updated: —</div>
-        </div>
+        <div class="updated" id="updatedAt">Last updated: &mdash;</div>
+      </div>
 
-        <div class="search-filter-row">
+      <!-- Search & filter -->
+      <div class="search-filter-row">
         <div class="search-box">
-            <span class="search-icon">🔍</span>
-            <input
-            type="text"
-            class="search-input"
-            id="searchInput"
-            placeholder="Search ports, PIDs, processes, paths..."
-            />
+          <span class="search-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </span>
+          <input type="text" class="search-input" id="searchInput" placeholder="Search ports, PIDs, processes, paths... ( / )" />
         </div>
         <div class="filter-group">
-            <select class="filter-select" id="tagFilter">
-            <option value="all">All Tags</option>
-            </select>
-            <button class="clear-btn" id="clearBtn">Clear</button>
+          <select class="filter-select" id="runtimeFilter"><option value="all">All Runtimes</option></select>
+          <button class="clear-btn" id="clearBtn">Clear</button>
         </div>
         <div class="result-info" id="resultInfo"></div>
-        </div>
+      </div>
 
-        <div class="scroll">
+      <!-- Table -->
+      <div class="scroll">
         <table>
-            <thead>
+          <thead>
             <tr>
-                <th class="sortable" data-column="port">Port</th>
-                <th class="sortable" data-column="pid">PID</th>
-                <th class="sortable" data-column="user">User</th>
-                <th class="sortable" data-column="command">Process</th>
-                <th class="sortable" data-column="label">Tag</th>
-                <th class="sortable" data-column="scriptPath">PATH</th>
-                <th>Action</th>
+              <th style="width:30px;"></th>
+              <th class="sortable" data-column="port">Port</th>
+              <th>Health</th>
+              <th class="sortable" data-column="pid">PID</th>
+              <th class="sortable col-user" data-column="user">User</th>
+              <th class="sortable col-cmd" data-column="command">Process</th>
+              <th class="sortable" data-column="runtimeName">Runtime</th>
+              <th class="sortable col-path" data-column="scriptPath">Path</th>
+              <th style="text-align:right;">Actions</th>
             </tr>
-            </thead>
-            <tbody id="tableBody">
-            <!-- rows injected by JS -->
-            </tbody>
+          </thead>
+          <tbody id="tableBody"></tbody>
         </table>
+      </div>
+
+      <div class="empty" id="emptyState" style="display:none;"></div>
+
+      <!-- Pro tips & shortcuts -->
+      <div style="margin-top:16px;padding-top:10px;border-top:1px solid var(--border-row);display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
+        <span style="font-size:0.72rem;color:var(--accent);font-weight:500;">Pro tips</span>
+        <span style="font-size:0.7rem;color:var(--text-dim);">Click <strong style="color:var(--text-muted);">Port</strong> to open in browser</span>
+        <span style="font-size:0.7rem;color:var(--text-dim);">Click <strong style="color:var(--text-muted);">PID</strong> to copy</span>
+        <span style="font-size:0.7rem;color:var(--text-dim);">Click <strong style="color:var(--text-muted);">Path</strong> to open terminal</span>
+        <span style="width:1px;height:12px;background:var(--border);"></span>
+        <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">/</kbd> Search</span>
+        <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">R</kbd> Refresh</span>
+        <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">S</kbd> Settings</span>
+        <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">G</kbd> Group</span>
+        <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">E</kbd> Export</span>
+        <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">T</kbd> Theme</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Settings Modal ────────────────────────────────────────── -->
+  <div class="menu-backdrop" id="menuBackdrop"></div>
+  <div class="actions-menu" id="floatingMenu"></div>
+
+  <div id="settingsModal" style="display:none;">
+    <div class="modal-overlay" id="modalOverlay">
+      <div class="modal">
+        <div class="modal-header">
+          <div class="modal-title">Settings</div>
+          <button class="modal-close" id="modalClose">&times;</button>
         </div>
 
-        <div class="empty" id="emptyState" style="display:none;">
-        No Node processes currently listening on any TCP ports.
-        Fire up a React/Vite/Node dev server and they’ll show up here.
+        <div class="settings-section">
+          <div class="section-title section-collapsible" id="runtimeSectionToggle" style="cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none;">
+            <span class="section-chevron" style="font-size:0.65rem;color:var(--text-dim);transition:transform 0.2s;display:inline-block;">&#9654;</span>
+            Runtime Detection
+          </div>
+          <div class="section-desc">Toggle which process types to monitor. Disable runtimes you don't use to reduce noise.</div>
+          <div id="runtimeSectionBody" style="display:none;">
+            <div class="bulk-actions">
+              <button class="bulk-btn" id="enableAll">Enable All</button>
+              <button class="bulk-btn" id="disableAll">Disable All</button>
+            </div>
+            <div id="runtimeToggles"></div>
+          </div>
         </div>
+
+        <div class="settings-section">
+          <div class="section-title">Grouping</div>
+          <div class="section-desc">Configure how processes are grouped when using the Group view.</div>
+          <div class="settings-row">
+            <div><label>Grouping depth</label><div class="sub">How many path segments to trim. 1 = parent dir (e.g. /repos/myapp), 2 = grandparent.</div></div>
+            <select class="refresh-select" id="groupingDepth">
+              <option value="1">1 (parent)</option>
+              <option value="2">2 (grandparent)</option>
+              <option value="3">3</option>
+              <option value="0">0 (exact path)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="section-title">History</div>
+          <div class="settings-row">
+            <div><label>Remember stopped processes</label><div class="sub">Keep a record of previously discovered ports</div></div>
+            <label class="toggle"><input type="checkbox" id="showHistoryToggle" /><span class="toggle-slider"></span></label>
+          </div>
+          <div class="settings-row">
+            <div><label>Clear all history</label><div class="sub">Remove all stored port records</div></div>
+            <button class="bulk-btn" id="clearHistory" style="color:#fca5a5;border-color:rgba(239,68,68,0.4);">Clear</button>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="section-title">General</div>
+          <div class="settings-row">
+            <div><label>Auto-refresh interval</label><div class="sub">How often to scan for processes</div></div>
+            <select class="refresh-select" id="refreshInterval">
+              <option value="2000">2s</option>
+              <option value="5000">5s</option>
+              <option value="10000">10s</option>
+              <option value="30000">30s</option>
+              <option value="60000">1m</option>
+            </select>
+          </div>
+          <div class="settings-row">
+            <div><label>Show unrecognized processes</label><div class="sub">Display processes that don't match any known runtime</div></div>
+            <label class="toggle"><input type="checkbox" id="showOther" /><span class="toggle-slider"></span></label>
+          </div>
+          <div class="settings-row">
+            <div><label>Desktop notifications</label><div class="sub">Notify when ports come up or go down</div></div>
+            <label class="toggle"><input type="checkbox" id="notificationsToggle" /><span class="toggle-slider"></span></label>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn-cancel" id="settingsCancel">Cancel</button>
+          <button class="btn-save" id="settingsSave">Save Settings</button>
+        </div>
+      </div>
     </div>
   </div>
 
   <script>
-    const tableBody = document.getElementById('tableBody');
-    const countEl = document.getElementById('count');
-    const updatedAtEl = document.getElementById('updatedAt');
-    const emptyStateEl = document.getElementById('emptyState');
-    const refreshBtn = document.getElementById('refreshBtn');
-    const searchInput = document.getElementById('searchInput');
-    const tagFilter = document.getElementById('tagFilter');
-    const clearBtn = document.getElementById('clearBtn');
-    const resultInfo = document.getElementById('resultInfo');
+    // ── DOM ───────────────────────────────────────────────────────────
+    const $ = id => document.getElementById(id);
+    const tableBody = $('tableBody');
+    const countEl = $('count');
+    const updatedAtEl = $('updatedAt');
+    const emptyStateEl = $('emptyState');
+    const searchInput = $('searchInput');
+    const runtimeFilter = $('runtimeFilter');
+    const clearBtn = $('clearBtn');
+    const resultInfo = $('resultInfo');
+    const runtimePills = $('runtimePills');
 
     let allPorts = [];
+    let previousPorts = [];
+    let healthMap = {};
     let sortColumn = 'port';
     let sortDirection = 'asc';
+    let runtimeDefs = {};
+    let currentSettings = {};
+    let refreshTimer = null;
+    let groupByProject = false;
+    let groupingDepth = 1;
+    let openMenuId = null;
 
-    async function killProcess(pid, btnElement) {
-      if (!confirm(`Kill process ${pid}?`)) return;
-
-      btnElement.disabled = true;
-      btnElement.textContent = 'Killing...';
-
-      try {
-        const res = await fetch(`/api/kill/${pid}`, { method: 'POST' });
-        const data = await res.json();
-
-        if (res.ok) {
-          btnElement.textContent = 'Killed';
-          setTimeout(() => loadPorts(), 1000);
-        } else {
-          alert(`Failed to kill process: ${data.error}`);
-          btnElement.disabled = false;
-          btnElement.textContent = 'Kill';
-        }
-      } catch (err) {
-        console.error('Kill failed', err);
-        alert('Failed to kill process');
-        btnElement.disabled = false;
-        btnElement.textContent = 'Kill';
+    // ── Theme ────────────────────────────────────────────────────────
+    function setTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      const icon = $('themeIcon');
+      if (theme === 'light') {
+        icon.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+      } else {
+        icon.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
       }
     }
 
-    function getFilteredAndSortedPorts() {
-      const searchTerm = searchInput.value.toLowerCase();
-      const tagFilterValue = tagFilter.value;
+    $('themeToggle').addEventListener('click', async () => {
+      const current = document.documentElement.getAttribute('data-theme') || 'dark';
+      const next = current === 'dark' ? 'light' : 'dark';
+      setTheme(next);
+      await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme: next }),
+      });
+    });
 
-      let filtered = allPorts.filter(portInfo => {
-        // Search filter
-        const matchesSearch = !searchTerm || 
-          String(portInfo.port || '').toLowerCase().includes(searchTerm) ||
-          String(portInfo.pid || '').toLowerCase().includes(searchTerm) ||
-          String(portInfo.user || '').toLowerCase().includes(searchTerm) ||
-          String(portInfo.command || '').toLowerCase().includes(searchTerm) ||
-          String(portInfo.label || '').toLowerCase().includes(searchTerm) ||
-          String(portInfo.scriptPath || '').toLowerCase().includes(searchTerm);
+    // ── Toast ─────────────────────────────────────────────────────────
+    function showToast(msg, type = 'success') {
+      const t = document.createElement('div');
+      t.className = `toast toast-${type}`;
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 3000);
+    }
 
-        // Tag filter
-        const portTag = portInfo.label || 'Node';
-        const matchesTag = tagFilterValue === 'all' || portTag === tagFilterValue;
+    // ── Kill / Restart ───────────────────────────────────────────────
+    async function killProcess(pid) {
+      closeAllMenus();
+      if (!confirm(`Kill process ${pid}?`)) return;
+      try {
+        const res = await fetch(`/api/kill/${pid}`, { method: 'POST' });
+        if (res.ok) { showToast(`Process ${pid} killed`); setTimeout(() => loadPorts(true), 800); }
+        else { const d = await res.json(); showToast(d.error, 'warn'); }
+      } catch { showToast('Failed to kill process', 'warn'); }
+    }
 
-        return matchesSearch && matchesTag;
+    async function restartProcess(pid) {
+      closeAllMenus();
+      try {
+        const res = await fetch(`/api/restart/${pid}`, { method: 'POST' });
+        if (res.ok) { showToast(`SIGHUP sent to ${pid}`); setTimeout(() => loadPorts(true), 1500); }
+        else { showToast('Failed to restart', 'warn'); }
+      } catch { showToast('Failed to restart', 'warn'); }
+    }
+
+    // ── Open terminal ─────────────────────────────────────────────────
+    async function openTerminal(dir) {
+      try {
+        const res = await fetch('/api/open-terminal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: dir }),
+        });
+        if (res.ok) showToast(`Terminal opened at ${dir.split('/').pop()}`);
+        else showToast('Failed to open terminal', 'warn');
+      } catch { showToast('Failed to open terminal', 'warn'); }
+    }
+
+    // ── Favorites ────────────────────────────────────────────────────
+    async function toggleFavorite(port, isFav) {
+      const method = isFav ? 'DELETE' : 'POST';
+      await fetch(`/api/favorites/${port}`, { method });
+      // Update local state
+      allPorts.forEach(p => {
+        if (p.port === port) p.favorite = !isFav;
+      });
+      renderTable();
+      showToast(isFav ? `Port ${port} unpinned` : `Port ${port} pinned`);
+    }
+
+    // ── Health checks ────────────────────────────────────────────────
+    async function loadHealth() {
+      try {
+        const res = await fetch('/api/health');
+        healthMap = await res.json();
+        // Update dots in DOM without full re-render
+        document.querySelectorAll('.health-dot[data-port]').forEach(dot => {
+          const port = dot.dataset.port;
+          const status = healthMap[port] || 'unknown';
+          dot.className = `health-dot ${status}`;
+          dot.title = status;
+        });
+      } catch { /* silent */ }
+    }
+
+    // ── Notifications ────────────────────────────────────────────────
+    function checkNotifications() {
+      if (!currentSettings.notifications) return;
+      if (previousPorts.length === 0) return; // skip first load
+
+      const prevSet = new Set(previousPorts.map(p => p.port));
+      const currSet = new Set(allPorts.map(p => p.port));
+
+      // New ports
+      allPorts.forEach(p => {
+        if (!prevSet.has(p.port)) {
+          notify(`Port ${p.port} is up`, `${p.runtimeName} process started (${p.command})`);
+        }
       });
 
-      // Sort
+      // Gone ports
+      previousPorts.forEach(p => {
+        if (!currSet.has(p.port)) {
+          notify(`Port ${p.port} is down`, `${p.runtimeName} process stopped`);
+        }
+      });
+    }
+
+    function notify(title, body) {
+      if (Notification.permission === 'granted') {
+        new Notification(title, { body, icon: '/favicon.ico' });
+      }
+      showToast(`${title}: ${body}`, 'info');
+    }
+
+    async function requestNotificationPermission() {
+      if ('Notification' in window && Notification.permission === 'default') {
+        await Notification.requestPermission();
+      }
+    }
+
+    // ── Export ────────────────────────────────────────────────────────
+    function exportAs(format) {
+      const data = getFilteredAndSortedPorts();
+      let output = '';
+
+      if (format === 'json') {
+        output = JSON.stringify(data.map(p => ({
+          port: p.port, pid: p.pid, user: p.user,
+          process: p.command, runtime: p.runtimeName, path: p.scriptPath,
+        })), null, 2);
+      } else if (format === 'markdown') {
+        output = '| Port | PID | User | Process | Runtime | Path |\n';
+        output += '|------|-----|------|---------|---------|------|\n';
+        data.forEach(p => {
+          output += `| ${p.port || '-'} | ${p.pid} | ${p.user || '-'} | ${p.command} | ${p.runtimeName} | ${p.scriptPath || '-'} |\n`;
+        });
+      } else if (format === 'csv') {
+        output = 'Port,PID,User,Process,Runtime,Path\n';
+        data.forEach(p => {
+          output += `${p.port || ''},${p.pid},${p.user || ''},${p.command},${p.runtimeName},"${p.scriptPath || ''}"\n`;
+        });
+      }
+
+      navigator.clipboard.writeText(output).then(() => {
+        showToast(`Copied as ${format.toUpperCase()}`);
+      });
+
+      $('exportMenu').classList.remove('open');
+    }
+
+    $('exportBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      $('exportMenu').classList.toggle('open');
+    });
+
+    // ── Actions menu ─────────────────────────────────────────────────
+    let activeMenuId = null;
+
+    const menuBackdrop = $('menuBackdrop');
+    const floatingMenu = $('floatingMenu');
+
+    function closeAllMenus() {
+      floatingMenu.classList.remove('open');
+      floatingMenu.innerHTML = '';
+      document.querySelectorAll('.export-menu').forEach(m => m.classList.remove('open'));
+      menuBackdrop.classList.remove('open');
+      activeMenuId = null;
+    }
+
+    function toggleActionsMenu(id, triggerEl) {
+      const sourceMenu = document.getElementById(`menu-${id}`);
+      if (!sourceMenu) return;
+
+      const wasOpen = activeMenuId === id;
+      closeAllMenus();
+      if (wasOpen) return;
+
+      floatingMenu.innerHTML = sourceMenu.innerHTML;
+
+      const rect = triggerEl.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+
+      if (spaceBelow < 120) {
+        floatingMenu.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+        floatingMenu.style.top = 'auto';
+      } else {
+        floatingMenu.style.top = (rect.bottom + 4) + 'px';
+        floatingMenu.style.bottom = 'auto';
+      }
+      floatingMenu.style.right = (window.innerWidth - rect.right) + 'px';
+      floatingMenu.style.left = 'auto';
+      floatingMenu.classList.add('open');
+      menuBackdrop.classList.add('open');
+      activeMenuId = id;
+    }
+
+    function isAnyMenuOpen() {
+      return activeMenuId !== null;
+    }
+
+    menuBackdrop.addEventListener('click', closeAllMenus);
+    floatingMenu.addEventListener('click', (e) => {
+      if (e.target.closest('button')) {
+        setTimeout(closeAllMenus, 50);
+      }
+    });
+
+    // ── Filter & sort ────────────────────────────────────────────────
+    function getFilteredAndSortedPorts() {
+      const term = searchInput.value.toLowerCase();
+      const rtFilter = runtimeFilter.value;
+
+      let filtered = allPorts.filter(p => {
+        const matchesSearch = !term ||
+          String(p.port || '').includes(term) ||
+          String(p.pid || '').toLowerCase().includes(term) ||
+          String(p.user || '').toLowerCase().includes(term) ||
+          String(p.command || '').toLowerCase().includes(term) ||
+          String(p.runtimeName || '').toLowerCase().includes(term) ||
+          String(p.scriptPath || '').toLowerCase().includes(term);
+
+        const matchesRuntime = rtFilter === 'all' || p.runtime === rtFilter;
+        return matchesSearch && matchesRuntime;
+      });
+
+      // Favorites first, then sort
       filtered.sort((a, b) => {
+        if (a.favorite && !b.favorite) return -1;
+        if (!a.favorite && b.favorite) return 1;
+
         let aVal = a[sortColumn];
         let bVal = b[sortColumn];
-
-        // Handle special cases
         if (sortColumn === 'port' || sortColumn === 'pid') {
           aVal = parseInt(aVal) || 0;
           bVal = parseInt(bVal) || 0;
-        } else {
-          aVal = String(aVal || '').toLowerCase();
-          bVal = String(bVal || '').toLowerCase();
-        }
-
-        if (sortColumn === 'port' || sortColumn === 'pid') {
           return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
-        } else {
-          if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
-          if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
-          return 0;
         }
+        aVal = String(aVal || '').toLowerCase();
+        bVal = String(bVal || '').toLowerCase();
+        if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
       });
 
       return filtered;
     }
 
-    function updateTagFilter() {
-      const tags = new Set();
-      allPorts.forEach(p => tags.add(p.label || 'Node'));
-      
-      const currentValue = tagFilter.value;
-      tagFilter.innerHTML = '<option value="all">All Tags</option>';
-      
-      Array.from(tags).sort().forEach(tag => {
-        const option = document.createElement('option');
-        option.value = tag;
-        option.textContent = tag;
-        tagFilter.appendChild(option);
+    let lastFiltersKey = '';
+    function updateFilters() {
+      const runtimes = new Set();
+      allPorts.forEach(p => runtimes.add(p.runtime));
+      const key = Array.from(runtimes).sort().join(',');
+      if (key === lastFiltersKey) return;
+      lastFiltersKey = key;
+
+      const cur = runtimeFilter.value;
+      runtimeFilter.innerHTML = '<option value="all">All Runtimes</option>';
+      Array.from(runtimes).sort().forEach(rt => {
+        const opt = document.createElement('option');
+        opt.value = rt;
+        opt.textContent = runtimeDefs[rt]?.name || rt;
+        runtimeFilter.appendChild(opt);
       });
-      
-      if (currentValue !== 'all' && tags.has(currentValue)) {
-        tagFilter.value = currentValue;
-      }
+      if (cur !== 'all' && runtimes.has(cur)) runtimeFilter.value = cur;
     }
+
+    let lastPillsKey = '';
+    function updateRuntimePills() {
+      const counts = {};
+      allPorts.forEach(p => { counts[p.runtime] = (counts[p.runtime] || 0) + 1; });
+      const key = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([r, c]) => `${r}:${c}`).join(',');
+      if (key === lastPillsKey) return; // no change
+      lastPillsKey = key;
+      runtimePills.innerHTML = '';
+      Object.entries(counts).sort((a, b) => b[1] - a[1]).forEach(([rt, count]) => {
+        const color = runtimeDefs[rt]?.color || '#6b7280';
+        const name = runtimeDefs[rt]?.name || rt;
+        const pill = document.createElement('span');
+        pill.className = 'runtime-pill';
+        pill.style.cssText = `background:${color}18;color:${color};border:1px solid ${color}40;`;
+        pill.innerHTML = `<span class="pill-count">${count}</span> ${name}`;
+        runtimePills.appendChild(pill);
+      });
+    }
+
+    // ── Render (reconciliation — only patch what changed) ─────────────
+    let renderedKeys = []; // track what's currently in DOM
+
+    function rowKey(p) { return `${p.pid}:${p.port}`; }
+
+    function rowHTML(p) {
+      const health = healthMap[p.port] || 'checking';
+      const uid = `${p.pid}-${p.port}`;
+      return `
+        <td><button class="fav-btn ${p.favorite ? 'is-fav' : ''}" onclick="toggleFavorite(${p.port}, ${p.favorite})" title="${p.favorite ? 'Unpin' : 'Pin to top'}">${p.favorite ? '\u2605' : '\u2606'}</button></td>
+        <td>${p.port
+          ? `<a href="http://localhost:${p.port}" target="_blank" class="code" style="color:var(--accent);text-decoration:none;">${p.port}</a>`
+          : '<span class="code">&mdash;</span>'
+        }</td>
+        <td><span class="health-dot ${health}" data-port="${p.port}" title="${health}"></span></td>
+        <td><span class="pid-copy" onclick="navigator.clipboard.writeText('${p.pid}');showToast('PID ${p.pid} copied')" title="Click to copy PID">${p.pid}</span></td>
+        <td class="col-user">${p.user || '\u2014'}</td>
+        <td class="col-cmd"><span class="code">${p.command}</span></td>
+        <td>
+          <span class="runtime-tag" style="background:${p.runtimeColor}18;color:${p.runtimeColor};border:1px solid ${p.runtimeColor}40;">
+            <span class="runtime-icon" style="background:${p.runtimeColor}">${p.runtimeIcon || '?'}</span>
+            ${p.runtimeName}
+          </span>
+        </td>
+        <td class="col-path">${p.scriptPath
+          ? `<span class="path-link" onclick="openTerminal('${p.scriptPath.replace(/'/g, "\\'")}')" title="Click to open terminal here">${p.scriptPath}</span>`
+          : '<span class="code">\u2014</span>'
+        }</td>
+        <td class="actions-cell" style="text-align:right;">
+          <button class="actions-trigger" onclick="event.stopPropagation();toggleActionsMenu('${uid}',this)">
+            \u22EF
+          </button>
+          <div class="actions-menu" id="menu-${uid}">
+            <button onclick="restartProcess('${p.pid}')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              Restart (SIGHUP)
+            </button>
+            <div class="actions-divider"></div>
+            <button class="danger" onclick="killProcess('${p.pid}')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+              Kill process
+            </button>
+          </div>
+        </td>`;
+    }
+
+    function getGroupKey(scriptPath, depth) {
+      if (!scriptPath || scriptPath === '/') return 'Unknown';
+      const parts = scriptPath.replace(/\/$/, '').split('/');
+      if (parts.length > depth) {
+        return parts.slice(0, parts.length - depth).join('/');
+      }
+      return scriptPath;
+    }
+
+    // Fingerprint a port entry for change detection
+    function portFingerprint(p) {
+      return `${p.pid}|${p.port}|${p.user}|${p.command}|${p.runtime}|${p.scriptPath}|${p.favorite}`;
+    }
+
+    let lastFingerprints = {};
+    let lastFilteredKeys = '';
 
     function renderTable() {
       const filtered = getFilteredAndSortedPorts();
-      tableBody.innerHTML = '';
 
-      // Update result info
+      // Update counters
       if (allPorts.length === 0) {
         resultInfo.textContent = '';
       } else if (filtered.length !== allPorts.length) {
@@ -590,137 +1136,294 @@ body {
 
       if (filtered.length === 0) {
         emptyStateEl.style.display = 'block';
-        if (searchInput.value || tagFilter.value !== 'all') {
-          emptyStateEl.textContent = 'No processes match your search criteria.';
-        } else {
-          emptyStateEl.textContent = 'No Node processes currently listening on any TCP ports. Fire up a React/Vite/Node dev server and they\'ll show up here.';
+        emptyStateEl.textContent = (searchInput.value || runtimeFilter.value !== 'all')
+          ? 'No processes match your filters.'
+          : 'No dev processes currently listening. Start a dev server and it will appear here.';
+        if (tableBody.children.length > 0) {
+          tableBody.innerHTML = '';
+          renderedKeys = [];
+          lastFingerprints = {};
+          lastFilteredKeys = '';
         }
         return;
-      } else {
-        emptyStateEl.style.display = 'none';
       }
 
-      filtered.forEach(portInfo => {
-            const tr = document.createElement('tr');
+      emptyStateEl.style.display = 'none';
 
-            const portTd = document.createElement('td');
-            if (portInfo.port) {
-              portTd.innerHTML = `<a href="http://localhost:${portInfo.port}" target="_blank" class="code" style="color: #60a5fa; text-decoration: none;">${portInfo.port}</a>`;
-            } else {
-              portTd.innerHTML = `<span class="code">—</span>`;
-            }
-            tr.appendChild(portTd);
+      // Build the desired row list (flat, no grouping for reconciliation)
+      let rows;
+      if (groupByProject) {
+        rows = [];
+        const groups = {};
+        filtered.forEach(p => {
+          const key = getGroupKey(p.scriptPath, groupingDepth);
+          if (!groups[key]) groups[key] = [];
+          groups[key].push(p);
+        });
+        Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0])).forEach(([groupPath, ports]) => {
+          rows.push({ _groupHeader: true, groupPath, count: ports.length });
+          ports.forEach(p => rows.push(p));
+        });
+      } else {
+        rows = filtered;
+      }
 
-            const pidTd = document.createElement('td');
-            pidTd.innerHTML = `<span class="code">${portInfo.pid}</span>`;
-            tr.appendChild(pidTd);
+      // Build a key for the full list to detect structural changes (add/remove/reorder)
+      const newKeys = rows.map(r => r._groupHeader ? `g:${r.groupPath}` : rowKey(r)).join(',');
 
-            const userTd = document.createElement('td');
-            userTd.textContent = portInfo.user || '—';
-            tr.appendChild(userTd);
+      // If structure changed, do full rebuild
+      if (newKeys !== lastFilteredKeys) {
+        tableBody.innerHTML = '';
+        lastFingerprints = {};
 
-            const procTd = document.createElement('td');
-            procTd.innerHTML = `<span class="code">${portInfo.command}</span>`;
-            tr.appendChild(procTd);
+        rows.forEach(r => {
+          const tr = document.createElement('tr');
+          if (r._groupHeader) {
+            tr.dataset.key = `g:${r.groupPath}`;
+            tr.innerHTML = `<td colspan="9" style="padding:0;">
+              <div class="group-header" onclick="this.classList.toggle('collapsed');toggleGroupRows(this)">
+                <span class="group-chevron">\u25BC</span>
+                <span class="group-name">${r.groupPath}</span>
+                <span class="group-count">${r.count}</span>
+              </div></td>`;
+          } else {
+            const key = rowKey(r);
+            tr.dataset.key = key;
+            if (r.favorite) tr.classList.add('is-favorite');
+            tr.innerHTML = rowHTML(r);
+            lastFingerprints[key] = portFingerprint(r);
+          }
+          tableBody.appendChild(tr);
+        });
 
-            const tagTd = document.createElement('td');
-            if (portInfo.label) {
-              const span = document.createElement('span');
-              span.className = 'tag';
-              span.textContent = portInfo.label;
-              tagTd.appendChild(span);
-            } else {
-              const span = document.createElement('span');
-              span.className = 'tag tag-secondary';
-              span.textContent = 'Node';
-              tagTd.appendChild(span);
-            }
-            tr.appendChild(tagTd);
+        lastFilteredKeys = newKeys;
+        renderedKeys = newKeys.split(',');
+        return;
+      }
 
-            const pathTd = document.createElement('td');
-            pathTd.innerHTML = portInfo.scriptPath
-            ? `<span class="code">${portInfo.scriptPath}</span>`
-            : `<span class="code">—</span>`;
-            tr.appendChild(pathTd);
+      // Structure same — only patch cells that changed (reconciliation)
+      const existingRows = tableBody.querySelectorAll('tr[data-key]');
+      let idx = 0;
+      rows.forEach(r => {
+        if (r._groupHeader) { idx++; return; }
+        const key = rowKey(r);
+        const fp = portFingerprint(r);
+        const tr = existingRows[idx];
+        idx++;
 
-            const actionTd = document.createElement('td');
-            const killBtn = document.createElement('button');
-            killBtn.className = 'kill-btn';
-            killBtn.textContent = 'Kill 🔪';
-            killBtn.onclick = () => killProcess(portInfo.pid, killBtn);
-            actionTd.appendChild(killBtn);
-            tr.appendChild(actionTd);
+        if (!tr || lastFingerprints[key] === fp) return;
 
-        tableBody.appendChild(tr);
+        // Something changed — patch this row
+        if (r.favorite) tr.classList.add('is-favorite');
+        else tr.classList.remove('is-favorite');
+        tr.innerHTML = rowHTML(r);
+        lastFingerprints[key] = fp;
       });
     }
 
-    async function loadPorts() {
+    function toggleGroupRows(headerEl) {
+      const tr = headerEl.closest('tr');
+      const collapsed = headerEl.classList.contains('collapsed');
+      let next = tr.nextElementSibling;
+      while (next && !next.querySelector('.group-header')) {
+        next.style.display = collapsed ? 'none' : '';
+        next = next.nextElementSibling;
+      }
+    }
+
+    // ── Load ports ───────────────────────────────────────────────────
+    async function loadPorts(force) {
+      // Skip re-render if an actions menu is open (poll would close it)
+      if (!force && isAnyMenuOpen()) return;
+
       try {
         const res = await fetch('/api/ports');
         const data = await res.json();
-
+        previousPorts = [...allPorts];
         allPorts = data.ports || [];
+
         countEl.textContent = allPorts.length;
         updatedAtEl.textContent = 'Last updated: ' + new Date(data.timestamp || Date.now()).toLocaleTimeString();
 
-        updateTagFilter();
+        checkNotifications();
+        updateFilters();
+        updateRuntimePills();
         renderTable();
+
+        // Load health in background
+        loadHealth();
       } catch (err) {
         console.error('Failed to load ports', err);
-        updatedAtEl.textContent = 'Error loading ports – check server logs.';
+        updatedAtEl.textContent = 'Error loading \u2013 check server logs.';
       }
     }
 
-    // Search and filter event listeners
-    searchInput.addEventListener('input', () => {
+    // ── Settings modal ───────────────────────────────────────────────
+    async function openSettings() {
+      const [sRes, rRes] = await Promise.all([fetch('/api/settings'), fetch('/api/runtimes')]);
+      currentSettings = await sRes.json();
+      runtimeDefs = await rRes.json();
+
+      $('refreshInterval').value = String(currentSettings.refreshInterval || 5000);
+      $('showOther').checked = currentSettings.showOtherProcesses || false;
+      $('notificationsToggle').checked = currentSettings.notifications !== false;
+      $('groupingDepth').value = String(currentSettings.groupingDepth ?? 1);
+      $('showHistoryToggle').checked = currentSettings.showHistory !== false;
+
+      const container = $('runtimeToggles');
+      container.innerHTML = '';
+      Object.entries(runtimeDefs).sort((a, b) => a[1].name.localeCompare(b[1].name)).forEach(([key, rt]) => {
+        const enabled = currentSettings.runtimes?.[key]?.enabled ?? true;
+        const div = document.createElement('div');
+        div.className = 'runtime-toggle';
+        div.innerHTML = `
+          <div class="runtime-toggle-left">
+            <span class="runtime-icon" style="background:${rt.color}">${rt.icon}</span>
+            <div class="runtime-toggle-info">
+              <h4>${rt.name}</h4>
+              <p>${rt.commands.join(', ') || 'unrecognized processes'}</p>
+            </div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" data-runtime="${key}" ${enabled ? 'checked' : ''} />
+            <span class="toggle-slider"></span>
+          </label>
+        `;
+        container.appendChild(div);
+      });
+
+      $('settingsModal').style.display = 'block';
+    }
+
+    function closeSettings() { $('settingsModal').style.display = 'none'; }
+
+    async function saveSettings() {
+      const runtimes = {};
+      $('runtimeToggles').querySelectorAll('input[data-runtime]').forEach(i => {
+        runtimes[i.dataset.runtime] = { enabled: i.checked };
+      });
+
+      const notifs = $('notificationsToggle').checked;
+      if (notifs) requestNotificationPermission();
+
+      const newDepth = parseInt($('groupingDepth').value);
+      groupingDepth = newDepth;
+
+      const body = {
+        runtimes,
+        refreshInterval: parseInt($('refreshInterval').value),
+        showOtherProcesses: $('showOther').checked,
+        notifications: notifs,
+        groupingDepth: newDepth,
+        showHistory: $('showHistoryToggle').checked,
+      };
+
+      await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      currentSettings = { ...currentSettings, ...body };
+      setupRefreshTimer(body.refreshInterval);
+      closeSettings();
+      showToast('Settings saved');
+      loadPorts();
+    }
+
+    function setupRefreshTimer(interval) {
+      if (refreshTimer) clearInterval(refreshTimer);
+      refreshTimer = setInterval(loadPorts, interval);
+    }
+
+    // ── Group toggle ─────────────────────────────────────────────────
+    $('groupToggle').addEventListener('click', () => {
+      groupByProject = !groupByProject;
+      $('groupToggle').style.background = groupByProject ? 'rgba(96,165,250,0.2)' : '';
+      $('groupToggle').style.borderColor = groupByProject ? 'rgba(96,165,250,0.5)' : '';
       renderTable();
     });
 
-    tagFilter.addEventListener('change', () => {
-      renderTable();
-    });
-
+    // ── Event listeners ──────────────────────────────────────────────
+    searchInput.addEventListener('input', renderTable);
+    runtimeFilter.addEventListener('change', renderTable);
     clearBtn.addEventListener('click', () => {
       searchInput.value = '';
-      tagFilter.value = 'all';
+      runtimeFilter.value = 'all';
       renderTable();
     });
 
-    // Sortable column headers
+    $('refreshBtn').addEventListener('click', () => loadPorts(true));
+    $('settingsBtn').addEventListener('click', openSettings);
+    $('modalClose').addEventListener('click', closeSettings);
+    $('settingsCancel').addEventListener('click', closeSettings);
+    $('settingsSave').addEventListener('click', saveSettings);
+    $('modalOverlay').addEventListener('click', (e) => { if (e.target === $('modalOverlay')) closeSettings(); });
+
+    $('runtimeSectionToggle').addEventListener('click', () => {
+      const body = $('runtimeSectionBody');
+      const chevron = $('runtimeSectionToggle').querySelector('.section-chevron');
+      const isOpen = body.style.display !== 'none';
+      body.style.display = isOpen ? 'none' : 'block';
+      chevron.classList.toggle('open', !isOpen);
+    });
+
+    $('clearHistory').addEventListener('click', async () => {
+      if (!confirm('Clear all port history?')) return;
+      await fetch('/api/history', { method: 'DELETE' });
+      showToast('History cleared');
+    });
+
+    $('enableAll').addEventListener('click', () => {
+      $('runtimeToggles').querySelectorAll('input[data-runtime]').forEach(i => i.checked = true);
+    });
+    $('disableAll').addEventListener('click', () => {
+      $('runtimeToggles').querySelectorAll('input[data-runtime]').forEach(i => i.checked = false);
+    });
+
+    // Sortable columns
     document.querySelectorAll('th.sortable').forEach(th => {
       th.addEventListener('click', () => {
-        const column = th.dataset.column;
-        
-        if (sortColumn === column) {
-          sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-        } else {
-          sortColumn = column;
-          sortDirection = 'asc';
-        }
-
-        // Update UI
-        document.querySelectorAll('th.sortable').forEach(h => {
-          h.classList.remove('sorted', 'asc', 'desc');
-        });
+        const col = th.dataset.column;
+        if (sortColumn === col) sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+        else { sortColumn = col; sortDirection = 'asc'; }
+        document.querySelectorAll('th.sortable').forEach(h => h.classList.remove('sorted', 'asc', 'desc'));
         th.classList.add('sorted', sortDirection);
-
         renderTable();
       });
     });
-
-    // Set initial sort indicator
     document.querySelector(`th.sortable[data-column="${sortColumn}"]`)?.classList.add('sorted', sortDirection);
 
-    refreshBtn.addEventListener('click', () => {
-      loadPorts();
+    // ── Keyboard shortcuts ───────────────────────────────────────────
+    document.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
+        if (e.key === 'Escape') { e.target.blur(); closeSettings(); }
+        return;
+      }
+      switch (e.key) {
+        case '/': e.preventDefault(); searchInput.focus(); break;
+        case 'r': loadPorts(true); break;
+        case 's': openSettings(); break;
+        case 'g': $('groupToggle').click(); break;
+        case 'e': $('exportBtn').click(); break;
+        case 't': $('themeToggle').click(); break;
+        case 'Escape': closeSettings(); $('exportMenu').classList.remove('open'); break;
+      }
     });
 
-    // Auto-refresh every 5 seconds
-    setInterval(loadPorts, 5000);
+    // ── Init ─────────────────────────────────────────────────────────
+    (async function init() {
+      const [rtRes, stRes] = await Promise.all([fetch('/api/runtimes'), fetch('/api/settings')]);
+      runtimeDefs = await rtRes.json();
+      currentSettings = await stRes.json();
 
-    // Initial load
-    loadPorts();
+      setTheme(currentSettings.theme || 'dark');
+      groupingDepth = currentSettings.groupingDepth ?? 1;
+      setupRefreshTimer(currentSettings.refreshInterval || 5000);
+      if (currentSettings.notifications) requestNotificationPermission();
+
+      loadPorts();
+    })();
   </script>
 </body>
 </html>

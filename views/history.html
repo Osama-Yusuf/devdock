@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>DevDock - Port History</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      --bg-deep: #020617;
+      --bg-card: rgba(15, 23, 42, 0.96);
+      --bg-hover: rgba(30, 41, 59, 0.7);
+      --bg-input: rgba(15, 23, 42, 0.6);
+      --bg-modal: #0f172a;
+      --text: #e5e7eb;
+      --text-muted: #9ca3af;
+      --text-dim: #6b7280;
+      --accent: #60a5fa;
+      --accent-title: #c4d1ff;
+      --border: rgba(148, 163, 184, 0.25);
+      --border-row: rgba(31, 41, 55, 0.95);
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    html[data-theme="light"] {
+      --bg-deep: #f8fafc;
+      --bg-card: #ffffff;
+      --bg-hover: #f1f5f9;
+      --bg-input: #f1f5f9;
+      --bg-modal: #ffffff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --text-dim: #94a3b8;
+      --accent: #3b82f6;
+      --accent-title: #1e40af;
+      --border: rgba(148, 163, 184, 0.35);
+      --border-row: #e2e8f0;
+    }
+
+    * { box-sizing: border-box; margin: 0; }
+
+    body {
+      min-height: 100vh;
+      background: var(--bg-deep);
+      color: var(--text);
+      transition: background 0.3s, color 0.3s;
+      position: relative;
+    }
+
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background:
+        linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+      background-size: 64px 64px;
+      pointer-events: none; z-index: 0;
+    }
+
+    body::after {
+      content: '';
+      position: fixed; top: -150px; left: 50%;
+      transform: translateX(-50%);
+      width: 900px; height: 700px;
+      background: radial-gradient(ellipse, rgba(34, 197, 94, 0.06) 0%, rgba(59, 130, 246, 0.02) 40%, transparent 70%);
+      filter: blur(80px);
+      pointer-events: none; z-index: 0;
+    }
+
+    html[data-theme="light"] body::before {
+      background:
+        linear-gradient(rgba(0,0,0,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.04) 1px, transparent 1px);
+      background-size: 64px 64px;
+    }
+
+    html[data-theme="light"] body::after {
+      background: radial-gradient(ellipse, rgba(59, 130, 246, 0.06) 0%, rgba(139, 92, 246, 0.03) 40%, transparent 70%);
+    }
+
+    .card {
+      width: 100%;
+      min-height: 100vh;
+      background: transparent;
+      padding: 24px 32px 40px;
+      position: relative;
+      z-index: 1;
+    }
+
+    tbody tr { transition: background 0.2s; }
+
+    .inner { max-width: 1300px; margin: 0 auto; }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .logo-area { display: flex; align-items: center; gap: 12px; }
+
+    .logo {
+      width: 36px; height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6, #3b82f6);
+      background-size: 200% 200%;
+      animation: logoShimmer 6s ease infinite;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 0.75rem; color: #fff;
+      box-shadow: 0 2px 12px rgba(139, 92, 246, 0.3);
+    }
+
+    @keyframes logoShimmer {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+
+    .title { font-size: 1.2rem; font-weight: 700; color: var(--accent-title); }
+    .subtitle { font-size: 0.78rem; color: var(--text-muted); margin-top: 1px; }
+
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+
+    .btn {
+      border-radius: 8px; border: 1px solid var(--border);
+      background: transparent; color: var(--text); font-size: 0.8rem;
+      padding: 6px 12px; cursor: pointer; display: inline-flex;
+      align-items: center; gap: 6px; transition: all 0.2s; text-decoration: none;
+    }
+    .btn:hover { background: var(--bg-hover); }
+
+    .btn-danger {
+      border-color: rgba(239, 68, 68, 0.4); color: #fca5a5;
+    }
+    .btn-danger:hover { background: rgba(239, 68, 68, 0.15); }
+
+    .code { font-family: var(--mono); font-size: 0.8rem; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+
+    thead {
+      background: var(--bg-deep); position: sticky; top: 0; z-index: 2;
+    }
+
+    th, td {
+      padding: 10px 8px; text-align: left;
+      border-bottom: 1px solid var(--border-row); white-space: nowrap;
+    }
+
+    th {
+      font-weight: 500; font-size: 0.76rem; text-transform: uppercase;
+      letter-spacing: 0.04em; color: var(--text-muted);
+    }
+
+    tbody tr:hover { background: var(--bg-hover); }
+
+    .runtime-tag {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 500;
+    }
+
+    .runtime-icon {
+      width: 16px; height: 16px; border-radius: 4px;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 0.55rem; font-weight: 700; color: #fff; flex-shrink: 0;
+    }
+
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 10px; border-radius: 999px; font-size: 0.7rem; font-weight: 500;
+    }
+
+    .status-running {
+      background: rgba(34, 197, 94, 0.15); color: #86efac;
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+
+    .status-stopped {
+      background: rgba(100, 116, 139, 0.15); color: var(--text-muted);
+      border: 1px solid rgba(100, 116, 139, 0.3);
+    }
+
+    .path-ok { color: var(--text); }
+
+    .path-gone {
+      color: var(--red);
+      text-decoration: line-through;
+      opacity: 0.7;
+    }
+
+    .path-link {
+      font-family: var(--mono); font-size: 0.8rem;
+      cursor: pointer; border-bottom: 1px dashed var(--text-dim);
+      transition: color 0.2s; text-decoration: none;
+    }
+    .path-link:hover { color: var(--accent); }
+    .path-link.path-gone:hover { color: var(--red); cursor: not-allowed; }
+
+    .time-ago {
+      font-size: 0.75rem; color: var(--text-dim);
+    }
+
+    .empty {
+      text-align: center; padding: 40px 20px;
+      color: var(--text-dim); font-size: 0.9rem;
+    }
+
+    .search-filter-row {
+      display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center;
+    }
+
+    .search-box { flex: 1; min-width: 200px; position: relative; }
+
+    .search-input {
+      width: 100%;
+      padding: 8px 12px 8px 34px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg-input);
+      color: var(--text); font-size: 0.85rem; outline: none; transition: all 0.2s;
+    }
+    .search-input:focus { border-color: rgba(96, 165, 250, 0.6); }
+    .search-input::placeholder { color: var(--text-dim); }
+
+    .search-icon {
+      position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+      color: var(--text-dim); pointer-events: none;
+    }
+
+    .filter-group { display: flex; gap: 8px; align-items: center; }
+
+    .filter-select {
+      padding: 7px 30px 7px 10px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg-input);
+      color: var(--text); font-size: 0.8rem; cursor: pointer; outline: none;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239ca3af' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 8px center;
+    }
+
+    .clear-btn {
+      padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg-input); color: var(--text-muted); font-size: 0.8rem;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .clear-btn:hover { background: rgba(239, 68, 68, 0.15); color: #fca5a5; }
+
+    .result-info { font-size: 0.75rem; color: var(--text-muted); margin-left: auto; }
+
+    .stats-row {
+      display: flex; gap: 16px; align-items: center; margin-bottom: 16px; flex-wrap: wrap;
+    }
+
+    .stat { display: flex; align-items: baseline; gap: 6px; }
+    .stat-value { font-size: 1.2rem; font-weight: 600; }
+    .stat-label { font-size: 0.8rem; color: var(--text-muted); }
+
+    .toast {
+      position: fixed; bottom: 24px; right: 24px; padding: 10px 20px;
+      border-radius: 10px; font-size: 0.85rem; z-index: 200;
+      animation: fadeInUp 0.3s ease;
+    }
+    .toast-success { background: rgba(34,197,94,0.2); border: 1px solid rgba(34,197,94,0.4); color: #bbf7d0; }
+    .toast-warn { background: rgba(245,158,11,0.2); border: 1px solid rgba(245,158,11,0.4); color: #fef3c7; }
+
+    @keyframes fadeInUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+
+    .row-stopped { opacity: 0.65; }
+    .row-stopped:hover { opacity: 0.85; }
+
+    .actions-cell { position: relative; }
+
+    .actions-trigger {
+      padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border);
+      background: transparent; color: var(--text-muted); cursor: pointer;
+      font-size: 0.8rem; transition: all 0.2s;
+    }
+    .actions-trigger:hover { background: var(--bg-hover); color: var(--text); }
+
+    .actions-menu {
+      display: none; position: fixed; z-index: 999;
+      min-width: 200px; padding: 4px; border-radius: 10px;
+      background: var(--bg-modal); border: 1px solid var(--border);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    }
+    .actions-menu.open { display: block; }
+
+    .menu-backdrop {
+      display: none; position: fixed; inset: 0; z-index: 998;
+    }
+    .menu-backdrop.open { display: block; }
+
+    .actions-menu button {
+      width: 100%; padding: 8px 12px; border: none; background: transparent;
+      color: var(--text); font-size: 0.8rem; text-align: left; cursor: pointer;
+      border-radius: 6px; display: flex; align-items: center; gap: 8px;
+      transition: background 0.15s;
+    }
+    .actions-menu button:hover { background: var(--bg-hover); }
+    .actions-menu button.danger { color: #fca5a5; }
+    .actions-menu button.danger:hover { background: rgba(239,68,68,0.15); }
+
+    .actions-divider { height: 1px; background: var(--border-row); margin: 4px 0; }
+
+    .pro-tips {
+      margin-top: 16px; padding-top: 10px;
+      border-top: 1px solid var(--border-row);
+      display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+    }
+
+    .pro-tips span {
+      font-size: 0.7rem; color: var(--text-dim);
+    }
+
+    @media (max-width: 900px) {
+      .col-user { display: none; }
+    }
+    @media (max-width: 768px) {
+      .card { padding: 16px 14px; }
+      .col-cmd, .col-lastseen { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="inner">
+      <div class="card-header">
+        <div class="logo-area">
+          <div class="logo">DD</div>
+          <div>
+            <div class="title">Port History</div>
+            <div class="subtitle">All previously discovered dev processes</div>
+          </div>
+        </div>
+        <div class="header-actions">
+          <a href="/" class="btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+            Dashboard
+          </a>
+          <button class="btn btn-danger" id="clearAllBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            Clear All
+          </button>
+        </div>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat">
+          <span class="stat-value" id="runningCount">0</span>
+          <span class="stat-label">running</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value" id="stoppedCount" style="color:var(--text-muted);">0</span>
+          <span class="stat-label">stopped</span>
+        </div>
+      </div>
+
+      <div class="search-filter-row">
+        <div class="search-box">
+          <span class="search-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </span>
+          <input type="text" class="search-input" id="searchInput" placeholder="Search ports, PIDs, processes, paths... ( / )" />
+        </div>
+        <div class="filter-group">
+          <select class="filter-select" id="runtimeFilter"><option value="all">All Runtimes</option></select>
+          <select class="filter-select" id="statusFilter">
+            <option value="all">All Status</option>
+            <option value="running">Running</option>
+            <option value="stopped">Stopped</option>
+          </select>
+          <button class="clear-btn" id="clearFilters">Clear</button>
+        </div>
+        <div class="result-info" id="resultInfo"></div>
+      </div>
+
+      <div id="tableContainer">
+        <table>
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Port</th>
+              <th>PID / Last</th>
+              <th class="col-user">User</th>
+              <th class="col-cmd">Process</th>
+              <th>Runtime</th>
+              <th>Path</th>
+              <th class="col-lastseen">Last Seen</th>
+              <th style="text-align:right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+
+      <div class="empty" id="emptyState" style="display:none;">
+        No port history yet. Ports will be recorded as you use the dashboard.
+      </div>
+
+      <div class="pro-tips">
+        <span style="color:var(--accent);font-weight:500;">Pro tips</span>
+        <span>Click <strong style="color:var(--text-muted);">Port</strong> to open in browser</span>
+        <span>Click <strong style="color:var(--text-muted);">Path</strong> to open terminal</span>
+        <span style="width:1px;height:12px;background:var(--border);"></span>
+        <span><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">/</kbd> Search</span>
+        <span><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">D</kbd> Dashboard</span>
+        <span><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">Esc</kbd> Clear</span>
+      </div>
+    </div>
+  </div>
+  <div class="menu-backdrop" id="menuBackdrop"></div>
+  <div class="actions-menu" id="floatingMenu"></div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    let allEntries = [];
+
+    function showToast(msg, type = 'success') {
+      const t = document.createElement('div');
+      t.className = `toast toast-${type}`;
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 3000);
+    }
+
+    function timeAgo(dateStr) {
+      const diff = Date.now() - new Date(dateStr).getTime();
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'just now';
+      if (mins < 60) return `${mins}m ago`;
+      const hours = Math.floor(mins / 60);
+      if (hours < 24) return `${hours}h ago`;
+      const days = Math.floor(hours / 24);
+      if (days < 7) return `${days}d ago`;
+      return new Date(dateStr).toLocaleDateString();
+    }
+
+    async function openTerminal(dir) {
+      try {
+        const res = await fetch('/api/open-terminal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: dir }),
+        });
+        if (res.ok) showToast(`Terminal opened`);
+        else showToast('Failed to open terminal', 'warn');
+      } catch { showToast('Failed to open terminal', 'warn'); }
+    }
+
+    const menuBackdrop = $('menuBackdrop');
+    const floatingMenu = $('floatingMenu');
+
+    function closeMenus() {
+      floatingMenu.classList.remove('open');
+      floatingMenu.innerHTML = '';
+      menuBackdrop.classList.remove('open');
+    }
+
+    function toggleMenu(id, triggerEl) {
+      const sourceMenu = document.getElementById(`hmenu-${id}`);
+      if (!sourceMenu) return;
+
+      const wasOpen = floatingMenu.classList.contains('open');
+      closeMenus();
+      if (wasOpen) return;
+
+      // Clone menu content into the floating container on <body>
+      floatingMenu.innerHTML = sourceMenu.innerHTML;
+
+      const rect = triggerEl.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      if (spaceBelow < 150) {
+        floatingMenu.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+        floatingMenu.style.top = 'auto';
+      } else {
+        floatingMenu.style.top = (rect.bottom + 4) + 'px';
+        floatingMenu.style.bottom = 'auto';
+      }
+      floatingMenu.style.right = (window.innerWidth - rect.right) + 'px';
+      floatingMenu.style.left = 'auto';
+      floatingMenu.classList.add('open');
+      menuBackdrop.classList.add('open');
+    }
+
+    menuBackdrop.addEventListener('click', closeMenus);
+    floatingMenu.addEventListener('click', (e) => {
+      // Close menu after clicking any button inside it
+      if (e.target.closest('button')) {
+        setTimeout(closeMenus, 50);
+      }
+    });
+
+    async function startServer(port, dir) {
+      document.querySelectorAll('.actions-menu').forEach(m => m.classList.remove('open'));
+      try {
+        const res = await fetch('/api/start-server', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: dir, port }),
+        });
+        if (res.ok) {
+          showToast(`Starting server in ${dir.split('/').pop()}...`);
+          setTimeout(loadHistory, 2000);
+        } else {
+          const d = await res.json();
+          showToast(d.error || 'Failed to start', 'warn');
+        }
+      } catch { showToast('Failed to start server', 'warn'); }
+    }
+
+    async function removeFromHistory(port) {
+      if (!confirm(`Remove port ${port} from history?`)) return;
+      await fetch(`/api/history/${port}`, { method: 'DELETE' });
+      showToast(`Port ${port} removed`);
+      loadHistory();
+    }
+
+    async function clearAll() {
+      if (!confirm('Clear all port history?')) return;
+      await fetch('/api/history', { method: 'DELETE' });
+      showToast('History cleared');
+      loadHistory();
+    }
+
+    function updateFilters() {
+      const runtimes = new Set();
+      allEntries.forEach(e => { if (e.runtime) runtimes.add(e.runtime); });
+      const cur = $('runtimeFilter').value;
+      $('runtimeFilter').innerHTML = '<option value="all">All Runtimes</option>';
+      Array.from(runtimes).sort().forEach(rt => {
+        const opt = document.createElement('option');
+        opt.value = rt;
+        opt.textContent = allEntries.find(e => e.runtime === rt)?.runtimeName || rt;
+        $('runtimeFilter').appendChild(opt);
+      });
+      if (cur !== 'all' && runtimes.has(cur)) $('runtimeFilter').value = cur;
+    }
+
+    function renderTable() {
+      const term = $('searchInput').value.toLowerCase();
+      const rtFilter = $('runtimeFilter').value;
+      const statusFilter = $('statusFilter').value;
+      const tbody = $('tableBody');
+      tbody.innerHTML = '';
+
+      const filtered = allEntries.filter(e => {
+        const matchesSearch = !term ||
+          String(e.port || '').includes(term) ||
+          String(e.pid || '').toLowerCase().includes(term) ||
+          String(e.command || '').toLowerCase().includes(term) ||
+          String(e.runtimeName || '').toLowerCase().includes(term) ||
+          String(e.scriptPath || '').toLowerCase().includes(term) ||
+          String(e.user || '').toLowerCase().includes(term);
+
+        const matchesRuntime = rtFilter === 'all' || e.runtime === rtFilter;
+        const matchesStatus = statusFilter === 'all' ||
+          (statusFilter === 'running' && !e.stopped) ||
+          (statusFilter === 'stopped' && e.stopped);
+
+        return matchesSearch && matchesRuntime && matchesStatus;
+      });
+
+      // Result info
+      if (allEntries.length > 0 && filtered.length !== allEntries.length) {
+        $('resultInfo').textContent = `Showing ${filtered.length} of ${allEntries.length}`;
+      } else {
+        $('resultInfo').textContent = '';
+      }
+
+      if (filtered.length === 0) {
+        $('emptyState').style.display = 'block';
+        $('emptyState').textContent = (term || rtFilter !== 'all' || statusFilter !== 'all')
+          ? 'No entries match your filters.'
+          : 'No port history yet. Ports will be recorded as you use the dashboard.';
+        $('tableContainer').style.display = 'none';
+        return;
+      }
+
+      $('emptyState').style.display = 'none';
+      $('tableContainer').style.display = 'block';
+
+      filtered.forEach(e => {
+        const tr = document.createElement('tr');
+        if (e.stopped) tr.classList.add('row-stopped');
+
+        const pathClass = e.stopped && !e.pathExists ? 'path-gone' : 'path-ok';
+        const canOpenTerminal = !e.stopped || e.pathExists;
+
+        tr.innerHTML = `
+          <td>
+            <span class="status-badge ${e.stopped ? 'status-stopped' : 'status-running'}">
+              <span style="width:6px;height:6px;border-radius:50%;background:${e.stopped ? 'var(--text-dim)' : 'var(--green)'};"></span>
+              ${e.stopped ? 'Stopped' : 'Running'}
+            </span>
+          </td>
+          <td>${e.port
+            ? `<a href="http://localhost:${e.port}" target="_blank" class="code" style="color:var(--accent);text-decoration:none;">${e.port}</a>`
+            : '<span class="code">&mdash;</span>'
+          }</td>
+          <td><span class="code" style="color:var(--text-muted);">${e.stopped ? '\u2014' : e.pid}</span></td>
+          <td class="col-user">${e.user || '\u2014'}</td>
+          <td class="col-cmd"><span class="code">${e.command || '\u2014'}</span></td>
+          <td>
+            <span class="runtime-tag" style="background:${e.runtimeColor}18;color:${e.runtimeColor};border:1px solid ${e.runtimeColor}40;">
+              <span class="runtime-icon" style="background:${e.runtimeColor}">${e.runtimeIcon || '?'}</span>
+              ${e.runtimeName}
+            </span>
+          </td>
+          <td>${e.scriptPath
+            ? (canOpenTerminal
+              ? `<span class="path-link ${pathClass}" onclick="openTerminal('${e.scriptPath.replace(/'/g, "\\'")}')" title="${e.pathExists === false ? 'Path no longer exists' : 'Click to open terminal'}">${e.scriptPath}</span>`
+              : `<span class="code ${pathClass}" title="Path no longer exists">${e.scriptPath}</span>`)
+            : '<span class="code">\u2014</span>'
+          }</td>
+          <td class="col-lastseen"><span class="time-ago" title="${e.lastSeen || ''}">${e.lastSeen ? timeAgo(e.lastSeen) : '\u2014'}</span></td>
+          <td class="actions-cell" style="text-align:right;">
+            <button class="actions-trigger" onclick="event.stopPropagation();toggleMenu('${e.port}-${e.stopped?'s':'r'}',this)">
+              \u22EF
+            </button>
+            <div class="actions-menu" id="hmenu-${e.port}-${e.stopped?'s':'r'}">
+              ${e.stopped && e.scriptPath && e.pathExists !== false ? `<button onclick="startServer(${e.port},'${e.scriptPath.replace(/'/g, "\\'")}')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                Start server
+              </button>` : ''}
+              ${!e.stopped ? `<button disabled style="opacity:0.4;cursor:default;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                Already running
+              </button>` : ''}
+              ${e.stopped ? `
+                <div class="actions-divider"></div>
+                <button class="danger" onclick="removeFromHistory(${e.port})">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  Remove
+                </button>` : ''}
+            </div>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function loadHistory() {
+      try {
+        const res = await fetch('/api/ports');
+        const data = await res.json();
+
+        const running = (data.ports || []).map(p => ({
+          ...p,
+          stopped: false,
+          pathExists: true,
+          lastSeen: data.timestamp,
+        }));
+
+        const stopped = (data.history || []);
+
+        // Running first, then stopped sorted by lastSeen desc
+        allEntries = [
+          ...running.sort((a, b) => (a.port || 0) - (b.port || 0)),
+          ...stopped.sort((a, b) => (b.lastSeen || '').localeCompare(a.lastSeen || '')),
+        ];
+
+        $('runningCount').textContent = running.length;
+        $('stoppedCount').textContent = stopped.length;
+
+        updateFilters();
+        renderTable();
+      } catch (err) {
+        console.error('Failed to load history', err);
+      }
+    }
+
+    // Events
+    $('searchInput').addEventListener('input', renderTable);
+    $('runtimeFilter').addEventListener('change', renderTable);
+    $('statusFilter').addEventListener('change', renderTable);
+    $('clearFilters').addEventListener('click', () => {
+      $('searchInput').value = '';
+      $('runtimeFilter').value = 'all';
+      $('statusFilter').value = 'all';
+      renderTable();
+    });
+    $('clearAllBtn').addEventListener('click', clearAll);
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') {
+        if (e.key === 'Escape') { e.target.blur(); closeMenus(); }
+        return;
+      }
+      switch (e.key) {
+        case '/': e.preventDefault(); $('searchInput').focus(); break;
+        case 'd': window.location.href = '/'; break;
+        case 'Escape':
+          closeMenus();
+          $('searchInput').value = '';
+          $('runtimeFilter').value = 'all';
+          $('statusFilter').value = 'all';
+          renderTable();
+          break;
+      }
+    });
+
+    // Init
+    (async function init() {
+      try {
+        const stRes = await fetch('/api/settings');
+        const settings = await stRes.json();
+        if (settings.theme) {
+          document.documentElement.setAttribute('data-theme', settings.theme);
+        }
+      } catch {}
+      loadHistory();
+    })();
+  </script>
+</body>
+</html>

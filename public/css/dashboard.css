@@ -293,6 +293,24 @@
 
     .section-collapsible .section-chevron.open { transform: rotate(90deg); }
 
+    .usage-cell {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .usage-bar {
+      display: inline-block;
+      height: 4px;
+      border-radius: 2px;
+      vertical-align: middle;
+      margin-right: 4px;
+      min-width: 2px;
+      max-width: 40px;
+      transition: width 0.3s, background 0.3s;
+    }
+
     /* ── Runtime badge ──────────────────────── */
     .runtime-tag {
       display: inline-flex; align-items: center; gap: 5px;

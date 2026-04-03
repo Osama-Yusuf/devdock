@@ -236,6 +236,19 @@ function getAllPorts() {
           });
         });
 
+        // Get CPU & memory usage via ps
+        const usage = await new Promise(resolve2 => {
+          exec(`ps -p ${pid} -o %cpu=,%mem=,rss=`, (err2, out2) => {
+            if (err2 || !out2) return resolve2({ cpu: 0, mem: 0, rss: 0 });
+            const parts2 = out2.trim().split(/\s+/);
+            resolve2({
+              cpu: parseFloat(parts2[0]) || 0,
+              mem: parseFloat(parts2[1]) || 0,
+              rss: parseInt(parts2[2]) || 0, // KB
+            });
+          });
+        });
+
         const runtimeInfo = RUNTIMES[runtime];
         const isFavorite = settings.favorites.includes(port);
 
@@ -250,6 +263,9 @@ function getAllPorts() {
           runtimeIcon: runtimeInfo.icon,
           scriptPath: cwdPath,
           favorite: isFavorite,
+          cpu: usage.cpu,
+          mem: usage.mem,
+          rss: usage.rss,
         });
       }
 

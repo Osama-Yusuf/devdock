@@ -699,6 +699,7 @@ $('settingsBtn').addEventListener('click', openSettings);
         case '/': e.preventDefault(); searchInput.focus(); break;
         case 's': openSettings(); break;
         case 'g': $('groupToggle').click(); break;
+        case 'h': window.location.href = '/history'; break;
         case 'e': $('exportBtn').click(); break;
         case 't': $('themeToggle').click(); break;
         case 'Escape': closeSettings(); $('exportMenu').classList.remove('open'); break;

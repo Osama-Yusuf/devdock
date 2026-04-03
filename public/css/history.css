@@ -101,12 +101,14 @@
     .logo {
       width: 36px; height: 36px;
       border-radius: 10px;
-      background: linear-gradient(135deg, #3b82f6, #8b5cf6, #3b82f6);
-      background-size: 200% 200%;
-      animation: logoShimmer 6s ease infinite;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
       display: flex; align-items: center; justify-content: center;
-      font-weight: 700; font-size: 0.75rem; color: #fff;
-      box-shadow: 0 2px 12px rgba(139, 92, 246, 0.3);
+    }
+
+    html[data-theme="light"] .logo {
+      background: rgba(0, 0, 0, 0.05);
+      border-color: rgba(0, 0, 0, 0.08);
     }
 
     @keyframes logoShimmer {
@@ -334,6 +336,26 @@
 
     .pro-tips span {
       font-size: 0.7rem; color: var(--text-dim);
+    }
+
+    .skeleton-row td { padding: 12px 6px; }
+
+    .skeleton-bar {
+      height: 14px;
+      border-radius: 6px;
+      background: linear-gradient(90deg, var(--bg-hover) 25%, rgba(255,255,255,0.04) 50%, var(--bg-hover) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s ease-in-out infinite;
+    }
+
+    html[data-theme="light"] .skeleton-bar {
+      background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+      background-size: 200% 100%;
+    }
+
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
     }
 
     @media (max-width: 900px) {

@@ -12,7 +12,14 @@
       <!-- Header -->
       <div class="card-header">
         <div class="logo-area">
-          <div class="logo">DD</div>
+          <div class="logo">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <rect x="3" y="4" width="12" height="2.5" rx="1.2" fill="#fff" opacity="0.9"/>
+              <rect x="3" y="9" width="18" height="2.5" rx="1.2" fill="#22c55e"/>
+              <rect x="3" y="14" width="8" height="2.5" rx="1.2" fill="#fff" opacity="0.4"/>
+              <rect x="3" y="19" width="14" height="2.5" rx="1.2" fill="#fff" opacity="0.2"/>
+            </svg>
+          </div>
           <div>
             <div class="title">DevDock</div>
             <div class="subtitle">All your dev processes, one dashboard</div>
@@ -111,7 +118,11 @@
               <th style="text-align:right;">Actions</th>
             </tr>
           </thead>
-          <tbody id="tableBody"></tbody>
+          <tbody id="tableBody">
+            <tr class="skeleton-row"><td><div class="skeleton-bar" style="width:16px"></div></td><td><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:10px;border-radius:50%"></div></td><td><div class="skeleton-bar" style="width:48px"></div></td><td class="col-user"><div class="skeleton-bar" style="width:70px"></div></td><td class="col-cmd"><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:72px"></div></td><td class="col-path"><div class="skeleton-bar" style="width:180px"></div></td><td><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:50px"></div></td><td><div class="skeleton-bar" style="width:24px"></div></td></tr>
+            <tr class="skeleton-row"><td><div class="skeleton-bar" style="width:16px"></div></td><td><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:10px;border-radius:50%"></div></td><td><div class="skeleton-bar" style="width:48px"></div></td><td class="col-user"><div class="skeleton-bar" style="width:70px"></div></td><td class="col-cmd"><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:72px"></div></td><td class="col-path"><div class="skeleton-bar" style="width:140px"></div></td><td><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:50px"></div></td><td><div class="skeleton-bar" style="width:24px"></div></td></tr>
+            <tr class="skeleton-row"><td><div class="skeleton-bar" style="width:16px"></div></td><td><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:10px;border-radius:50%"></div></td><td><div class="skeleton-bar" style="width:48px"></div></td><td class="col-user"><div class="skeleton-bar" style="width:70px"></div></td><td class="col-cmd"><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:72px"></div></td><td class="col-path"><div class="skeleton-bar" style="width:160px"></div></td><td><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:50px"></div></td><td><div class="skeleton-bar" style="width:24px"></div></td></tr>
+          </tbody>
         </table>
       </div>
 
@@ -127,6 +138,7 @@
         <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">/</kbd> Search</span>
         <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">S</kbd> Settings</span>
         <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">G</kbd> Group</span>
+        <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">H</kbd> History</span>
         <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">T</kbd> Theme</span>
       </div>
     </div>

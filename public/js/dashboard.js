@@ -319,10 +319,8 @@
 
     function rowKey(p) { return `${p.pid}:${p.port}`; }
 
-    function formatMem(kb) {
-      if (!kb || kb === 0) return '0';
-      if (kb < 1024) return kb + ' KB';
-      const mb = kb / 1024;
+    function formatMem(mb) {
+      if (!mb || mb === 0) return '0 MB';
       if (mb < 1024) return mb.toFixed(1) + ' MB';
       return (mb / 1024).toFixed(1) + ' GB';
     }
@@ -359,8 +357,8 @@
         <td class="usage-cell" title="CPU: ${p.cpu || 0}%">
           <span class="usage-bar" style="width:${Math.min(p.cpu || 0, 100) * 0.4}px;background:${usageColor(p.cpu || 0, 100)};"></span>${(p.cpu || 0).toFixed(1)}%
         </td>
-        <td class="usage-cell" title="RSS: ${formatMem(p.rss || 0)}">
-          <span class="usage-bar" style="width:${Math.min(((p.rss || 0) / 1024) * 0.08, 40)}px;background:${usageColor((p.rss || 0) / 1024, 500)};"></span>${formatMem(p.rss || 0)}
+        <td class="usage-cell" title="Memory: ${formatMem(p.memMB || 0)}">
+          <span class="usage-bar" style="width:${Math.min((p.memMB || 0) * 0.08, 40)}px;background:${usageColor(p.memMB || 0, 500)};"></span>${formatMem(p.memMB || 0)}
         </td>
         <td class="actions-cell" style="text-align:right;">
           <button class="actions-trigger" onclick="event.stopPropagation();toggleActionsMenu('${uid}',this)">
@@ -391,7 +389,7 @@
 
     // Fingerprint a port entry for change detection
     function portFingerprint(p) {
-      return `${p.pid}|${p.port}|${p.user}|${p.command}|${p.runtime}|${p.scriptPath}|${p.favorite}|${(p.cpu||0).toFixed(1)}|${p.rss||0}`;
+      return `${p.pid}|${p.port}|${p.user}|${p.command}|${p.runtime}|${p.scriptPath}|${p.favorite}|${(p.cpu||0).toFixed(1)}|${p.memMB||0}`;
     }
 
     let lastFingerprints = {};

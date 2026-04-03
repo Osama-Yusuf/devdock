@@ -193,6 +193,51 @@ function getAllPorts() {
     exec(cmd, async (err, stdout) => {
       if (err || !stdout.trim()) return resolve([]);
 
+      // Batch fetch memory from top (matches Activity Monitor)
+      // and CPU from ps (top -l 1 always shows 0% CPU, needs 2 samples)
+      const [memMap, cpuMap] = await Promise.all([
+        new Promise(resolve2 => {
+          exec('top -l 1 -stats pid,mem', (err2, out2) => {
+            const map = {};
+            if (err2 || !out2) return resolve2(map);
+            out2.trim().split('\n').slice(12).forEach(line => {
+              const parts = line.trim().split(/\s+/);
+              if (parts.length >= 2 && /^\d+$/.test(parts[0])) {
+                const memStr = parts[1];
+                let memMB = 0;
+                const match = memStr.match(/^([\d.]+)([KMG]?)$/i);
+                if (match) {
+                  const val = parseFloat(match[1]);
+                  const unit = (match[2] || '').toUpperCase();
+                  if (unit === 'K') memMB = val / 1024;
+                  else if (unit === 'G') memMB = val * 1024;
+                  else memMB = val;
+                }
+                map[parts[0]] = Math.round(memMB * 10) / 10;
+              }
+            });
+            resolve2(map);
+          });
+        }),
+        new Promise(resolve2 => {
+          exec('ps -eo pid,%cpu', (err2, out2) => {
+            const map = {};
+            if (err2 || !out2) return resolve2(map);
+            out2.trim().split('\n').slice(1).forEach(line => {
+              const parts = line.trim().split(/\s+/);
+              if (parts.length >= 2) {
+                map[parts[0]] = parseFloat(parts[1]) || 0;
+              }
+            });
+            resolve2(map);
+          });
+        }),
+      ]);
+      const usageMap = {};
+      for (const pid of new Set([...Object.keys(memMap), ...Object.keys(cpuMap)])) {
+        usageMap[pid] = { cpu: cpuMap[pid] || 0, memMB: memMap[pid] || 0 };
+      }
+
       const lines = stdout.trim().split('\n');
       const settings = loadSettings();
       const results = [];
@@ -236,19 +281,7 @@ function getAllPorts() {
           });
         });
 
-        // Get CPU & memory usage via ps
-        const usage = await new Promise(resolve2 => {
-          exec(`ps -p ${pid} -o %cpu=,%mem=,rss=`, (err2, out2) => {
-            if (err2 || !out2) return resolve2({ cpu: 0, mem: 0, rss: 0 });
-            const parts2 = out2.trim().split(/\s+/);
-            resolve2({
-              cpu: parseFloat(parts2[0]) || 0,
-              mem: parseFloat(parts2[1]) || 0,
-              rss: parseInt(parts2[2]) || 0, // KB
-            });
-          });
-        });
-
+        const usage = usageMap[pid] || { cpu: 0, memMB: 0 };
         const runtimeInfo = RUNTIMES[runtime];
         const isFavorite = settings.favorites.includes(port);
 
@@ -264,8 +297,7 @@ function getAllPorts() {
           scriptPath: cwdPath,
           favorite: isFavorite,
           cpu: usage.cpu,
-          mem: usage.mem,
-          rss: usage.rss,
+          memMB: usage.memMB,
         });
       }
 

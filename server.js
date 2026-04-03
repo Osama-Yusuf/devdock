@@ -3,9 +3,12 @@ const { exec } = require('child_process');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
+const { WebSocketServer } = require('ws');
 
 const app = express();
 const PORT = 4003;
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
@@ -136,8 +139,8 @@ function getDefaultSettings() {
   }
   return {
     runtimes,
-    refreshInterval: 5000,
     showOtherProcesses: false,
+    showExport: false,
     favorites: [],
     theme: 'dark',
     notifications: true,
@@ -556,6 +559,58 @@ app.get('/api/runtimes', (req, res) => {
   res.json(runtimes);
 });
 
-app.listen(PORT, () => {
+// ── WebSocket broadcast ──────────────────────────────────────────────
+async function broadcastPorts() {
+  if (wss.clients.size === 0) return;
+
+  try {
+    const ports = await getAllPorts();
+    const settings = loadSettings();
+    const now = new Date().toISOString();
+
+    // Update history
+    const historyMap = {};
+    (settings.history || []).forEach(h => { historyMap[`${h.port}:${h.scriptPath}`] = h; });
+    ports.forEach(p => {
+      historyMap[`${p.port}:${p.scriptPath}`] = {
+        port: p.port, command: p.command, user: p.user, runtime: p.runtime,
+        runtimeName: p.runtimeName, runtimeColor: p.runtimeColor,
+        runtimeIcon: p.runtimeIcon, scriptPath: p.scriptPath, lastSeen: now,
+      };
+    });
+    settings.history = Object.values(historyMap)
+      .sort((a, b) => b.lastSeen.localeCompare(a.lastSeen)).slice(0, 50);
+    saveSettings(settings);
+
+    const runningKeys = new Set(ports.map(p => `${p.port}:${p.scriptPath}`));
+    const history = settings.showHistory !== false
+      ? settings.history
+          .filter(h => !runningKeys.has(`${h.port}:${h.scriptPath}`))
+          .map(h => ({
+            ...h, stopped: true,
+            pathExists: h.scriptPath ? fs.existsSync(h.scriptPath) : false,
+            favorite: settings.favorites.includes(h.port),
+          }))
+      : [];
+
+    const payload = JSON.stringify({
+      type: 'ports',
+      timestamp: now,
+      count: ports.length,
+      ports,
+      history,
+    });
+
+    wss.clients.forEach(client => {
+      if (client.readyState === 1) client.send(payload);
+    });
+  } catch (err) {
+    console.error('Broadcast error:', err);
+  }
+}
+
+setInterval(broadcastPorts, 3000);
+
+server.listen(PORT, () => {
   console.log(`\n  DevDock is running at http://localhost:${PORT}\n`);
 });

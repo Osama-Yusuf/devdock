@@ -19,9 +19,8 @@
           </div>
         </div>
         <div class="header-actions">
-          <div class="badge"><span class="badge-dot"></span> Live</div>
+          <div class="badge" title="Real-time updates via WebSocket"><span class="badge-dot"></span> Live</div>
 
-          <button class="btn" id="refreshBtn"><span class="status-dot"></span> Refresh</button>
 
           <!-- History -->
           <button class="btn-icon" id="historyBtn" title="Port history" onclick="window.location.href='/history'">
@@ -77,7 +76,6 @@
           </div>
           <div class="runtime-pills" id="runtimePills"></div>
         </div>
-        <div class="updated" id="updatedAt">Last updated: &mdash;</div>
       </div>
 
       <!-- Search & filter -->
@@ -127,10 +125,8 @@
         <span style="font-size:0.7rem;color:var(--text-dim);">Click <strong style="color:var(--text-muted);">Path</strong> to open terminal</span>
         <span style="width:1px;height:12px;background:var(--border);"></span>
         <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">/</kbd> Search</span>
-        <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">R</kbd> Refresh</span>
         <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">S</kbd> Settings</span>
         <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">G</kbd> Group</span>
-        <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">E</kbd> Export</span>
         <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">T</kbd> Theme</span>
       </div>
     </div>
@@ -192,22 +188,16 @@
         <div class="settings-section">
           <div class="section-title">General</div>
           <div class="settings-row">
-            <div><label>Auto-refresh interval</label><div class="sub">How often to scan for processes</div></div>
-            <select class="refresh-select" id="refreshInterval">
-              <option value="2000">2s</option>
-              <option value="5000">5s</option>
-              <option value="10000">10s</option>
-              <option value="30000">30s</option>
-              <option value="60000">1m</option>
-            </select>
-          </div>
-          <div class="settings-row">
             <div><label>Show unrecognized processes</label><div class="sub">Display processes that don't match any known runtime</div></div>
             <label class="toggle"><input type="checkbox" id="showOther" /><span class="toggle-slider"></span></label>
           </div>
           <div class="settings-row">
             <div><label>Desktop notifications</label><div class="sub">Notify when ports come up or go down</div></div>
             <label class="toggle"><input type="checkbox" id="notificationsToggle" /><span class="toggle-slider"></span></label>
+          </div>
+          <div class="settings-row">
+            <div><label>Show export button</label><div class="sub">Enable export to Markdown, JSON, CSV</div></div>
+            <label class="toggle"><input type="checkbox" id="showExportToggle" /><span class="toggle-slider"></span></label>
           </div>
         </div>
 

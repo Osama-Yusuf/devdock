@@ -2,7 +2,6 @@
     const $ = id => document.getElementById(id);
     const tableBody = $('tableBody');
     const countEl = $('count');
-    const updatedAtEl = $('updatedAt');
     const emptyStateEl = $('emptyState');
     const searchInput = $('searchInput');
     const runtimeFilter = $('runtimeFilter');
@@ -17,7 +16,7 @@
     let sortDirection = 'asc';
     let runtimeDefs = {};
     let currentSettings = {};
-    let refreshTimer = null;
+    let ws = null;
     let groupByProject = false;
     let groupingDepth = 1;
     let openMenuId = null;
@@ -150,6 +149,11 @@
     }
 
     // ── Export ────────────────────────────────────────────────────────
+    function updateExportVisibility(show) {
+      const wrapper = $('exportBtn')?.closest('.export-wrapper');
+      if (wrapper) wrapper.style.display = show ? '' : 'none';
+    }
+
     function exportAs(format) {
       const data = getFilteredAndSortedPorts();
       let output = '';
@@ -505,30 +509,48 @@
     }
 
     // ── Load ports ───────────────────────────────────────────────────
-    async function loadPorts(force) {
-      // Skip re-render if an actions menu is open (poll would close it)
-      if (!force && isAnyMenuOpen()) return;
+    function handlePortsData(data) {
+      if (isAnyMenuOpen()) return;
 
+      previousPorts = [...allPorts];
+      allPorts = data.ports || [];
+
+      countEl.textContent = allPorts.length;
+
+      checkNotifications();
+      updateFilters();
+      updateRuntimePills();
+      renderTable();
+      loadHealth();
+    }
+
+    async function loadPorts(force) {
       try {
         const res = await fetch('/api/ports');
         const data = await res.json();
-        previousPorts = [...allPorts];
-        allPorts = data.ports || [];
-
-        countEl.textContent = allPorts.length;
-        updatedAtEl.textContent = 'Last updated: ' + new Date(data.timestamp || Date.now()).toLocaleTimeString();
-
-        checkNotifications();
-        updateFilters();
-        updateRuntimePills();
-        renderTable();
-
-        // Load health in background
-        loadHealth();
+        handlePortsData(data);
       } catch (err) {
         console.error('Failed to load ports', err);
-        updatedAtEl.textContent = 'Error loading \u2013 check server logs.';
       }
+    }
+
+    function connectWebSocket() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${location.host}`);
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'ports') handlePortsData(data);
+        } catch {}
+      };
+
+      ws.onclose = () => {
+        // Reconnect after 2s
+        setTimeout(connectWebSocket, 2000);
+      };
+
+      ws.onerror = () => ws.close();
     }
 
     // ── Settings modal ───────────────────────────────────────────────
@@ -537,11 +559,11 @@
       currentSettings = await sRes.json();
       runtimeDefs = await rRes.json();
 
-      $('refreshInterval').value = String(currentSettings.refreshInterval || 5000);
       $('showOther').checked = currentSettings.showOtherProcesses || false;
       $('notificationsToggle').checked = currentSettings.notifications !== false;
       $('groupingDepth').value = String(currentSettings.groupingDepth ?? 1);
       $('showHistoryToggle').checked = currentSettings.showHistory !== false;
+      $('showExportToggle').checked = currentSettings.showExport || false;
 
       const container = $('runtimeToggles');
       container.innerHTML = '';
@@ -584,11 +606,11 @@
 
       const body = {
         runtimes,
-        refreshInterval: parseInt($('refreshInterval').value),
         showOtherProcesses: $('showOther').checked,
         notifications: notifs,
         groupingDepth: newDepth,
         showHistory: $('showHistoryToggle').checked,
+        showExport: $('showExportToggle').checked,
       };
 
       await fetch('/api/settings', {
@@ -598,15 +620,10 @@
       });
 
       currentSettings = { ...currentSettings, ...body };
-      setupRefreshTimer(body.refreshInterval);
+      updateExportVisibility(body.showExport);
       closeSettings();
       showToast('Settings saved');
-      loadPorts();
-    }
-
-    function setupRefreshTimer(interval) {
-      if (refreshTimer) clearInterval(refreshTimer);
-      refreshTimer = setInterval(loadPorts, interval);
+      loadPorts(true);
     }
 
     // ── Group toggle ─────────────────────────────────────────────────
@@ -618,16 +635,21 @@
     });
 
     // ── Event listeners ──────────────────────────────────────────────
-    searchInput.addEventListener('input', renderTable);
-    runtimeFilter.addEventListener('change', renderTable);
+    function updateClearBtn() {
+      clearBtn.style.display = (searchInput.value || runtimeFilter.value !== 'all') ? '' : 'none';
+    }
+    updateClearBtn();
+
+    searchInput.addEventListener('input', () => { renderTable(); updateClearBtn(); });
+    runtimeFilter.addEventListener('change', () => { renderTable(); updateClearBtn(); });
     clearBtn.addEventListener('click', () => {
       searchInput.value = '';
       runtimeFilter.value = 'all';
       renderTable();
+      updateClearBtn();
     });
 
-    $('refreshBtn').addEventListener('click', () => loadPorts(true));
-    $('settingsBtn').addEventListener('click', openSettings);
+$('settingsBtn').addEventListener('click', openSettings);
     $('modalClose').addEventListener('click', closeSettings);
     $('settingsCancel').addEventListener('click', closeSettings);
     $('settingsSave').addEventListener('click', saveSettings);
@@ -675,7 +697,6 @@
       }
       switch (e.key) {
         case '/': e.preventDefault(); searchInput.focus(); break;
-        case 'r': loadPorts(true); break;
         case 's': openSettings(); break;
         case 'g': $('groupToggle').click(); break;
         case 'e': $('exportBtn').click(); break;
@@ -692,8 +713,9 @@
 
       setTheme(currentSettings.theme || 'dark');
       groupingDepth = currentSettings.groupingDepth ?? 1;
-      setupRefreshTimer(currentSettings.refreshInterval || 5000);
       if (currentSettings.notifications) requestNotificationPermission();
+      updateExportVisibility(currentSettings.showExport);
 
       loadPorts();
+      connectWebSocket();
     })();

@@ -8,14 +8,15 @@ A sleek, real-time dashboard to monitor, manage, and control all dev processes l
 
 - **Multi-runtime detection** — Node.js, Python, Ruby, Java, Go, PHP, Rust, .NET, Docker, Nginx, Apache, PostgreSQL, MySQL, Redis, MongoDB
 - **Health checks** — Green/yellow/red status dots showing if each port actually responds
-- **Settings page** — Toggle runtimes on/off, configure refresh interval, grouping depth, notifications
+- **WebSocket real-time push** — Live updates via WebSocket, no polling
+- **Settings page** — Toggle runtimes on/off, grouping depth, notifications, export
 - **Port history** — Browse previously discovered ports at `/history`, start stopped servers, remove entries
 - **Favorites** — Pin important ports to the top of the table
 - **Dark/light theme** — Toggle with persistence
 - **Process grouping** — Group ports by parent project directory with configurable depth
 - **Desktop notifications** — Get notified when ports come up or go down
 - **Export** — Copy port list as Markdown, JSON, or CSV
-- **Keyboard shortcuts** — `/` search, `R` refresh, `S` settings, `G` group, `E` export, `T` theme
+- **Keyboard shortcuts** — `/` search, `S` settings, `G` group, `T` theme
 - **CPU/Memory usage** — Live CPU% and RSS memory per process with inline usage bars
 - **Quick actions** — Restart (SIGHUP) or kill any process from the dropdown menu
 - **Clickable everything** — Port opens browser, PID copies to clipboard, Path opens terminal
@@ -43,7 +44,6 @@ Open [http://localhost:4003](http://localhost:4003)
 Settings persist to `devdock-settings.json` (gitignored). Configurable via the gear icon or `S` key:
 
 - **Runtime toggles** — Enable/disable detection per runtime
-- **Refresh interval** — 2s, 5s, 10s, 30s, or 1m
 - **Grouping depth** — How many path segments to trim for project grouping
 - **Show unrecognized processes** — Catch-all for unknown runtimes
 - **Desktop notifications** — Browser notifications on port up/down
@@ -51,9 +51,11 @@ Settings persist to `devdock-settings.json` (gitignored). Configurable via the g
 
 ## Tech Stack
 
-- **Backend** — Node.js + Express
+- **Backend** — Node.js + Express + WebSocket (ws)
 - **Frontend** — Vanilla HTML/CSS/JS (no build step, no frameworks)
+- **Real-time** — WebSocket push from server every 3s
 - **Port detection** — `lsof` (macOS/Linux)
+- **Resource monitoring** — `top` for memory (matches Activity Monitor), `ps` for CPU
 - **Health checks** — HTTP GET to each port
 - **Terminal integration** — Opens Terminal.app via AppleScript (macOS)
 

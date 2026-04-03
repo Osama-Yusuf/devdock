@@ -16,7 +16,6 @@ A sleek, real-time dashboard to monitor, manage, and control all dev processes l
 - **Desktop notifications** — Get notified when ports come up or go down
 - **Export** — Copy port list as Markdown, JSON, or CSV
 - **Keyboard shortcuts** — `/` search, `R` refresh, `S` settings, `G` group, `E` export, `T` theme
-- **DOM reconciliation** — No flicker on poll updates, only changed rows get patched
 - **Quick actions** — Restart (SIGHUP) or kill any process from the dropdown menu
 - **Clickable everything** — Port opens browser, PID copies to clipboard, Path opens terminal
 

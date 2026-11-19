@@ -24,9 +24,9 @@ const SERVERS = [
   { port: 8000, pid: 23117, ppid: 1, runtime: 'python', procName: 'uvicorn', version: '3.12.7',
     path: 'code/billing', branch: 'feat/invoices', orphan: true, cpu: 0, memMB: 96, up: 3 * day, idleFor: 3 * day, health: 'healthy' },
   { port: 5173, pid: 30552, ppid: 30410, runtime: 'node', procName: 'vite', version: '22.11.0',
-    path: 'code/docs', branch: 'main', cpu: 0, memMB: 142, up: 2 * day, idleFor: 2 * day, health: 'healthy' },
+    path: 'code/docs', branch: 'main', tmux: { session: 'docs', target: 'docs:0.0' }, cpu: 0, memMB: 142, up: 2 * day, idleFor: 2 * day, health: 'healthy' },
   { port: 8080, pid: 38804, ppid: 38790, runtime: 'go', procName: 'mobile-api', version: '1.23.2',
-    path: 'code/mobile-api', branch: 'main', cpu: 1.2, memMB: 38, up: 3 * hour, health: 'healthy' },
+    path: 'code/mobile-api', branch: 'main', tmux: { session: 'api', target: 'api:1.0' }, cpu: 1.2, memMB: 38, up: 3 * hour, health: 'healthy' },
   { port: 5432, pid: 901, ppid: 812, runtime: 'postgres', procName: 'postgres', version: '16.4',
     path: null, appName: 'Postgres', launcher: postgresApp, cpu: 0.1, memMB: 74, up: 5 * day, health: 'unreachable' },
 ];
@@ -42,7 +42,7 @@ function demoPorts(RUNTIMES) {
       favorite: !!s.favorite, cpu: s.cpu, memMB: s.memMB,
       startedAt: now - s.up, exePath: null, version: s.version, procName: s.procName,
       launcher: s.launcher || null, appName: s.appName || null, orphan: !!s.orphan,
-      branch: s.branch || null, github: s.path?.startsWith('code/storefront') ? 'https://github.com/acme/storefront' : null, ppid: String(s.ppid),
+      branch: s.branch || null, github: s.path?.startsWith('code/storefront') ? 'https://github.com/acme/storefront' : null, ppid: String(s.ppid), tmux: s.tmux || null,
       lastActive: now - (s.idleFor || 0), idle: !!s.idleFor,
       _health: s.health,
     };

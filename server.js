@@ -14,7 +14,7 @@ const wss = new WebSocketServer({ server });
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 // demo pids are made up and may match real processes: never act on them
-if (DEMO) app.use(/^\/api\/(kill|restart|logs|start-server)/, (req, res) => res.status(403).json({ error: 'Disabled in demo mode' }));
+if (DEMO) app.use(/^\/api\/(kill|restart|logs|start-server|tmux)/, (req, res) => res.status(403).json({ error: 'Disabled in demo mode' }));
 
 // ── Runtime definitions ──────────────────────────────────────────────
 const RUNTIMES = {
@@ -383,8 +383,14 @@ async function getAllPorts() {
   }
   // One spawn for everything: on some Macs each spawn costs ~80ms and blocks the event loop.
   // lstart is fixed-format in the C locale ("Thu Nov 19 07:10:16 2026"), comm comes last (may contain spaces).
-  const out = await sh(`lsof -iTCP -sTCP:LISTEN -P -n; echo ${SPLIT}; LC_ALL=C ps -axo pid=,ppid=,%cpu=,rss=,time=,lstart=,comm=`);
-  const [lsofOut, psOut = ''] = out.split(SPLIT + '\n');
+  // tmux session names can't contain ':' or '.', so the session goes last
+  const out = await sh(`lsof -iTCP -sTCP:LISTEN -P -n; echo ${SPLIT}; LC_ALL=C ps -axo pid=,ppid=,%cpu=,rss=,time=,lstart=,comm=; echo ${SPLIT}; tmux list-panes -a -F '#{pane_pid}:#{window_index}:#{pane_index}:#{session_name}' 2>/dev/null`);
+  const [lsofOut, psOut = '', tmuxOut = ''] = out.split(SPLIT + '\n');
+  const panes = {}; // shell pid of each tmux pane -> where it lives
+  tmuxOut.split('\n').forEach(l => {
+    const m = l.match(/^(\d+):(\d+):(\d+):(.+)$/);
+    if (m) panes[m[1]] = { session: m[4], target: `${m[4]}:${m[2]}.${m[3]}` };
+  });
 
   const procs = {}; // pid -> { ppid, comm, cpuSec, cpu, rssMB, startedAt }
   psOut.split('\n').forEach(line => {
@@ -430,6 +436,8 @@ async function getAllPorts() {
     const proc = procs[pid] || {};
     const u = { cpu: proc.cpu || 0, rssMB: proc.rssMB || 0, startedAt: proc.startedAt || null };
     const launcher = findLauncher(pid, procs);
+    let tmux = null; // nearest ancestor that is a tmux pane's shell
+    for (let p = pid, i = 0; p && p !== '1' && i < 40 && !tmux; p = procs[p]?.ppid, i++) tmux = panes[p] || null;
     if (launcher?.kind === 'agent') launcher.cwd = await agentCwd(launcher.pid);
     const lastActive = proc.cpuSec != null ? trackActivity(pid, proc.cpuSec, u.startedAt) : null;
     const hasProject = !!cwdPath && cwdPath !== '/';
@@ -453,6 +461,7 @@ async function getAllPorts() {
       orphan: proc.ppid === '1' && hasProject && !selfApp,
       branch: hasProject ? gitBranch(cwdPath) : null,
       github: hasProject ? githubUrl(cwdPath) : null,
+      tmux,
       ppid: proc.ppid || null,
       lastActive,
       // only project servers can be idle; apps (oMLX, Raycast) manage themselves
@@ -729,9 +738,26 @@ app.post('/api/open-terminal', (req, res) => {
 
 // Tail a process's stdout/stderr when they go to files (agents' background tasks do).
 // Terminal-attached processes only report their tty: their output isn't readable from outside.
+const shq = s => `'${String(s).replace(/'/g, `'\\''`)}'`;
+const tmuxTargetOf = pid => (snapshot?.ports || []).find(p => p.pid === String(pid) && p.tmux)?.tmux;
+
+// Open Terminal attached to the tmux pane a server runs in. Only targets from the
+// current scan are accepted, so nothing user-typed reaches the shell.
+app.post('/api/tmux/attach', (req, res) => {
+  const t = (snapshot?.ports || []).map(p => p.tmux).find(t => t && t.target === req.body.target);
+  if (!t) return res.status(404).json({ error: 'No such tmux pane' });
+  const cmd = `tmux attach -t ${shq(t.session)} \\; select-window -t ${shq(t.target)} \\; select-pane -t ${shq(t.target)}`;
+  execFile('osascript', ['-e', 'on run argv', '-e', 'tell application "Terminal"', '-e', 'activate', '-e', 'do script (item 1 of argv)', '-e', 'end tell', '-e', 'end run', cmd],
+    err => err ? res.status(500).json({ error: 'Failed to open Terminal' }) : res.json({ success: true }));
+});
+
 app.get('/api/logs/:pid', (req, res) => {
   const pid = req.params.pid;
   if (!/^\d+$/.test(pid)) return res.status(400).json({ error: 'Invalid PID' });
+  // in tmux the output is the pane itself
+  const t = tmuxTargetOf(pid);
+  if (t) return execFile('tmux', ['capture-pane', '-p', '-J', '-S', '-500', '-t', t.target], (err, out) =>
+    err ? res.json({ pid, logs: [], tty: null }) : res.json({ pid, logs: [{ file: `tmux pane ${t.target}`, text: out.replace(/\n+$/, '\n') }] }));
   execFile('lsof', ['-p', pid, '-a', '-d', '1,2', '-Fftn'], (err, out) => {
     const fds = [];
     let cur = null;

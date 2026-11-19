@@ -124,6 +124,13 @@
 
     // ── Logs ──────────────────────────────────────────────────────────
     let logsTimer = null;
+    async function attachTmux(target) {
+      const res = await fetch('/api/tmux/attach', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target }),
+      }).catch(() => null);
+      showToast(res?.ok ? `Opened tmux ${target}` : 'Could not open the tmux pane', res?.ok ? 'success' : 'warn');
+    }
+
     async function openLogs(pid, port) {
       $('logsTitle').textContent = `Logs \u00B7 :${port} \u00B7 pid ${pid}`;
       $('logsBody').textContent = 'Loading\u2026';
@@ -333,7 +340,7 @@
           String(p.command || '').toLowerCase().includes(term) ||
           String(p.runtimeName || '').toLowerCase().includes(term) ||
           String(p.scriptPath || '').toLowerCase().includes(term) ||
-          [p.appName, p.procName, p.branch, p.launcher?.name].some(v => String(v || '').toLowerCase().includes(term)) ||
+          [p.appName, p.procName, p.branch, p.launcher?.name, p.tmux && 'tmux ' + p.tmux.target].some(v => String(v || '').toLowerCase().includes(term)) ||
           (term === 'orphan' && p.orphan) || (term === 'idle' && p.idle);
 
         const matchesRuntime = rtFilter === 'all' || p.runtime === rtFilter;
@@ -484,6 +491,7 @@
           ? `<span class="agent-ico" title="Started by ${esc(p.launcher.name)}"><svg width="13" height="13" viewBox="0 0 24 24" fill="${ico.color}"><path d="${ico.d}"/></svg></span>`
           : `<span class="chip chip-agent" title="Started from a ${esc(p.launcher.name)} session">${esc(p.launcher.name)}</span>`;
       }
+      if (p.tmux) html += `<span class="chip chip-tmux" data-target="${esc(p.tmux.target)}" onclick="attachTmux(this.dataset.target)" title="Running in tmux pane ${esc(p.tmux.target)}\nClick to open it in Terminal">tmux ${esc(p.tmux.target)}</span>`;
       if (p.idle) html += `<span class="chip chip-idle" title="No real CPU activity since ${new Date(p.lastActive).toLocaleString()}">idle ${timeAgo(p.lastActive).replace(' ago', '')}</span>`;
       if (p.dupOf?.length) html += `<span class="chip chip-dup" title="Another server from this folder is running:\n${p.dupOf.map(d => `:${d.port} (pid ${d.pid})`).join('\n')}">also on :${p.dupOf[0].port}</span>`;
       if (p.orphan) html += `<span class="chip chip-orphan" title="Parent process exited: probably left behind by a closed terminal or agent session">orphan</span>`;
@@ -563,6 +571,10 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
               Open branch on GitHub
             </button>` : ''}
+            ${p.tmux ? `<button onclick="attachTmux(this.dataset.target)" data-target="${esc(p.tmux.target)}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="12" y1="12" x2="21" y2="12"/></svg>
+              Open tmux pane
+            </button>` : ''}
             <button onclick="openLogs('${p.pid}', ${p.port})">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
               View logs
@@ -604,6 +616,7 @@
         return `${l.name}${where ? ' \u00B7 ' + where : ''} \u00B7 pid ${l.pid}`;
       }
       if (l?.kind === 'app') return `Started from ${l.name}`;
+      if (p.tmux) return `tmux \u00B7 ${p.tmux.session}`;
       return p.orphan ? 'Orphaned (session gone)' : 'No agent';
     }
 
@@ -618,7 +631,7 @@
 
     // Fingerprint a port entry for change detection
     function portFingerprint(p) {
-      return `${p.pid}|${p.port}|${p.user}|${p.command}|${p.runtime}|${p.scriptPath}|${p.favorite}|${(p.cpu||0).toFixed(1)}|${p.memMB||0}|${p.startedAt && timeAgo(p.startedAt)}|${p.version}|${p.branch}|${p.orphan}|${p.appName}|${p.procName}|${p.idle}|${(p.dupOf || []).map(d => d.port)}|${p.health}`;
+      return `${p.pid}|${p.port}|${p.user}|${p.command}|${p.runtime}|${p.scriptPath}|${p.favorite}|${(p.cpu||0).toFixed(1)}|${p.memMB||0}|${p.startedAt && timeAgo(p.startedAt)}|${p.version}|${p.branch}|${p.orphan}|${p.appName}|${p.procName}|${p.idle}|${(p.dupOf || []).map(d => d.port)}|${p.health}|${p.tmux?.target}`;
     }
 
     let lastFingerprints = {};

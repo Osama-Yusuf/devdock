@@ -24,7 +24,8 @@
     let sortColumn = savedView.sortColumn || 'port';
     let sortDirection = savedView.sortDirection || 'asc';
     // 'none' | 'project' | 'session' (older saves stored a boolean)
-    let groupBy = savedView.groupBy || (savedView.groupByProject ? 'project' : 'none');
+    // ?view=project|session|none deep-links a grouping
+    let groupBy = new URLSearchParams(location.search).get('view') || savedView.groupBy || (savedView.groupByProject ? 'project' : 'none');
     const collapsedGroups = new Set(savedView.collapsed || []);
 
     function saveView() {

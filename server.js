@@ -6,12 +6,15 @@ const fs = require('fs');
 const { WebSocketServer } = require('ws');
 
 const app = express();
-const PORT = 4003;
+const PORT = +process.env.PORT || 4003;
+const DEMO = process.env.DEVDOCK_DEMO === '1'; // seeded data for screenshots, see demo.js
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
+// demo pids are made up and may match real processes: never act on them
+if (DEMO) app.use(/^\/api\/(kill|restart|logs|start-server)/, (req, res) => res.status(403).json({ error: 'Disabled in demo mode' }));
 
 // ── Runtime definitions ──────────────────────────────────────────────
 const RUNTIMES = {
@@ -130,7 +133,7 @@ const RUNTIMES = {
 };
 
 // ── Settings persistence ─────────────────────────────────────────────
-const SETTINGS_FILE = path.join(__dirname, 'devdock-settings.json');
+const SETTINGS_FILE = process.env.DEVDOCK_SETTINGS || path.join(__dirname, 'devdock-settings.json');
 
 function getDefaultSettings() {
   const runtimes = {};
@@ -352,6 +355,11 @@ async function loadMeta(pids, runtimeOf) {
 }
 
 async function getAllPorts() {
+  if (DEMO) {
+    const ports = require('./demo').demoPorts(RUNTIMES);
+    ports.forEach(p => { health[p.port] = p._health; delete p._health; });
+    return ports;
+  }
   // One spawn for everything: on some Macs each spawn costs ~80ms and blocks the event loop.
   // lstart is fixed-format in the C locale ("Thu Nov 19 07:10:16 2026"), comm comes last (may contain spaces).
   const out = await sh(`lsof -iTCP -sTCP:LISTEN -P -n; echo ${SPLIT}; LC_ALL=C ps -axo pid=,ppid=,%cpu=,rss=,time=,lstart=,comm=`);
@@ -447,6 +455,7 @@ const SCAN_MS = 1000;
 const tracked = new Map(); // "pid:port" -> { streak, missing, entry }
 const transient = [];      // listeners that never lasted 2 scans (agent probes, tests)
 let snapshot = null;
+if (DEMO) transient.push(...require('./demo').demoTransient());
 let firstScan = true;
 let scanning = null;
 let rescanQueued = false;
@@ -562,6 +571,7 @@ wss.on('connection', (ws) => {
 const health = {};
 const probing = new Set();
 async function probeHealth(port) {
+  if (DEMO) return; // demo ports aren't real
   if (!port || probing.has(port)) return;
   probing.add(port);
   const status = await checkPortHealth(port);

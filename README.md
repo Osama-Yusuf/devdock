@@ -16,6 +16,18 @@ Forgotten servers pile up: an old branch still on :3000, a database from last we
 
 Built lean: no frontend framework, under 1% CPU at idle, and the dashboard updates within a second of a port going up or down.
 
+## Why
+
+<p align="center"><img src="docs/dashboard.png" alt="DevDock dashboard" /></p>
+
+**"Port 3000 is already in use."** Instead of `lsof -i :3000` and a `ps` hunt, find the port and see the project, branch and how long it's been up. Kill it from the same row.
+
+**The server you forgot.** A terminal closed days ago and `uvicorn` is still holding :8000. DevDock tags it `orphan` and `idle 3d`, and can stop idle servers for you.
+
+**Two of the same app.** When a coding agent can't tell your dev server is already up, it starts another one on the next free port. DevDock marks both copies `also on :3001` and shows which session started each, so you can stop a whole session's servers in one click.
+
+<p align="center"><img src="docs/sessions.png" alt="Servers grouped by the session that started them" /></p>
+
 ## Features
 
 - **Know what's running.** Port, project folder, git branch, runtime and version, CPU, memory, and how long it's been up.
@@ -49,5 +61,7 @@ npm install
 npm start           # run the app
 npm run build:mac   # build the .dmg into dist/
 ```
+
+The screenshots come from demo mode, which runs the real UI on seeded data: `DEVDOCK_DEMO=1 PORT=4010 node server.js`.
 
 Express and WebSocket on the backend, plain HTML, CSS and JavaScript on the front, in an Electron shell.

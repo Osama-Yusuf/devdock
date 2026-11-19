@@ -1,6 +1,6 @@
 {
   "name": "devdock-desktop",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "DevDock Desktop — Monitor, manage, and control all dev processes listening on TCP ports",
   "main": "electron/main.js",
   "scripts": {

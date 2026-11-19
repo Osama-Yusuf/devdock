@@ -90,6 +90,27 @@
     if (srv.length > 1) add(7, 'clean', `Which of these ${srv.length} servers do I actually need?`);
     else if (srv.length === 1) add(5, 'pulse', `What is running on :${srv[0].raw.port}, and is it healthy?`);
 
+    // apps
+    const apps = of('app');
+    for (const it of apps.slice(0, 3)) {
+      const x = it.raw;
+      if (x.cpu >= 30) add(10, 'pulse', `Why is ${it.name} using ${Math.round(x.cpu)}% CPU? Which of its processes is it?`);
+      if (x.memMB >= 1500) add(9, 'size', `Why is ${it.name} using ${it.facts.memory}? Which part of it?`);
+      if (x.kind === 'background') add(7, 'why', `What is "${it.name}" and what started it? Do I need it?`);
+    }
+    if (apps.length === 1) add(6, 'why', `What does ${apps[0].name} run in the background, and does it start at login?`);
+    else if (apps.length > 1) add(6, 'clean', `Which of these ${apps.length} apps can I quit to free memory without losing anything?`);
+
+    // coding agents
+    const ags = of('agent');
+    for (const it of ags.slice(0, 3)) {
+      const x = it.raw;
+      if (x.state?.status === 'working') add(9, 'agent', `What is ${it.name} working on right now? Is it making progress or stuck?`);
+      if (x.state?.status === 'needs-you') add(10, 'agent', `What is ${it.name} waiting on me for?`);
+      if (!x.where?.mux && !x.where?.app && !x.where?.background) add(9, 'why', `What started ${it.name}, and is it safe to stop?`);
+    }
+    if (ags.length > 1) add(7, 'list', `One line on what each of these ${ags.length} agents is doing and where it left off`);
+
     if (kinds.length > 1) add(7.5, 'link', `How are these ${kinds.map(k => plural(of(k).length, k)).join(' and ')} related?`);
 
     const seen = new Set();

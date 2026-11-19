@@ -244,6 +244,68 @@ function agentOf(comm) {
   return AGENTS[base] || null;
 }
 
+// What a Claude Code session is doing. Two sources Claude Code writes itself (checked live, v2.1.322):
+//   ~/.claude/sessions/<pid>.json   status from the agent loop: running -> "busy",
+//     requires_action -> "waiting" (a permission prompt or a question), idle -> "idle",
+//     "shell" = idle with a background shell still running. Not always rewritten: a
+//     session can keep saying "busy" for days after its last turn ended.
+//   ~/.claude/projects/<cwd with non-alphanumerics as ->/<sessionId>.jsonl   the transcript.
+//     Its last turn event says idle (turn_duration, stop_hook_summary, end_turn) or working
+//     (a prompt, a tool call or result, an API request). Other lines get appended while idle.
+// Whichever changed last wins; only the status file knows about prompts waiting on you.
+const CLAUDE_STATUS = { busy: 'working', waiting: 'needs-you', idle: 'idle', shell: 'idle' };
+const claudeCache = new Map(); // pid -> { key, state }
+function lastTurnEvent(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const size = fs.fstatSync(fd).size, len = Math.min(size, 256 * 1024);
+    const buf = Buffer.alloc(len);
+    fs.readSync(fd, buf, 0, len, size - len);
+    const lines = buf.toString('utf8').split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      let e;
+      try { e = JSON.parse(lines[i]); } catch { continue; } // the first line is usually cut
+      if (e.type === 'continued-in' && e.continuedInSessionId) return { next: e.continuedInSessionId };
+      const at = Date.parse(e.timestamp);
+      if (!at) continue;
+      if (e.type === 'system' && ['turn_duration', 'stop_hook_summary'].includes(e.subtype)) return { status: 'idle', at };
+      if (e.type === 'assistant') return { status: e.message?.stop_reason === 'end_turn' ? 'idle' : 'working', at };
+      if (e.type === 'user' || e.type === 'api-request') return { status: 'working', at };
+    }
+  } catch {} finally { if (fd != null) fs.closeSync(fd); }
+  return null;
+}
+function claudeState(pid) {
+  const home = require('os').homedir();
+  const f = path.join(home, '.claude/sessions', `${pid}.json`);
+  let st;
+  try { st = fs.statSync(f); } catch { claudeCache.delete(String(pid)); return null; }
+  let d = {};
+  const hit = claudeCache.get(String(pid));
+  try { d = hit && hit.mtimeMs === st.mtimeMs ? hit.d : JSON.parse(fs.readFileSync(f, 'utf8')); } catch {}
+  // a /clear or compaction continues the session in a new transcript; follow the chain
+  const dir = d.cwd && path.join(home, '.claude/projects', d.cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+  let sid = (hit?.d === d && hit.sid) || d.sessionId, turn = null, tst = null;
+  for (let i = 0; sid && dir && i < 20; i++) {
+    const t = path.join(dir, `${sid}.jsonl`);
+    try { tst = fs.statSync(t); } catch { tst = null; break; }
+    if (hit?.sid === sid && hit.key === `${st.mtimeMs}|${tst.mtimeMs}|${tst.size}`) return hit.state;
+    turn = lastTurnEvent(t);
+    if (!turn?.next) break;
+    sid = turn.next; turn = null;
+  }
+  const key = `${st.mtimeMs}|${tst?.mtimeMs}|${tst?.size}`;
+  let state = null;
+  const fileStatus = CLAUDE_STATUS[d.status];
+  const fileAt = d.statusUpdatedAt || d.updatedAt || 0;
+  if (turn && turn.at > fileAt + 2000) state = { status: turn.status, since: turn.at, bgShell: false };
+  else if (fileStatus) state = { status: fileStatus, since: fileAt || null, bgShell: d.status === 'shell' };
+  if (state) state.name = d.name || null;
+  claudeCache.set(String(pid), { mtimeMs: st.mtimeMs, d, sid, key, state });
+  return state;
+}
+
 // Nearest ancestor that is a known CLI agent or a macOS app
 function findLauncher(pid, procs) {
   let cur = procs[pid]?.ppid;
@@ -780,7 +842,7 @@ function run(file, args, { timeout = 10000 } = {}) {
 }
 
 const sourceCtx = {
-  DEMO, run, findBin, agentOf, gitBranch, githubUrl,
+  DEMO, run, findBin, agentOf, appFromPath, gitBranch, githubUrl, claudeState,
   cwdOf: agentCwd, // cached lsof cwd per pid
   procs: () => latestProcs,
   ports: () => snapshot?.ports || [],
@@ -788,7 +850,7 @@ const sourceCtx = {
   binDirs: BIN_DIRS,
   source: id => sources[id],
 };
-const sources = Object.fromEntries(['sessions', 'containers', 'agents']
+const sources = Object.fromEntries(['sessions', 'containers', 'apps', 'coding', 'agents']
   .map(id => [id, require(`./sources/${id}`)(sourceCtx)]));
 const sourceState = {}; // id -> { msg, sig }
 
@@ -812,6 +874,14 @@ async function pollSource(src) {
   return src._busy;
 }
 server.on('listening', () => Object.values(sources).forEach(pollSource));
+
+// An app's icon as PNG (sources/apps.js); 404 means the page draws its initial
+app.get('/api/app-icon/:pid', async (req, res) => {
+  const file = await sources.apps.icon(req.params.pid).catch(() => null);
+  if (!file) return res.status(404).end();
+  res.set('Cache-Control', 'max-age=86400');
+  res.sendFile(file);
+});
 
 app.post('/api/sources/:id/:action', async (req, res) => {
   const src = sources[req.params.id];
@@ -854,7 +924,7 @@ async function openTerm(ws, m) {
   let term;
   try {
     term = require(ptyModule).spawn(spec.file, spec.args,
-      { name: 'xterm-256color', cols: Math.max(20, m.cols | 0), rows: Math.max(5, m.rows | 0), cwd: os.homedir(), env });
+      { name: 'xterm-256color', cols: Math.max(20, m.cols | 0), rows: Math.max(5, m.rows | 0), cwd: spec.cwd || os.homedir(), env });
   } catch (e) { return send({ type: 'term-exit', reason: 'Could not start: ' + e.message }); }
   ws._term = term;
   term.onData(data => send({ type: 'term-out', data }));

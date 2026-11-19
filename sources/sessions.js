@@ -11,6 +11,7 @@
 const os = require('os');
 const path = require('path');
 
+const STATE_RANK = { 'needs-you': 3, working: 2, idle: 1 };
 const STATUS_RANK = { blocked: 4, working: 3, done: 2, idle: 1, unknown: 0 };
 
 module.exports = function sessions(ctx) {
@@ -45,6 +46,10 @@ module.exports = function sessions(ctx) {
       stack.push(...(children[pid] || []));
     }
     const agents = s.agents || [...new Set([...tree].map(pid => procs[pid] && ctx.agentOf(procs[pid].comm)).filter(Boolean))];
+    // the most urgent Claude Code in it decides; Herdr's own status when there's none
+    const states = [...tree].filter(pid => procs[pid] && ctx.agentOf(procs[pid].comm) === 'Claude Code').map(ctx.claudeState).filter(Boolean);
+    const agentState = states.sort((a, b) => STATE_RANK[b.status] - STATE_RANK[a.status])[0]
+      || (s.agentStatus && { status: { blocked: 'needs-you', working: 'working', done: 'idle', idle: 'idle' }[s.agentStatus], since: null }) || null;
     const cwd = s.cwd || (s.rootPids?.[0] ? await ctx.cwdOf(s.rootPids[0]) : null);
     const { idleAfterHours } = ctx.settings();
     const quietFor = s.lastActive ? Date.now() - s.lastActive : null;
@@ -55,6 +60,7 @@ module.exports = function sessions(ctx) {
       branch: cwd ? ctx.gitBranch(cwd) : null,
       github: cwd ? ctx.githubUrl(cwd) : null,
       agents,
+      agentState: agentState?.status ? agentState : null,
       ports: [...new Set(ctx.ports().filter(p => tree.has(p.pid)).map(p => p.port))].sort((a, b) => a - b),
       // nobody attached and no output for the idle threshold
       idle: s.state === 'running' && s.attached === false && quietFor != null
@@ -62,6 +68,7 @@ module.exports = function sessions(ctx) {
       canOpen: !!byMux[s.mux].attach,
       canShow: !!byMux[s.mux].show,
       canKill: !!byMux[s.mux].kill,
+      canRename: !!byMux[s.mux].rename,
     };
   }
 
@@ -76,6 +83,7 @@ module.exports = function sessions(ctx) {
 
   return {
     id: 'sessions',
+    last: () => last, // with rootPids and targets, for sources/coding.js
     intervalMs: 2000,
     scan,
     actions: {
@@ -84,6 +92,17 @@ module.exports = function sessions(ctx) {
         if (!byMux[s.mux].kill) throw Object.assign(new Error(`${byMux[s.mux].label} sessions can't be closed from DevDock`), { status: 400 });
         const r = await byMux[s.mux].kill(s);
         if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim() || 'Could not close the session');
+        return {};
+      },
+      async rename(p) {
+        const s = await find(p);
+        if (!byMux[s.mux].rename) throw Object.assign(new Error(`${byMux[s.mux].label} sessions can't be renamed from DevDock`), { status: 400 });
+        // tmux turns . and : into _ (they separate window and pane); say so instead
+        const name = typeof p.name === 'string' ? p.name.trim() : '';
+        if (!name || name.length > 100 || /[.:\n]/.test(name)) throw Object.assign(new Error('Names need 1 to 100 characters, without . or :'), { status: 400 });
+        if (last.some(x => x.mux === s.mux && x.id === name)) throw Object.assign(new Error(`There's already a session called ${name}`), { status: 409 });
+        const r = await byMux[s.mux].rename(s, name);
+        if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim() || 'Could not rename the session');
         return {};
       },
       async show(p) {
@@ -153,6 +172,7 @@ function tmux(ctx) {
         ...(s.targets.includes(target) ? [';', 'select-window', '-t', `=${s.id}:${target}`, ';', 'select-pane', '-t', `=${s.id}:${target}`] : [])],
     }),
     kill: s => ctx.run(bin(), ['kill-session', '-t', `=${s.id}`]),
+    rename: (s, name) => ctx.run(bin(), ['rename-session', '-t', `=${s.id}`, name]),
   };
 }
 
@@ -226,6 +246,7 @@ function screen(ctx) {
 //   {pane_id, tab_id, focused, cwd?, foreground_cwd?, agent?, display_agent?, agent_status}
 // Not verified against a running herdr (not installed here).
 function herdr(ctx) {
+  if (!ctx.findBin('herdr') && ctx.findBin('hc')) return herdrCore(ctx);
   const bin = () => ctx.findBin('herdr');
   return {
     mux: 'herdr', label: 'herdr', bin,
@@ -254,6 +275,40 @@ function herdr(ctx) {
     },
     attach: s => ({ file: bin(), args: ['session', 'attach', s.id] }), // starts a stopped session
     kill: s => ctx.run(bin(), ['session', s.state === 'running' ? 'stop' : 'delete', s.id]),
+  };
+}
+
+// The Herdr desktop app ships herdr-core, `hc`, instead of the herdr TUI (checked live):
+//   ls --json  {"terminals":[{address, agent, cwd, state, status, turn, where: "Space / tab"}]}
+//   get <t> --json  adds pid (the terminal's shell) and created_ms; neither changes, so cached
+function herdrCore(ctx) {
+  const bin = () => ctx.findBin('hc');
+  const fixed = new Map(); // address -> { pid, createdAt }
+  return {
+    mux: 'herdr', label: 'Herdr', bin,
+    async list() {
+      const r = await ctx.run(bin(), ['ls', '--json']);
+      if (r.code !== 0) return []; // core not running
+      const list = JSON.parse(r.stdout).terminals || [];
+      for (const k of fixed.keys()) if (!list.some(t => t.address === k)) fixed.delete(k);
+      return Promise.all(list.map(async t => {
+        if (!fixed.has(t.address)) {
+          const g = await ctx.run(bin(), ['get', t.address, '--json']);
+          const d = g.code === 0 ? JSON.parse(g.stdout) : {};
+          fixed.set(t.address, { pid: d.pid ? String(d.pid) : null, createdAt: d.created_ms || null });
+        }
+        const { pid, createdAt } = fixed.get(t.address);
+        const agent = t.agent && (ctx.agentOf(t.agent.replace(/-code$/, '')) || t.agent);
+        return {
+          mux: 'herdr', id: t.address, name: t.where || t.address, state: t.state === 'live' ? 'running' : t.state, attached: null,
+          createdAt, cwd: t.cwd || null, rootPids: pid ? [pid] : [],
+          ...(agent && { agents: [agent] }),
+          agentStatus: t.status in STATUS_RANK ? t.status : null,
+        };
+      }));
+    },
+    attach: s => ({ file: bin(), args: ['attach', s.id] }),
+    kill: s => ctx.run(bin(), ['kill', s.id]),
   };
 }
 

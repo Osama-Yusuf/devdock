@@ -279,12 +279,7 @@
   function toggleCleanup(open = !cleanupOpen) { cleanupOpen = open; render(); }
   document.addEventListener('click', e => { if (cleanupOpen && !e.target.closest('.cleanup-wrapper')) toggleCleanup(false); });
   document.addEventListener('keydown', e => { if (cleanupOpen && e.key === 'Escape') toggleCleanup(false); });
-  // ⌥1–⌥4 switch sub-tabs; e.code because ⌥1 types "¡" on a Mac keyboard
-  document.addEventListener('keydown', e => {
-    if (DevDock.tab !== 'containers' || !e.altKey || e.metaKey || e.ctrlKey) return;
-    const t = Object.keys(TABS)[+(e.code.match(/^Digit([1-4])$/)?.[1]) - 1];
-    if (t) { e.preventDefault(); DevDockViews.containers.setTab(t); }
-  });
+
 
   // ── selection (js/selection.js): what a row is, and what can be done to many ──
   // Keys carry the kind, so a selection can span sub-tabs: c:<id>, i:<id>, v:<name>

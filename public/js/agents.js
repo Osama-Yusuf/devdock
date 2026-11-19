@@ -13,6 +13,11 @@
     blocked: svg('<circle cx="12" cy="12" r="9"/><path d="m5.7 5.7 12.6 12.6"/>', 12, 2.6),
     copy: svg('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>', 12),
     chev: svg('<polyline points="6 9 12 15 18 9"/>', 12),
+    more: svg('<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>', 14, 2.6),
+    play: '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l12.5-7.5z"/></svg>',
+    spark: svg('<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/>', 12),
+    grow: svg('<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>', 13),
+    shrink: svg('<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/>', 13),
   };
   const KIND = {
     cmd: svg('<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>', 12),
@@ -68,7 +73,7 @@
     info: svg('<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>', 15),
   };
   const RISK_LABEL = { safe: 'safe', changes: 'changes things', destructive: 'destructive' };
-  function answerHTML(ev) {
+  function answerHTML(ev, run) {
     if (!ev.data) return `<div class="aw-answer md">${md(names(ev.text))}</div>`;
     const d = ev.data;
     return `<div class="ans st-${d.status}">
@@ -84,9 +89,16 @@
         </div>`).join('')}</div>` : ''}
       ${d.actions.length ? `<div class="ans-label">Next steps</div><div class="ans-actions">${d.actions.map((a, i) => `
         <div class="ans-a risk-${a.risk}" style="--i:${i + d.findings.length}">
-          <div class="ans-at"><span class="ans-n">${i + 1}</span><span class="ans-atext">${md(names(a.title), true)}</span><span class="ans-risk">${RISK_LABEL[a.risk]}</span></div>
+          <div class="ans-at"><span class="ans-n">${i + 1}</span><span class="ans-atext">${md(names(a.title), true)}</span><span class="ans-risk">${RISK_LABEL[a.risk]}</span>
+            <button class="ans-more" data-do="more" title="Run it, or have ${esc(run.label)} do it">${ICON.more}</button>
+            <div class="ans-menu">
+              ${a.command ? `<button data-do="act-run" data-cmd="${esc(a.command)}" data-risk="${a.risk}">${ICON.play}Run in DevDock</button>` : ''}
+              <button data-do="act-ask" data-n="${i + 1}" data-title="${esc(a.title)}">${ICON.spark}Ask ${esc(run.label)} to do it</button>
+              ${a.command ? `<button data-copy="${esc(a.command)}">${ICON.copy}Copy command</button>` : ''}
+            </div>
+          </div>
           ${a.why ? `<div class="ans-why">${md(names(a.why), true)}</div>` : ''}
-          ${a.command ? `<div class="ans-cmd"><code>${esc(a.command)}</code><button class="aw-copy" data-copy="${esc(a.command)}" title="Copy">${ICON.copy}</button></div>` : ''}
+          ${a.command ? `<div class="ans-cmd"><code>${esc(a.command)}</code><span class="ans-cmd-acts"><button class="aw-copy" data-do="act-run" data-cmd="${esc(a.command)}" data-risk="${a.risk}" title="Run in DevDock's terminal">${ICON.play}</button><button class="aw-copy" data-copy="${esc(a.command)}" title="Copy">${ICON.copy}</button></span></div>` : ''}
         </div>`).join('')}</div>` : ''}
       ${ev.prose ? `<details class="ans-raw"><summary>Full reply</summary><div class="md">${md(names(ev.prose))}</div></details>` : ''}
     </div>`;
@@ -136,9 +148,41 @@
   const SEND_ICON = svg('<path d="M12 19V5M5 12l7-7 7 7"/>', 16, 2.6);
   const STOP_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="3"/></svg>';
 
+  const closeMenus = () => win.querySelectorAll('.ans-a.menu-open').forEach(x => x.classList.remove('menu-open'));
+  // Size: drag the top-left grip (the window is pinned bottom-right); remembered per Mac
+  function applySize() {
+    let sz = null;
+    try { sz = JSON.parse(localStorage.getItem('devdock:agent-size')); } catch {}
+    win.style.setProperty('--aw-w', sz ? sz.w + 'px' : '');
+    win.style.setProperty('--aw-h', sz ? sz.h + 'px' : '');
+  }
+  applySize();
+  win.addEventListener('pointerdown', e => {
+    if (!e.target.classList.contains('aw-grip')) return;
+    e.preventDefault();
+    win.classList.remove('big');
+    const r = win.getBoundingClientRect();
+    const move = ev => {
+      const w = Math.round(Math.min(innerWidth - 32, Math.max(380, r.right - ev.clientX)));
+      const h = Math.round(Math.min(innerHeight - 100, Math.max(320, r.bottom - ev.clientY)));
+      win.style.setProperty('--aw-w', w + 'px');
+      win.style.setProperty('--aw-h', h + 'px');
+      try { localStorage.setItem('devdock:agent-size', JSON.stringify({ w, h })); } catch {}
+    };
+    win.classList.add('resizing');
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', () => { removeEventListener('pointermove', move); win.classList.remove('resizing'); }, { once: true });
+  });
+  win.addEventListener('dblclick', e => {
+    if (!e.target.classList.contains('aw-grip')) return;
+    try { localStorage.removeItem('devdock:agent-size'); } catch {}
+    applySize();
+  });
+  document.addEventListener('click', e => { if (!win.contains(e.target)) closeMenus(); });
+
   function mount(run) {
     mounted = run.id;
-    win.innerHTML = `<header class="aw-head"></header><div class="aw-progress" hidden></div><div class="aw-body"></div>
+    win.innerHTML = `<div class="aw-grip" title="Drag to resize. Double-click to reset."></div><header class="aw-head"></header><div class="aw-progress" hidden></div><div class="aw-body"></div>
       <div class="aw-reply">
         <div class="aw-sugs"></div>
         <div class="aw-bar">
@@ -175,7 +219,7 @@
         ${visible.map(stepHTML).join('')}
         ${running && !visible.some(e => e.status === 'run') ? `<li class="aw-thinking"><span class="aw-spin"></span>${items.length ? 'Thinking' : `Starting ${esc(run.label)}`}\u2026</li>` : ''}
       </ol>` : ''}
-      ${answerEv ? answerHTML(answerEv) : ''}
+      ${answerEv ? answerHTML(answerEv, run) : ''}
       ${done && !done.ok ? `<div class="aw-error">${esc(done.error || 'It stopped')}</div>` : ''}
       ${last && run.state === 'stopped' ? '<div class="aw-error">Stopped before it finished.</div>' : ''}
     </div>`;
@@ -204,7 +248,7 @@
     const inTerminal = run.alive && run.resumed;
     const ro = replyRO[run.id] ?? turns.at(-1).readOnly ?? run.readOnly;
 
-    win.className = `agent-win st-${run.state}${win.classList.contains('in') ? ' in' : ''}${win.classList.contains('has-text') ? ' has-text' : ''}`;
+    win.className = `agent-win st-${run.state}${['in', 'has-text', 'big'].filter(c => win.classList.contains(c)).map(c => ' ' + c).join('')}`;
     win.querySelector('.aw-head').innerHTML = `
       ${DevDockGlyph(run.agent)}
       <div class="aw-title">
@@ -212,6 +256,7 @@
         <div class="aw-sub"><span>${esc(run.label)}</span>${run.items?.length ? `<span title="${esc(run.items.map(i => `${i.kind}: ${i.name}`).join('\n'))}">${run.items.length} item${run.items.length > 1 ? 's' : ''}</span>` : ''}${turns.length > 1 ? `<span>${turns.length} messages</span>` : ''}<span class="aw-clock"></span></div>
       </div>
       ${run.alive ? `<button class="aw-btn" data-do="term" title="Open its tmux session${run.resumed ? '' : '. Press \u21B5 there to keep talking in the terminal'}">${ICON.term}</button>` : ''}
+      <button class="aw-btn" data-do="grow" title="${win.classList.contains('big') ? 'Back to your size' : 'Make it big'}">${win.classList.contains('big') ? ICON.shrink : ICON.grow}</button>
       <button class="aw-btn" data-do="min" title="Minimize  Esc">${ICON.min}</button>`;
     win.querySelector('.aw-progress').hidden = !running;
 
@@ -307,6 +352,9 @@
       expanded.has(id) ? expanded.delete(id) : expanded.add(id);
       return renderWin(true);
     }
+    const more = e.target.closest('[data-do="more"]');
+    if (more) { const a = more.closest('.ans-a'); const was = a.classList.contains('menu-open'); closeMenus(); a.classList.toggle('menu-open', !was); return; }
+    closeMenus();
     const sug = e.target.closest('[data-reply]');
     if (sug) return sendReply(sug.dataset.reply); // quick replies send right away, like iMessage
     const cp = e.target.closest('[data-copy]');
@@ -319,6 +367,13 @@
     if (act === 'min') minimize();
     if (act === 'unfold') { allSteps.add(b.dataset.key); renderWin(true); }
     if (act === 'send') sendReply();
+    if (act === 'grow') { win.classList.toggle('big'); renderWin(true); }
+    if (act === 'act-ask') sendReply(`Do step ${b.dataset.n}: ${b.dataset.title}`);
+    if (act === 'act-run') {
+      const cmd = b.dataset.cmd;
+      if (b.dataset.risk !== 'safe' && !await confirmDialog(`Run this ${b.dataset.risk === 'destructive' ? 'destructive ' : ''}command?`, cmd, 'Run')) return;
+      openSession({ id: run.id, cmd }, `${run.label} \u00B7 step`, 'agents');
+    }
     if (act === 'access') { replyRO[run.id] = !(replyRO[run.id] ?? turnsOf(run).at(-1).readOnly ?? run.readOnly); renderWin(true); }
     if (act === 'term') openSession({ mux: 'tmux', id: run.session }, `${run.label} · ${run.request.slice(0, 60)}`);
     if (act === 'stop') await sourceAction('agents', 'stop', { id: run.id });

@@ -137,8 +137,9 @@
       if (cols !== term.cols || rows !== term.rows) term.resize(cols, rows);
     }
     // params: { mux, id, target? } as the sessions source lists them
-    function openSession(params, title) {
-      if ((currentSettings.tmuxOpen || 'devdock') === 'terminal') return openSessionInTerminal(params, title);
+    // source: which sources/ module turns params into a command (agents runs a step's command)
+    function openSession(params, title, source = 'sessions') {
+      if (source === 'sessions' && (currentSettings.tmuxOpen || 'devdock') === 'terminal') return openSessionInTerminal(params, title);
       if (!ws || ws.readyState !== 1) return showToast('Not connected', 'warn');
       closeTerm();
       $('termTitle').textContent = title;
@@ -156,7 +157,7 @@
       term.onData(data => ws.send(JSON.stringify({ type: 'term-in', data })));
       term.onResize(({ cols, rows }) => ws.send(JSON.stringify({ type: 'term-resize', cols, rows })));
       term.focus();
-      ws.send(JSON.stringify({ type: 'term-open', source: 'sessions', params, cols: term.cols, rows: term.rows }));
+      ws.send(JSON.stringify({ type: 'term-open', source, params, cols: term.cols, rows: term.rows }));
     }
     // A server's tmux pane: session name plus "session:window.pane"
     function attachTmux(session, target) {
@@ -180,6 +181,16 @@
     }
 
     $('termClose').addEventListener('click', closeTerm);
+    // Fill the whole window (remembered); the terminal refits to the new size
+    function growTerm(on = !document.querySelector('.term-modal').classList.contains('max')) {
+      document.querySelector('.term-modal').classList.toggle('max', on);
+      $('termGrow').title = on ? 'Back to normal size  \u2318\u21E7\u21B5' : 'Fill the window  \u2318\u21E7\u21B5';
+      try { localStorage.setItem('devdock:term-max', on ? '1' : ''); } catch {}
+      requestAnimationFrame(() => term && fitTerm());
+    }
+    try { growTerm(localStorage.getItem('devdock:term-max') === '1'); } catch {}
+    $('termGrow').addEventListener('click', () => { growTerm(); term?.focus(); });
+    $('termModal').addEventListener('keydown', e => { if (e.metaKey && e.shiftKey && e.key === 'Enter') { e.preventDefault(); growTerm(); } }, true);
     // Every key belongs to the session (Esc included, for vim); only ⌘. closes.
     $('termModal').addEventListener('keydown', e => e.stopPropagation());
     document.addEventListener('keydown', (e) => {
@@ -407,9 +418,7 @@
       const html = DevDockPatterns.html('servers', found);
       if (html === patternSig) return;
       patternSig = html;
-      const box = $('serverPatterns');
-      box.style.display = found.length ? '' : 'none';
-      box.firstElementChild.innerHTML = html;
+      $('serverPatterns').querySelector('.patterns').innerHTML = html;
     }
 
     function getFilteredAndSortedPorts() {
@@ -568,6 +577,27 @@
     }
 
     // Agent logo when we have one, a labeled chip otherwise
+    // A Claude Code session's state (server.js claudeState): working, needs you, or idle.
+    // compact: just the icon, the words go in the tooltip (Sessions); otherwise icon and words
+    const STATE_ICON = window.STATE_ICON = {
+      working: '<span class="ast-spin"></span>',
+      'needs-you': '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1.2 5h2.4l-.4 7h-1.6zm1.2 8.6a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8z"/></svg>',
+      idle: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/></svg>',
+    };
+    function agentStateHTML(st, compact) {
+      if (!st) return '';
+      const mins = st.since ? Math.max(0, Math.floor((Date.now() - st.since) / 60000)) : null;
+      const ago = mins == null ? '' : mins < 1 ? 'now' : mins < 60 ? `${mins}m` : mins < 1440 ? `${Math.floor(mins / 60)}h` : `${Math.floor(mins / 1440)}d`;
+      const LABEL = { working: 'Working', 'needs-you': 'Needs you', idle: 'Idle' };
+      const TIP = {
+        working: 'Claude Code is working on a turn',
+        'needs-you': 'Waiting on you: a permission prompt or a question',
+        idle: `Finished its turn${st.bgShell ? ', a background shell it started is still running' : ''}. Waiting for your next message`,
+      };
+      const tip = `${LABEL[st.status]}${ago ? ` for ${ago}` : ''}\n${TIP[st.status]}`;
+      return `<span class="ast ast-${st.status} ${compact ? 'compact' : ''}" title="${esc(tip)}">${STATE_ICON[st.status]}${compact ? '' : `<span>${LABEL[st.status]}</span>${ago ? `<em>${ago}</em>` : ''}`}</span>`;
+    }
+
     function agentHTML(name, title) {
       const ico = AGENT_ICONS[name];
       return ico
@@ -1063,52 +1093,29 @@
       loadPorts(true);
     }
 
-    // ── Group by (Servers): one button, a menu of modes, ⇧⌘G ─────────
+    // ── Group by (Servers): sub-tabs like Containers', ⌥1–3 (js/keys.js) ──
     const GROUP_MODES = ['none', 'project', 'session'];
     function setGroupBy(mode, render = true) {
       groupBy = mode;
-      $('groupMenu').querySelectorAll('[data-g]').forEach(b => b.setAttribute('aria-checked', b.dataset.g === mode));
-      $('groupBtn').classList.toggle('active', mode !== 'none');
+      $('groupTabs').querySelectorAll('[data-g]').forEach(b => b.setAttribute('aria-selected', b.dataset.g === mode));
       document.querySelector('.scroll').classList.toggle('grouped', mode !== 'none');
       saveView();
       lastFilteredKeys = '';
       if (render) renderTable();
     }
-    function toggleGroupMenu(open = !$('groupMenu').classList.contains('open')) {
-      $('groupMenu').classList.toggle('open', open);
-      if (open) $('groupMenu').querySelector(`[data-g="${groupBy}"]`).focus();
-    }
-    $('groupBtn').addEventListener('click', (e) => { e.stopPropagation(); toggleGroupMenu(); });
-    $('groupMenu').addEventListener('click', (e) => {
-      const b = e.target.closest('[data-g]');
-      if (!b) return;
-      setGroupBy(b.dataset.g);
-      toggleGroupMenu(false);
-      $('groupBtn').focus();
-    });
-    $('groupMenu').addEventListener('keydown', (e) => {
-      const items = [...$('groupMenu').querySelectorAll('[data-g]')];
-      const i = items.indexOf(document.activeElement);
-      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
-      } else if (e.key === 'Escape') {
-        e.stopPropagation();
-        toggleGroupMenu(false);
-        $('groupBtn').focus();
-      }
-    });
-    document.addEventListener('click', (e) => { if (!e.target.closest('.group-wrapper')) toggleGroupMenu(false); });
+    $('groupTabs').addEventListener('click', e => { const b = e.target.closest('[data-g]'); if (b) setGroupBy(b.dataset.g); });
     setGroupBy(GROUP_MODES.includes(groupBy) ? groupBy : 'none', false);
 
     // ── Tabs: Servers (this file), Sessions and Containers (js/views/) ──
     // A view registers window.DevDockViews[id] = { render() } and reads
     // DevDock.sourceData[id], filled from the server's "source" messages.
-    const TABS = ['servers', 'sessions', 'containers'];
+    const TABS = ['servers', 'sessions', 'containers', 'apps', 'coding'];
     const SEARCH_HINTS = {
       servers: 'Search ports, PIDs, processes, paths\u2026',
       sessions: 'Search sessions, folders, branches, agents\u2026',
       containers: 'Search containers, images, volumes\u2026',
+      apps: 'Search apps, bundle IDs, processes, PIDs\u2026',
+      coding: 'Search agents, folders, branches, sessions\u2026',
     };
     window.DevDockViews = {};
     window.DevDock = { sourceData: {}, tab: 'servers' };
@@ -1271,7 +1278,7 @@ $('settingsBtn').addEventListener('click', openSettings);
       }
       switch (e.key) {
         case '?': if (!e.metaKey && !e.ctrlKey) window.devdockCommand('help'); break; // like GitHub, Gmail
-        case 'Escape': closeSettings(); $('helpModal').style.display = 'none'; $('exportMenu').classList.remove('open'); toggleGroupMenu(false); break;
+        case 'Escape': closeSettings(); $('helpModal').style.display = 'none'; $('exportMenu').classList.remove('open'); break;
       }
     });
 
@@ -1280,8 +1287,8 @@ $('settingsBtn').addEventListener('click', openSettings);
       switch (cmd) {
         case 'settings': openSettings(); break;
         case 'find': searchInput.focus(); searchInput.select(); break;
-        case 'tab-servers': case 'tab-sessions': case 'tab-containers': setTab(cmd.slice(4)); break;
-        case 'group-menu': setTab('servers'); toggleGroupMenu(true); break;
+        case 'tab-servers': case 'tab-sessions': case 'tab-containers': case 'tab-apps': case 'tab-coding': setTab(cmd.slice(4)); break;
+        case 'group-menu': setTab('servers'); setGroupBy(GROUP_MODES[(GROUP_MODES.indexOf(groupBy) + 1) % GROUP_MODES.length]); break;
         case 'history': window.location.href = '/history'; break;
         case 'export': if ($('exportBtn').offsetParent) $('exportBtn').click(); else showToast('Turn on the export button in Settings', 'info'); break;
         case 'theme': $('themeToggle').click(); break;

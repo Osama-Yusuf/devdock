@@ -141,8 +141,21 @@ module.exports = function agents(ctx) {
     anyRunning = true;
   }
 
+  // A next step's command, run in DevDock's terminal from the run's folder. Only commands
+  // the agent actually suggested in this run; the terminal stays open until a key.
+  async function terminal({ id, cmd }) {
+    if (!/^[0-9a-f]{8}$/.test(id || '') || typeof cmd !== 'string') return null;
+    const events = readEvents(id);
+    if (!events.some(e => e.t === 'answer' && e.data?.actions.some(a => a.command === cmd))) return null;
+    let cwd = os.homedir();
+    try { cwd = JSON.parse(fs.readFileSync(path.join(RUNS_DIR, id, 'meta.json'), 'utf8')).cwd || cwd; } catch {}
+    const script = `printf '\\033[2m$ %s\\033[0m\\n' "$1"; eval "$1"; s=$?; printf '\\n\\033[2m[exit %s] press any key to close\\033[0m' $s; read -rsk1`;
+    return { file: '/bin/zsh', args: ['-lc', script, 'devdock', cmd], cwd };
+  }
+
   return {
     id: 'agents',
+    terminal,
     get intervalMs() { return anyRunning ? 1000 : 5000; },
     scan,
     actions: {

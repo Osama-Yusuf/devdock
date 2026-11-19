@@ -11,7 +11,7 @@
 //   DevDockViews[tab].bulk(items) -> [{ label, icon?, danger?, run() }]
 // Selections survive searching: pick what one search finds, search again, add more.
 (function () {
-  const ROWS = { servers: '#tableBody', sessions: '#sessionsView', containers: '#containersView' };
+  const ROWS = { servers: '#tableBody', sessions: '#sessionsView', containers: '#containersView', apps: '#appsView', coding: '#codingView' };
   // where a drag must not start: anything you can click, type in or that floats above the table
   const INTERACTIVE = 'a, button, input, select, textarea, label, [onclick], [contenteditable], .path-link, .pid-copy, .chip-tmux, .actions-menu, .group-header, .modal-overlay, .confirm-overlay, #selDock, .agent-win, .agent-dock, .xterm, .help-panel, header, .toolbar, .tabs, .icon-group';
   const sel = new Set();
@@ -188,6 +188,8 @@
     container: '<rect x="2" y="7" width="20" height="13" rx="2"/><path d="M6 7V4h12v3"/>',
     image: '<path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/>',
     volume: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/>',
+    agent: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/>',
+    app: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   };
   const ico = (k, s = 13) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${KIND_ICON[k] || KIND_ICON.server}</svg>`;
 

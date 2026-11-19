@@ -1127,7 +1127,8 @@
 
     /* ── Agent run window + dock ───────────── */
     .agent-win {
-      position: fixed; right: 20px; bottom: 76px; z-index: 97; width: min(460px, calc(100vw - 32px)); max-height: min(74vh, 680px);
+      position: fixed; right: 20px; bottom: 76px; z-index: 97; width: min(var(--aw-w, 600px), calc(100vw - 32px));
+      height: var(--aw-h, auto); max-height: min(var(--aw-h, 82vh), calc(100vh - 100px));
       border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; transform-origin: bottom right;
       opacity: 0; transform: translateY(14px) scale(.94); transition: opacity .2s ease, transform .3s cubic-bezier(.2,1.2,.4,1);
     }
@@ -1349,3 +1350,159 @@
     .pattern.active { color: var(--accent); border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
     .pattern.active span { background: var(--accent); color: #fff; }
     section[data-view="servers"] > .subbar, section[data-view="sessions"] > .subbar { margin-bottom: 10px; }
+    .confirm-input { width: 100%; margin: 4px 0 14px; padding: 9px 12px; }
+    .btn-primary { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
+    .btn-primary:hover { filter: brightness(1.1); }
+
+    /* ── Apps tab ─────────────────────────────────────────────────── */
+    .app-icon { width: 20px; height: 20px; border-radius: 5px; flex-shrink: 0; }
+    .app-letter { display: inline-grid; place-items: center; font-size: .7rem; font-weight: 700; color: var(--text-muted); background: var(--bg-hover); text-transform: uppercase; }
+    .app-twisty { width: 18px; height: 18px; display: inline-grid; place-items: center; border: none; background: none; color: var(--text-dim); cursor: pointer; border-radius: 4px; flex-shrink: 0; transition: transform .15s; }
+    .app-twisty:hover { color: var(--text); background: var(--bg-hover); }
+    .apps-table tr.is-open .app-twisty { transform: rotate(90deg); }
+    .apps-table td.hot { color: #f59e0b; }
+    .apps-table th.sortable { cursor: pointer; }
+    .apps-table th.sorted { color: var(--text); }
+    .apps-table th.sorted::after { content: ' \2193'; }
+    .app-detail > td { padding: 4px 16px 14px 44px !important; background: var(--bg-hover); }
+    .app-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px 18px; margin: 6px 0 10px; font-size: .76rem; }
+    .app-facts div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .app-facts span { color: var(--text-dim); font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; }
+    .app-facts code { font-family: var(--mono); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: copy; }
+    .app-procs { width: 100%; border-collapse: collapse; font-size: .76rem; }
+    .app-procs th { text-align: left; font-size: .66rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; padding: 4px 8px; font-weight: 600; }
+    .app-procs td { padding: 4px 8px !important; border-top: 1px solid var(--border-row); }
+    .app-procs tr.not-own td { color: var(--text-muted); }
+    .app-procs td .chip { margin-left: 6px; }
+    .app-proc-acts { text-align: right; white-space: nowrap; }
+    .app-proc-acts button { font-size: .7rem; padding: 2px 8px; margin-left: 4px; border-radius: 6px; border: 1px solid var(--border); background: none; color: var(--text-muted); cursor: pointer; }
+    .app-proc-acts button:hover { color: var(--text); border-color: var(--text-dim); }
+    .app-proc-acts button.danger:hover { color: #f87171; border-color: #f87171; }
+    .apps-table th:nth-child(1) { width: auto; }
+    .apps-table th:nth-child(2) { width: 130px; }
+    .apps-table th:nth-child(3) { width: 70px; }
+    .apps-table th:nth-child(4) { width: 100px; }
+    .apps-table th:nth-child(5) { width: 80px; }
+    .apps-table th:nth-child(6) { width: 100px; }
+    .apps-table th:nth-child(7) { width: 100px; }
+    .apps-table th:nth-child(8) { width: 56px; }
+    .app-procs { table-layout: fixed; }
+    .app-procs th:nth-child(1) { width: 70px; } .app-procs th:nth-child(2) { width: auto; }
+    .app-procs th:nth-child(3), .app-procs th:nth-child(4), .app-procs th:nth-child(5) { width: 90px; }
+    .app-procs th:nth-child(6) { width: 120px; }
+    .app-procs td:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── Surface: chrome, background, depth ─────────────────────────
+       The title bar is its own tone, a step off the page like any Mac window's chrome,
+       and follows the theme. The page gets a faint light from the top and a fine grain
+       so it reads as a surface, not a flat fill. Tables sit on it with a hairline top
+       highlight and a soft shadow. */
+    :root {
+      --bg-deep: #0b0e13;
+      --chrome: rgba(20, 25, 33, 0.86);
+      --chrome-line: rgba(255, 255, 255, 0.06);
+      --glow: rgba(120, 160, 255, 0.07);
+      --grain: 0.035;
+      --lift: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 1px 2px rgba(0, 0, 0, 0.35), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
+    }
+    html[data-theme="light"] {
+      --bg-deep: #f3f4f7;
+      --chrome: rgba(232, 235, 241, 0.88);
+      --chrome-line: rgba(15, 23, 42, 0.08);
+      --glow: rgba(59, 130, 246, 0.06);
+      --grain: 0.025;
+      --lift: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(15, 23, 42, 0.05), 0 12px 32px -18px rgba(15, 23, 42, 0.18);
+    }
+    body {
+      background:
+        radial-gradient(1100px 420px at 50% -120px, var(--glow), transparent 70%) no-repeat fixed,
+        var(--bg-deep);
+    }
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: var(--grain);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+    html.electron .titlebar {
+      background: var(--chrome);
+      border-bottom: 1px solid var(--chrome-line);
+      box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+    }
+    .scroll { box-shadow: var(--lift); }
+    .seg-n { margin-left: 6px; font-size: .68rem; opacity: .55; font-variant-numeric: tabular-nums; }
+
+    /* ── Run window: resize, big mode, step menu ─────────────────── */
+    .agent-win.big { width: min(1040px, calc(100vw - 40px)); height: calc(100vh - 100px); max-height: none; }
+    .agent-win.resizing { transition: none; user-select: none; }
+    .aw-grip { position: absolute; top: 0; left: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 3; }
+    .aw-grip::before { content: ''; position: absolute; top: 5px; left: 5px; width: 7px; height: 7px; border-top: 2px solid var(--text-dim); border-left: 2px solid var(--text-dim); border-top-left-radius: 3px; opacity: 0; transition: opacity .15s; }
+    .agent-win:hover .aw-grip::before { opacity: .6; }
+    .ans-at { position: relative; }
+    .ans-more { margin-left: 2px; width: 24px; height: 22px; display: grid; place-items: center; border: none; border-radius: 6px; background: none; color: var(--text-dim); cursor: pointer; flex-shrink: 0; }
+    .ans-more:hover, .ans-a.menu-open .ans-more { background: var(--bg-hover); color: var(--text); }
+    .ans-menu {
+      display: none; position: absolute; right: 0; top: 26px; z-index: 5; min-width: 210px; padding: 4px; border-radius: 10px;
+      background: var(--bg-modal); border: 1px solid var(--border); box-shadow: 0 12px 32px -8px rgba(0,0,0,.45);
+    }
+    .ans-a.menu-open .ans-menu { display: block; animation: sugIn .16s ease both; }
+    .ans-menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: none; border-radius: 7px; background: none; color: var(--text); font-size: .78rem; cursor: pointer; text-align: left; }
+    .ans-menu button:hover { background: var(--bg-hover); }
+    .ans-menu svg { color: var(--text-dim); flex-shrink: 0; }
+    .ans-cmd-acts { display: flex; gap: 2px; align-self: flex-start; }
+    .ans-cmd .ans-cmd-acts .aw-copy { position: static; }
+    .ans-cmd { display: flex; align-items: flex-start; gap: 8px; padding-right: 5px; }
+    .ans-cmd code { flex: 1; min-width: 0; }
+    .ans-cmd-acts .aw-copy:hover { color: var(--text); background: var(--bg-hover); }
+    .ans-a.menu-open { position: relative; z-index: 6; }
+    /* Content fills the window like a native app; only the gutter grows with it */
+    .inner { max-width: none; }
+    .card { padding-left: clamp(16px, 2.4vw, 40px); padding-right: clamp(16px, 2.4vw, 40px); }
+
+    /* ── Claude Code state: working, needs you, idle ─────────────── */
+    .ast { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; font-size: .78rem; white-space: nowrap; vertical-align: middle; }
+    .ast.compact { margin-left: 8px; width: 16px; height: 16px; justify-content: center; }
+    .ast em { font-style: normal; color: var(--text-dim); font-size: .72rem; font-variant-numeric: tabular-nums; }
+    .ast-working { color: #60a5fa; }
+    .ast-needs-you { color: #fbbf24; }
+    .ast-needs-you.compact svg { animation: astPulse 1.6s ease-in-out infinite; }
+    .ast-idle { color: var(--text-dim); }
+    .ast-spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; flex-shrink: 0; }
+    html[data-theme="light"] .ast-working { color: #2563eb; }
+    html[data-theme="light"] .ast-needs-you { color: #b45309; }
+    .stat-needs-you .stat-value { color: #fbbf24; }
+    .stat-working .stat-value { color: #60a5fa; }
+    @keyframes astPulse { 50% { opacity: .45; } }
+
+    /* ── Agents tab ───────────────────────────────────────────────── */
+    .coding-table th:nth-child(1) { width: 220px; }
+    .coding-table th:nth-child(2) { width: 130px; }
+    .coding-table th:nth-child(3) { width: auto; }
+    .coding-table th:nth-child(4) { width: 220px; }
+    .coding-table th:nth-child(5) { width: 90px; }
+    .coding-table th:nth-child(6) { width: 90px; }
+    .coding-table th:nth-child(7) { width: 90px; }
+    .coding-table th:nth-child(8) { width: 56px; }
+    .coding-table .ast { margin-left: 0; }
+    .coding-table .agent-ico { margin-right: 6px; }
+
+    /* ── Terminal: fill the window ───────────────────────────────── */
+    .term-modal { transition: width .2s ease, height .2s ease; }
+    .term-modal.max { width: calc(100vw - 24px); height: calc(100vh - 50px); margin-top: 38px; border-radius: 12px; }
+    .term-grow { display: grid; place-items: center; margin-left: 0; }
+
+    /* ── Shortcut badges while ⌘ ⌥ ⌃ is held (js/keys.js) ─────────── */
+    [data-kbd]:not(input), .subtabs [role="tab"], .pattern, .search-box { position: relative; }
+    kbd.kbd-badge {
+      position: absolute; top: -7px; right: -7px; z-index: 50; pointer-events: none;
+      min-width: 16px; padding: 1px 4px; border-radius: 6px; text-align: center;
+      font: 600 10px/14px var(--font-mono, ui-monospace, monospace); letter-spacing: .02em;
+      color: #0b0e13; background: #e5e7eb; box-shadow: 0 1px 0 rgba(0,0,0,.35), 0 0 0 1px rgba(0,0,0,.25);
+      animation: kbdIn .12s ease-out;
+    }
+    .search-box > .kbd-badge { top: 50%; right: 10px; transform: translateY(-50%); }
+    html[data-theme="light"] .kbd-badge { color: #fff; background: #1f2937; }
+    @keyframes kbdIn { from { opacity: 0; transform: scale(.85); } }
+    /* text sub-tabs (multiplexers) next to icon ones */
+    .subtabs button.txt { width: auto; padding: 0 11px; gap: 6px; display: inline-flex; align-items: center; font-size: .78rem; }
+    .subtabs .seg-n { margin-left: 0; }
+    .subtabs .ast-spin { animation: none; border-right-color: currentColor; border-top-color: transparent; }
+    html.kbd-showing .pattern { overflow: visible; }

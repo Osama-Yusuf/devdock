@@ -6,7 +6,10 @@
   const ICON_CLOSE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
   const ICON_CODE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>';
   const ICON_BRANCH = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>';
+  const ICON_EDIT = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
   let byKey = {};
+  let mux = 'all'; // the multiplexer filter
+  try { mux = localStorage.getItem('devdock:sessions-mux') || 'all'; } catch {}
 
   const data = () => DevDock.sourceData.sessions || { sessions: [], muxes: [] };
   const label = mux => data().muxes.find(m => m.mux === mux)?.label || mux;
@@ -33,13 +36,14 @@
       open && `<button onclick="DevDockViews.sessions.open(this.dataset.key)" data-key="${esc(s.key)}">${ICON_OPEN}${s.canOpen ? 'Open here' : `Show in ${esc(label(s.mux))}`}</button>`,
       s.cwd && `<button onclick="openEditor(this.dataset.path)" data-path="${esc(s.cwd)}">${ICON_CODE}Open in ${esc(editorName())}</button>`,
       s.github && s.branch && `<button onclick="window.open(this.dataset.url)" data-url="${esc(s.github + '/tree/' + s.branch.split('/').map(encodeURIComponent).join('/'))}">${ICON_BRANCH}Open branch on GitHub</button>`,
+      s.canRename && `<button onclick="DevDockViews.sessions.rename(this.dataset.key)" data-key="${esc(s.key)}">${ICON_EDIT}Rename</button>`,
       s.canKill && `<div class="actions-divider"></div><button class="danger" onclick="DevDockViews.sessions.kill(this.dataset.key)" data-key="${esc(s.key)}">${ICON_CLOSE}Close session</button>`,
     ].filter(Boolean).join('');
     return `<tr data-key="${esc(s.key)}">
       <td><span class="chip chip-mux" title="${esc(label(s.mux))}">${esc(label(s.mux))}</span></td>
       <td class="col-name"><span class="path-cell">${open
         ? `<button class="link-btn trunc" onclick="DevDockViews.sessions.open(this.dataset.key)" data-key="${esc(s.key)}" title="${s.canOpen ? 'Open it here' : 'Show it in ' + esc(label(s.mux))}">${esc(s.name)}</button>`
-        : `<span class="trunc">${esc(s.name)}</span>`}${s.name.startsWith('devdock-agent-') ? '<span class="chip chip-agent" title="An agent DevDock started for you">agent run</span>' : ''}${stateHTML(s)}</span></td>
+        : `<span class="trunc">${esc(s.name)}</span>`}${s.name.startsWith('devdock-agent-') ? '<span class="chip chip-agent" title="An agent DevDock started for you">agent run</span>' : ''}${stateHTML(s)}${agentStateHTML(s.agentState, true)}</span></td>
       <td class="col-path"><span class="path-cell">${s.cwd
         ? `<span class="path-link trunc" data-path="${esc(s.cwd)}" onclick="copyText(this.dataset.path, 'Path')" title="${esc(s.cwd)}\nClick to copy">‎${esc(tildify(s.cwd))}‎</span>`
         : '<span class="code">—</span>'}${s.branch ? `<span class="branch trunc" title="git branch: ${esc(s.branch)}">⎇ ${esc(s.branch)}</span>` : ''}${s.agents.map(a => agentHTML(a, `${a} runs in this session${s.agentStatus ? ' · ' + s.agentStatus : ''}`)).join('')}</span></td>
@@ -58,23 +62,31 @@
   const base = p => p.replace(/\/$/, '').split('/').pop() || p;
   const PATTERNS = [
     s => { const fam = s.name.replace(/[-_.]?([0-9a-f]{6,}|\d+)$/i, ''); return fam && fam !== s.name && { id: `name:${fam}`, label: `${fam}\u2026`, title: `Sessions named ${fam}\u2026` }; },
+    s => s.name.includes(' / ') && { id: `space:${s.name.split(' / ')[0]}`, label: s.name.split(' / ')[0], title: `${label(s.mux)} space ${s.name.split(' / ')[0]}` },
     s => s.cwd && { id: `cwd:${s.cwd}`, label: base(s.cwd), title: `Sessions in ${s.cwd}` },
     s => s.agents[0] && { id: `agent:${s.agents[0]}`, label: s.agents[0], title: `Sessions running ${s.agents[0]}` },
     s => s.idle && { id: 'idle', label: 'idle', title: 'Idle sessions' },
+    s => s.agentState?.status === 'needs-you' && { id: 'needs', label: 'needs you', title: 'Claude Code is waiting on a permission prompt or a question', min: 1 },
+    s => s.agentState?.status === 'working' && { id: 'working', label: 'working', title: 'Claude Code is working', min: 1 },
   ];
 
   function render() {
     const d = data();
     byKey = Object.fromEntries(d.sessions.map(s => [s.key, s]));
     const q = searchInput.value.trim().toLowerCase();
-    const patterns = DevDockPatterns.find('sessions', d.sessions, s => s.key, PATTERNS);
-    const list = DevDockPatterns.filter('sessions', d.sessions.filter(s => matches(s, q)), s => s.key).sort(order);
+    // one button per multiplexer that has sessions; a choice that emptied out falls back to All
+    const kinds = [...new Set(d.sessions.map(s => s.mux))];
+    if (!kinds.includes(mux)) mux = 'all';
+    const base = d.sessions.filter(s => mux === 'all' || s.mux === mux);
+    const patterns = DevDockPatterns.find('sessions', base, s => s.key, PATTERNS);
+    const list = DevDockPatterns.filter('sessions', base.filter(s => matches(s, q)), s => s.key).sort(order);
     const idle = d.sessions.filter(s => s.idle && s.canKill);
 
     document.getElementById('viewStats').innerHTML = `
       <div class="stat"><span class="stat-value">${d.sessions.length}</span><span class="stat-label">sessions</span></div>
       <div class="stat"><span class="stat-value">${d.sessions.filter(s => s.attached).length}</span><span class="stat-label">attached</span></div>
-      <div class="stat"><span class="stat-value">${idle.length}</span><span class="stat-label">idle</span></div>`;
+      <div class="stat"><span class="stat-value">${idle.length}</span><span class="stat-label">idle</span></div>
+      ${['working', 'needs-you'].map(k => { const n = d.sessions.filter(s => s.agentState?.status === k).length; return n ? `<div class="stat stat-${k}"><span class="stat-value">${n}</span><span class="stat-label">${k === 'working' ? 'working' : 'need you'}</span></div>` : ''; }).join('')}`;
     // Searching: act on what matched, like Servers' "Kill N matching"; otherwise offer the idle ones
     const matching = q ? list.filter(s => s.canKill) : [];
     document.getElementById('viewTools').innerHTML = q
@@ -84,7 +96,8 @@
 
     const missing = d.muxes.filter(m => !m.available).map(m => m.label);
     const errors = d.muxes.filter(m => m.error).map(m => `${m.label}: ${m.error}`);
-    const chips = patterns.length ? `<div class="subbar"><div class="patterns">${DevDockPatterns.html('sessions', patterns)}</div></div>` : '';
+    const seg = kinds.length > 1 ? `<div class="subtabs" role="tablist"><button role="tab" class="txt" aria-selected="${mux === 'all'}" title="All sessions  \u23251" onclick="DevDockViews.sessions.setMux('all')">All</button>${kinds.map((k, i) => `<button role="tab" class="txt" aria-selected="${mux === k}" title="${esc(label(k))} sessions  \u2325${i + 2}" onclick="DevDockViews.sessions.setMux('${esc(k)}')">${esc(label(k))}<span class="seg-n">${d.sessions.filter(s => s.mux === k).length}</span></button>`).join('')}</div>` : '';
+    const chips = seg || patterns.length ? `<div class="subbar">${seg}${patterns.length ? `<div class="patterns">${DevDockPatterns.html('sessions', patterns)}</div>` : ''}</div>` : '';
     view.innerHTML = chips + (list.length ? `
       <div class="scroll"><table class="sessions-table">
         <thead><tr><th>Kind</th><th>Session</th><th>Folder</th><th>Ports</th><th class="col-user">Windows</th><th class="col-user">Active</th><th class="col-user">Created</th><th></th></tr></thead>
@@ -119,6 +132,14 @@
     return killMany(data().sessions.filter(s => s.canKill && matches(s, q)), 'matching');
   };
 
+  async function rename(key) {
+    closeAllMenus();
+    const s = byKey[key];
+    if (!s) return;
+    const name = await confirmDialog(`Rename ${label(s.mux)} session`, '', 'Rename', s.name);
+    if (name && name !== s.name && await sourceAction('sessions', 'rename', { mux: s.mux, id: s.id, name })) showToast(`Renamed to ${name}`);
+  }
+
   function open(key) {
     closeAllMenus();
     const s = byKey[key];
@@ -132,7 +153,7 @@
     const s = byKey[key] || data().sessions.find(x => x.key === key);
     return s && { kind: 'session', name: s.name, mux: s.mux, ref: s.mux === 'tmux' ? s.id : '', cwd: s.cwd, raw: s, facts: {
       multiplexer: label(s.mux), state: s.state, attached: s.attached == null ? '' : s.attached ? 'yes' : 'no', idle: s.idle ? 'yes' : '',
-      folder: s.cwd, 'git branch': s.branch, 'agents running': s.agents.join(', '), 'agent status': s.agentStatus, ports: s.ports.join(', '),
+      folder: s.cwd, 'git branch': s.branch, 'agents running': s.agents.join(', '), 'agent status': s.agentState ? `${s.agentState.status}${s.agentState.since ? ' since ' + timeAgo(s.agentState.since) : ''}` : s.agentStatus, ports: s.ports.join(', '),
       windows: s.windows, 'last output': s.lastActive ? timeAgo(s.lastActive) : '', created: s.createdAt ? timeAgo(s.createdAt) : '',
     } };
   }
@@ -141,5 +162,5 @@
     return list.length ? [{ label: `Close ${list.length}`, icon: ICON_CLOSE, danger: true, run: () => killMany(list, 'selected') }] : [];
   }
 
-  DevDockViews.sessions = { render, open, kill, killIdle, killMatching, pick, bulk };
+  DevDockViews.sessions = { render, open, rename, kill, setMux(m) { mux = m; try { localStorage.setItem('devdock:sessions-mux', m); } catch {} render(); }, killIdle, killMatching, pick, bulk };
 })();

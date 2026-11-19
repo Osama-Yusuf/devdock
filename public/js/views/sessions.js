@@ -39,7 +39,7 @@
       <td><span class="chip chip-mux" title="${esc(label(s.mux))}">${esc(label(s.mux))}</span></td>
       <td class="col-name"><span class="path-cell">${open
         ? `<button class="link-btn trunc" onclick="DevDockViews.sessions.open(this.dataset.key)" data-key="${esc(s.key)}" title="${s.canOpen ? 'Open it here' : 'Show it in ' + esc(label(s.mux))}">${esc(s.name)}</button>`
-        : `<span class="trunc">${esc(s.name)}</span>`}${stateHTML(s)}</span></td>
+        : `<span class="trunc">${esc(s.name)}</span>`}${s.name.startsWith('devdock-agent-') ? '<span class="chip chip-agent" title="An agent DevDock started for you">agent run</span>' : ''}${stateHTML(s)}</span></td>
       <td class="col-path"><span class="path-cell">${s.cwd
         ? `<span class="path-link trunc" data-path="${esc(s.cwd)}" onclick="copyText(this.dataset.path, 'Path')" title="${esc(s.cwd)}\nClick to copy">‎${esc(tildify(s.cwd))}‎</span>`
         : '<span class="code">—</span>'}${s.branch ? `<span class="branch trunc" title="git branch: ${esc(s.branch)}">⎇ ${esc(s.branch)}</span>` : ''}${s.agents.map(a => agentHTML(a, `${a} runs in this session${s.agentStatus ? ' · ' + s.agentStatus : ''}`)).join('')}</span></td>
@@ -95,10 +95,11 @@
     if (!list.length) return;
     const busy = list.filter(s => s.attached || s.agents.length || s.ports.length).length;
     const detail = list.map(s => s.name).join(', ') + (busy ? `\n${busy} of them are attached or running an agent or server.` : '');
-    if (!await confirmDialog(`Close ${list.length} ${what} session${list.length > 1 ? 's' : ''}?`, detail, 'Close')) return;
+    if (!await confirmDialog(`Close ${list.length} ${what} session${list.length > 1 ? 's' : ''}?`, detail, 'Close')) return false;
     let closed = 0;
     for (const s of list) if (await sourceAction('sessions', 'kill', { mux: s.mux, id: s.id })) closed++;
     showToast(`Closed ${closed} ${what} session${closed === 1 ? '' : 's'}`);
+    return true;
   }
   const killIdle = () => killMany(data().sessions.filter(s => s.idle && s.canKill), 'idle');
   const killMatching = () => {
@@ -114,5 +115,19 @@
     else sourceAction('sessions', 'show', { mux: s.mux, id: s.id });
   }
 
-  DevDockViews.sessions = { render, open, kill, killIdle, killMatching };
+  // ── selection (js/selection.js) ──
+  function pick(key) {
+    const s = byKey[key] || data().sessions.find(x => x.key === key);
+    return s && { kind: 'session', name: s.name, mux: s.mux, ref: s.mux === 'tmux' ? s.id : '', cwd: s.cwd, raw: s, facts: {
+      multiplexer: label(s.mux), state: s.state, attached: s.attached == null ? '' : s.attached ? 'yes' : 'no', idle: s.idle ? 'yes' : '',
+      folder: s.cwd, 'git branch': s.branch, 'agents running': s.agents.join(', '), 'agent status': s.agentStatus, ports: s.ports.join(', '),
+      windows: s.windows, 'last output': s.lastActive ? timeAgo(s.lastActive) : '', created: s.createdAt ? timeAgo(s.createdAt) : '',
+    } };
+  }
+  function bulk(items) {
+    const list = items.map(i => i.raw).filter(s => s.canKill);
+    return list.length ? [{ label: `Close ${list.length}`, icon: ICON_CLOSE, danger: true, run: () => killMany(list, 'selected') }] : [];
+  }
+
+  DevDockViews.sessions = { render, open, kill, killIdle, killMatching, pick, bulk };
 })();

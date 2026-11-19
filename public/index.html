@@ -9,6 +9,7 @@
 </head>
 <body>
   <div class="titlebar"></div>
+  <script>/Electron/.test(navigator.userAgent) && document.documentElement.classList.add('electron')</script>
   <div class="card">
     <div class="inner">
       <!-- Header -->
@@ -189,6 +190,9 @@
         <kbd>&#8984;Y</kbd><span>History</span>
         <kbd>&#8679;&#8984;L</kbd><span>Light / dark</span>
         <kbd>&#8679;&#8984;E</kbd><span>Export (when enabled)</span>
+        <kbd>Drag</kbd><span>Select rows (&#8679; or &#8984; adds; &#8997;-drag selects text)</span>
+        <kbd>&#8984;A</kbd><span>Select everything shown</span>
+        <kbd>&#8984;&#8629;</kbd><span>Ask an agent about the selection</span>
         <kbd>?</kbd><span>This panel</span>
         <kbd>Esc</kbd><span>Close any panel</span>
       </div>
@@ -198,6 +202,7 @@
         <div>Click a <b>path</b> to copy it, right-click to open a terminal there.</div>
         <div>Type <b>orphan</b> or <b>idle</b> in search to list leftovers.</div>
         <div>Click a <b>session</b> to work in it here; its detach key or <kbd>&#8984;.</kbd> closes it.</div>
+        <div><b>&#8984;-click</b> rows to pick them one by one; search, then pick more.</div>
       </div>
     </div>
   </div>
@@ -212,6 +217,7 @@
             <button data-pane="grouping"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Grouping</span></button>
             <button data-pane="idle"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg><span>Idle servers</span></button>
             <button data-pane="editor"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span>Editor</span></button>
+            <button data-pane="agents"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg><span>Agents</span></button>
             <button data-pane="history"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><polyline points="3 3 3 8 8 8"/></svg><span>History</span></button>
           <div class="settings-nav-hint">Changes save automatically<br><kbd>&uarr;</kbd><kbd>&darr;</kbd> switch &nbsp;<kbd>Esc</kbd> close</div>
         </nav>
@@ -303,6 +309,27 @@
             </div>
           </section>
 
+          <section class="settings-pane" data-pane="agents">
+            <h3 class="pane-title">Agents</h3>
+            <div class="settings-list">
+              <div class="settings-row">
+                <div><label>Ask agents about what you select</label><div class="sub">Select rows, write a prompt, and a coding agent looks into them in the background, in its own tmux session</div></div>
+                <label class="toggle"><input type="checkbox" id="agentsEnabled" /><span class="toggle-slider"></span></label>
+              </div>
+              <div class="settings-row agents-dep">
+                <div><label>Agent</label><div class="sub" id="agentHint">Runs headless: claude -p, codex exec, opencode run</div></div>
+                <select class="refresh-select" id="agentSelect"></select>
+              </div>
+              <div class="settings-row agents-dep">
+                <div><label>Access</label><div class="sub">Each run can switch from the prompt without changing this</div></div>
+                <select class="refresh-select" id="agentAccess">
+                  <option value="full">Full access</option>
+                  <option value="readonly">Read-only</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
           <section class="settings-pane" data-pane="history">
             <h3 class="pane-title">History</h3>
             <div class="settings-list">
@@ -331,5 +358,8 @@
   <script src="/js/dashboard.js"></script>
   <script src="/js/views/sessions.js"></script>
   <script src="/js/views/containers.js"></script>
+  <script src="/js/suggest.js"></script>
+  <script src="/js/selection.js"></script>
+  <script src="/js/agents.js"></script>
 </body>
 </html>

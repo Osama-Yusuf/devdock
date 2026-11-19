@@ -81,14 +81,15 @@
     async function killPids(pids, message) {
       closeAllMenus();
       pids = [...new Set(pids.map(String))];
-      if (!pids.length) return;
-      if (!await confirmDialog(message, `PID${pids.length > 1 ? 's' : ''} ${pids.join(', ')}`)) return;
+      if (!pids.length) return false;
+      if (!await confirmDialog(message, `PID${pids.length > 1 ? 's' : ''} ${pids.join(', ')}`)) return false;
       const results = await Promise.all(pids.map(pid =>
         fetch(`/api/kill/${pid}`, { method: 'POST' }).then(r => r.ok).catch(() => false)));
       const failed = results.filter(ok => !ok).length;
       if (failed) showToast(`Killed ${pids.length - failed}, ${failed} failed`, 'warn');
       else showToast(pids.length > 1 ? `Killed ${pids.length} processes` : `Process ${pids[0]} killed`);
       setTimeout(() => loadPorts(true), 800);
+      return true;
     }
 
     function killProcess(pid) { return killPids([pid], `Kill process ${pid}?`); }
@@ -941,6 +942,7 @@
       $('idleAfterHours').value = String(currentSettings.idleAfterHours ?? 24);
       $('autoKillIdle').checked = !!currentSettings.autoKillIdle;
       $('tmuxOpen').value = currentSettings.tmuxOpen || 'devdock';
+      fillAgentSettings();
       editors = await fetch('/api/editors').then(r => r.json()).catch(() => []);
       $('editorSelect').innerHTML = editors.length
         ? editors.map(e => `<option ${e === editorName() ? 'selected' : ''}>${esc(e)}</option>`).join('')
@@ -969,6 +971,19 @@
       });
 
       $('settingsModal').style.display = 'block';
+    }
+
+    // Only installed agents can be picked; the list comes from the agents source
+    function fillAgentSettings() {
+      const list = DevDock.sourceData.agents?.agents || [];
+      const pick = list.find(a => a.installed && a.id === currentSettings.agent) || list.find(a => a.installed);
+      $('agentsEnabled').checked = !!currentSettings.agentsEnabled;
+      $('agentSelect').innerHTML = list.length
+        ? list.map(a => `<option value="${a.id}" ${a.installed ? '' : 'disabled'} ${a === pick ? 'selected' : ''}>${esc(a.label)}${a.installed ? (a.version ? ' ' + esc(a.version) : '') : ' (not installed)'}</option>`).join('')
+        : '<option value="">Looking\u2026</option>';
+      $('agentAccess').value = currentSettings.agentReadOnly ? 'readonly' : 'full';
+      $('agentHint').textContent = list.some(a => a.installed) ? 'Runs headless: claude -p, codex exec, opencode run' : 'Install Claude Code, Codex or OpenCode to use this';
+      document.querySelectorAll('.agents-dep').forEach(r => r.classList.toggle('is-off', !$('agentsEnabled').checked));
     }
 
     function closeSettings() { $('settingsModal').style.display = 'none'; }
@@ -1005,6 +1020,9 @@
         autoKillIdle: $('autoKillIdle').checked,
         editor: $('editorSelect').value,
         tmuxOpen: $('tmuxOpen').value,
+        agentsEnabled: $('agentsEnabled').checked,
+        agent: $('agentSelect').value,
+        agentReadOnly: $('agentAccess').value === 'readonly',
       };
 
       const ok = await fetch('/api/settings', {
@@ -1016,6 +1034,7 @@
 
       currentSettings = { ...currentSettings, ...body };
       updateExportVisibility(body.showExport);
+      document.querySelectorAll('.agents-dep').forEach(r => r.classList.toggle('is-off', !body.agentsEnabled));
       lastFilteredKeys = ''; // grouping depth may have changed
       const label = typeof what === 'string' ? what : describeChange(what?.target);
       showToast(label ? `Saved \u00B7 ${label}` : 'Settings saved', 'success', 'settings');
@@ -1102,9 +1121,26 @@
       showToast(body?.error || 'Something went wrong', 'warn');
       return null;
     }
+    // Selection (js/selection.js) asks each tab what a row is and what it can do to many
+    DevDockViews.servers = {
+      pick(key) {
+        const p = allPorts.find(x => rowKey(x) === key);
+        return p && { kind: 'server', name: `:${p.port} ${p.procName || p.runtimeName}`, ref: String(p.pid), cwd: hasProject(p) ? p.scriptPath : '', raw: p, facts: {
+          port: p.port, pid: p.pid, command: p.command, runtime: `${p.runtimeName}${p.version ? ' ' + p.version : ''}`, folder: p.scriptPath,
+          'git branch': p.branch, cpu: `${(p.cpu || 0).toFixed(1)}%`, memory: formatMem(p.memMB || 0), started: p.startedAt ? timeAgo(p.startedAt) : '',
+          health: healthMap[p.port], idle: p.idle ? 'yes, no CPU activity' : '', orphan: p.orphan ? 'yes, its parent process exited' : '',
+          'started by': p.launcher?.name, 'tmux pane': p.tmux?.target, 'also running from this folder': p.dupOf?.map(d => ':' + d.port).join(' '),
+        } };
+      },
+      bulk(items) {
+        const pids = [...new Set(items.map(i => i.raw.pid))];
+        return [{ label: `Kill ${pids.length}`, danger: true, run: () => killPids(pids, `Kill ${pids.length} process${pids.length > 1 ? 'es' : ''}?`) }];
+      },
+    };
     function handleSourceData(m) {
       DevDock.sourceData[m.id] = m.data;
       if (m.id === DevDock.tab) renderActiveView();
+      document.dispatchEvent(new CustomEvent('devdock:source', { detail: m.id }));
     }
 
     // ── Event listeners ──────────────────────────────────────────────

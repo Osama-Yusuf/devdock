@@ -64,11 +64,30 @@
     ? `<div class="scroll"><table class="${cls}"><thead><tr>${head}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`
     : `<div class="empty-view">${none}</div>`;
 
+  // ── patterns: groups worth acting on together, found instead of hand-picked ──
+  // 19 copies of one image, a compose project, a busy k8s namespace. One click filters
+  // to the group and selects it. Not persisted: the groups change as containers come and go.
+  let pattern = null;
+  const imageName = img => img.replace(/^.*\//, '').replace(/:latest$/, '');
+  function patternsOf(d) {
+    const groups = {};
+    const add = (id, label, title, c) => { (groups[id] ||= { id, label, title, keys: [] }).keys.push(c.id); };
+    for (const c of d.containers.filter(c => !c.k8s?.sandbox)) {
+      if (c.k8s) add(`ns:${c.k8s.namespace}`, c.k8s.namespace, `Kubernetes namespace ${c.k8s.namespace}`, c);
+      else add(`img:${c.image}`, imageName(c.image), `Containers from ${c.image}`, c);
+      if (c.project) add(`proj:${c.project}`, c.project, `Compose project ${c.project}`, c);
+    }
+    // a group is a pattern once it's 3+ (a compose project counts from 2)
+    return Object.values(groups).filter(g => g.keys.length >= (g.id.startsWith('proj:') ? 2 : 3))
+      .sort((a, b) => b.keys.length - a.keys.length).slice(0, 4);
+  }
+
   // ── rows per sub-tab ───────────────────────────────────────────────
   const LISTS = {
     // a pod's pause container only holds its network; it's noise next to the real ones
     containers: (d, f, q) => d.containers
       .filter(c => !c.k8s?.sandbox)
+      .filter(c => !pattern || pattern.keys.includes(c.id))
       .filter(c => f === 'all' || (f === 'k8s' ? c.k8s : f === 'running' ? !stopped(c) : stopped(c)))
       .filter(c => hit(q, c.name, c.image, c.project, c.state, c.ports.join(' '), c.k8s ? `k8s kubernetes ${c.k8s.pod} ${c.k8s.namespace}` : ''))
       .sort((a, b) => stopped(a) - stopped(b) || (b.lastUsed || 0) - (a.lastUsed || 0)),
@@ -84,7 +103,7 @@
 
   const BODIES = {
     containers: (list, k8sCtx) => table('ctr-table', '<th>Name</th><th>Image</th><th>Ports</th><th class="col-user">Last ran</th><th class="col-user">Disk</th><th></th>',
-      list.map((c, i) => `<tr>
+      list.map((c, i) => `<tr data-key="c:${esc(c.id)}">
         <td class="col-name"><span class="path-cell">${c.k8s
           ? `<span class="trunc" title="Pod ${esc(c.k8s.pod)}\nContainer ${esc(c.k8s.container)}\n${esc(c.status)}">${esc(c.k8s.pod)}</span><span class="chip chip-k8s" title="Kubernetes namespace ${esc(c.k8s.namespace)}">k8s \u00B7 ${esc(c.k8s.namespace)}</span>`
           : `<span class="trunc" title="${esc(c.status)}">${esc(c.name)}</span>`}${c.project ? `<span class="chip" title="Compose project">${esc(c.project)}</span>` : ''}</span></td>
@@ -99,7 +118,7 @@
           !c.k8s && stopped(c) && `<div class="actions-divider"></div>${item('removeContainer', c.id, ICON.trash, 'Remove', 'danger')}`,
         ])}</td></tr>`), 'No containers here.'),
     images: list => table('img-table', '<th>Tag</th><th>Used by</th><th class="col-user">Last used</th><th class="col-user">Created</th><th class="col-user">Size</th><th></th>',
-      list.map((im, i) => `<tr>
+      list.map((im, i) => `<tr data-key="i:${esc(im.id)}">
         <td class="col-name"><span class="path-cell"><span class="trunc" title="${esc(im.id)}">${esc(im.tags[0] || `<none> ${short(im.id)}`)}</span>${im.tags.length > 1 ? `<span class="chip" title="${esc(im.tags.join('\n'))}">+${im.tags.length - 1}</span>` : ''}${!im.tags.length ? '<span class="chip" title="Untagged, usually left over from an old build">dangling</span>' : ''}</span></td>
         <td>${used(im.containers)}</td>
         <td class="col-user">${when(im.running, im.lastUsed)}</td>
@@ -107,7 +126,7 @@
         <td class="col-user code" title="${bytes(im.unique)} not shared with other images">${bytes(im.size)}</td>
         <td class="actions-cell" style="text-align:right;">${menu(`img-${i}`, [!im.containers && item('removeImage', im.id, ICON.trash, 'Remove', 'danger')])}</td></tr>`), 'No images here.'),
     volumes: list => table('img-table', '<th>Name</th><th>Used by</th><th class="col-user">Last used</th><th class="col-user">Created</th><th class="col-user">Size</th><th></th>',
-      list.map((v, i) => `<tr>
+      list.map((v, i) => `<tr data-key="v:${esc(v.name)}">
         <td class="col-name"><span class="path-cell"><span class="trunc code" title="${esc(v.name)}">${esc(v.anonymous ? short(v.name) : v.name)}</span>${v.anonymous ? '<span class="chip" title="Created by a container, no name given">anonymous</span>' : ''}${v.project ? `<span class="chip" title="Compose project">${esc(v.project)}</span>` : ''}</span></td>
         <td>${used(v.containers)}</td>
         <td class="col-user">${when(v.running, v.lastUsed)}</td>
@@ -162,6 +181,8 @@
       build: bytes(d.buildCache.size),
     };
     const ctx = CLEANUPS[CONTEXT[tab]], ctxTotal = total(ctx.kinds, r);
+    const patterns = tab === 'containers' ? patternsOf(d) : [];
+    if (pattern) pattern = patterns.find(p => p.id === pattern.id) || null; // the group went away
     const list = LISTS[tab]?.(d, f, q);
     const all = { containers: d.containers.filter(c => !c.k8s?.sandbox), images: d.images, volumes: d.volumes }[tab];
     if (list) setViewResult(list.length, all.length);
@@ -174,7 +195,8 @@
         <button role="tab" aria-selected="${k === tab}" onclick="DevDockViews.containers.setTab('${k}')" aria-label="${t.label}" title="${t.label} \u00B7 ${meta[k]}  \u2325${i + 1}">${svg(t.icon, 16)}</button>`).join('')}
         </div>
         ${filters.length ? `<div class="seg">${filters.map(([k, label]) => `<button class="${k === f ? 'active' : ''}" onclick="DevDockViews.containers.setFilter('${k}')">${label}</button>`).join('')}</div>` : ''}
-        ${list && !q && f !== 'all' ? `<span class="subbar-count">${list.length} of ${all.length}</span>` : ''}
+        ${patterns.length ? `<div class="patterns">${patterns.map(p => `<button class="pattern ${pattern?.id === p.id ? 'active' : ''}" data-p="${esc(p.id)}" onclick="DevDockViews.containers.setPattern(this.dataset.p)" title="${esc(p.title)}${pattern?.id === p.id ? '. Click to show all' : '. Click to filter and select them'}">${esc(p.label)}<span>${p.keys.length}</span></button>`).join('')}</div>` : ''}
+        ${list && !q && (f !== 'all' || pattern) ? `<span class="subbar-count">${list.length} of ${all.length}</span>` : ''}
         ${matching ? `<button class="kill-all-btn subbar-action" ${matching.length ? '' : 'disabled'} onclick="DevDockViews.containers.removeMatching()" title="Only items nothing uses">
           ${ICON.trash}${matching.length ? `Remove ${matching.length} matching` : 'Nothing matching to remove'}</button>` : `<button class="${ctx.danger ? 'orphan-btn' : 'kill-all-btn'} subbar-action" ${ctxTotal.count ? '' : 'disabled'} onclick="DevDockViews.containers.prune(${CONTEXT[tab]})" title="Same as: ${ctx.cli}">
           ${ICON.trash}${!ctxTotal.count ? `No ${ctx.label.toLowerCase()}`
@@ -261,9 +283,68 @@
     if (t) { e.preventDefault(); DevDockViews.containers.setTab(t); }
   });
 
+  // ── selection (js/selection.js): what a row is, and what can be done to many ──
+  // Keys carry the kind, so a selection can span sub-tabs: c:<id>, i:<id>, v:<name>
+  function pick(key) {
+    const d = DevDock.sourceData.containers;
+    if (!d?.available) return null;
+    const id = key.slice(2);
+    const ago = ts => ts ? timeAgo(ts) : 'never';
+    if (key.startsWith('c:')) {
+      const c = d.containers.find(x => x.id === id);
+      return c && { kind: 'container', name: c.k8s ? c.k8s.pod : c.name, ref: c.id, raw: c, k8sContext: c.k8s ? d.k8sContext : null, facts: {
+        id: short(c.id), image: c.image, state: c.state, status: c.status, ports: c.ports.join(', '), 'compose project': c.project,
+        kubernetes: c.k8s && `pod ${c.k8s.pod}, namespace ${c.k8s.namespace}, container ${c.k8s.container}`,
+        'last ran': stopped(c) ? ago(c.lastUsed) : 'running now', 'disk (writable layer)': bytes(c.size), volumes: c.volumes.join(', '),
+      } };
+    }
+    if (key.startsWith('i:')) {
+      const im = d.images.find(x => x.id === id);
+      return im && { kind: 'image', name: im.tags[0] || short(im.id), raw: im, facts: {
+        id: short(im.id), tags: im.tags.join(', ') || '(none, dangling)', size: bytes(im.size), 'not shared with other images': bytes(im.unique),
+        'used by containers': im.containers, running: im.running ? 'yes' : 'no', 'last used': im.running ? 'now' : ago(im.lastUsed), created: ago(im.createdAt),
+      } };
+    }
+    const v = d.volumes.find(x => x.name === id);
+    return v && { kind: 'volume', name: v.anonymous ? short(v.name) : v.name, raw: v, facts: {
+      name: v.name, size: bytes(v.size), 'used by containers': v.containers, 'compose project': v.project, anonymous: v.anonymous ? 'yes' : '',
+      'last used': v.running ? 'now' : ago(v.lastUsed),
+    } };
+  }
+  // Bulk actions offer only what Docker would accept, and say how many of the rest stay
+  function bulk(items) {
+    const of = k => items.filter(i => i.kind === k).map(i => i.raw);
+    const running = of('container').filter(c => !stopped(c) && !c.k8s);
+    const removable = [
+      ...of('container').filter(REMOVABLE.containers).map(REMOVE.containers),
+      ...of('image').filter(REMOVABLE.images).map(REMOVE.images),
+      ...of('volume').filter(REMOVABLE.volumes).map(REMOVE.volumes),
+    ];
+    const run = async (verb, list, detail) => {
+      if (!await confirmDialog(`${verb} ${plural(list.length, 'item')}?`, list.map(x => x[2]).join(', ') + (detail ? `\n${detail}` : ''), verb)) return false;
+      let done = 0;
+      for (const [action, params] of list) if (await sourceAction('containers', action, params)) done++;
+      showToast(`${verb === 'Stop' ? 'Stopped' : 'Removed'} ${plural(done, 'item')}`);
+      return true;
+    };
+    return [
+      running.length && { label: `Stop ${running.length}`, icon: ICON.stop, run: () => run('Stop', running.map(c => ['stop', { id: c.id }, c.name])) },
+      removable.length && { label: `Remove ${removable.length}`, icon: ICON.trash, danger: true,
+        run: () => run('Remove', removable, of('volume').length ? 'Volume data cannot be recovered.' : 'This cannot be undone.') },
+    ].filter(Boolean);
+  }
+
   DevDockViews.containers = {
-    render, act, prune, toggleCleanup, removeMatching,
+    render, act, prune, toggleCleanup, removeMatching, pick, bulk,
     setTab(t) { state.tab = t; save(); render(); },
     setFilter(f) { state.filter[state.tab] = f; save(); render(); },
+    setPattern(id) {
+      const was = pattern?.id;
+      pattern = was === id ? null : patternsOf(DevDock.sourceData.containers).find(p => p.id === id) || null;
+      render();
+      const sel = window.DevDockSelection;
+      if (pattern) sel?.set(LISTS.containers(DevDock.sourceData.containers, state.filter.containers || 'all', searchInput.value.trim().toLowerCase()).map(c => `c:${c.id}`));
+      else if (was) sel?.clear();
+    },
   };
 })();

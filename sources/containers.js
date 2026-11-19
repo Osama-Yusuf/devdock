@@ -199,10 +199,24 @@ module.exports = function containers(ctx) {
     volumes: o => call('POST', `/volumes/prune?${filters({ all: ['true'] })}`, o),          // named ones too, not just anonymous
   };
 
+  // State and recent logs of one container, as text for an agent's prompt
+  async function snapshot(id) {
+    await known('containers', 'id', id);
+    const s = (await api('GET', `/containers/${encodeURIComponent(id)}/json`)).body?.State || {};
+    const state = [`state: ${s.Status}`, s.ExitCode && `exit code: ${s.ExitCode}`, s.OOMKilled && 'OOM killed: yes',
+      s.Error && `error: ${s.Error}`, s.Health && `health: ${s.Health.Status}`, s.Restarting && 'restarting: yes'].filter(Boolean).join('\n');
+    // the CLI demuxes the log stream; -H pins it to the daemon this source reads
+    const docker = ctx.findBin('docker');
+    const logs = docker ? await ctx.run(docker, ['-H', `unix://${socketPath}`, 'logs', '--tail', '30', '--timestamps', id]) : null;
+    const text = logs && (logs.stdout + logs.stderr).trim().split('\n').map(l => l.length > 300 ? l.slice(0, 300) + '…' : l).join('\n');
+    return `${state}${text ? `\nRecent logs:\n${text}` : ''}`;
+  }
+
   return {
     id: 'containers',
     intervalMs: 5000,
     scan,
+    snapshot,
     actions: {
       start: async ({ id }) => (await call('POST', `/containers/${await notK8s(id)}/start`), {}),
       stop: async ({ id }) => (await call('POST', `/containers/${await notK8s(id)}/stop`, { timeout: 60000 }), {}),

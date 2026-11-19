@@ -155,6 +155,9 @@ function getDefaultSettings() {
     autoKillIdle: false,
     tmuxOpen: 'devdock',  // 'devdock' = in-app terminal, 'terminal' = Terminal.app
     editor: '',           // '' = first installed
+    agentsEnabled: false, // "Ask an agent" stays hidden until turned on
+    agent: '',            // '' = first installed
+    agentReadOnly: false, // default access for new runs; each run can switch
   };
 }
 
@@ -782,8 +785,10 @@ const sourceCtx = {
   procs: () => latestProcs,
   ports: () => snapshot?.ports || [],
   settings: loadSettings,
+  binDirs: BIN_DIRS,
+  source: id => sources[id],
 };
-const sources = Object.fromEntries(['sessions', 'containers']
+const sources = Object.fromEntries(['sessions', 'containers', 'agents']
   .map(id => [id, require(`./sources/${id}`)(sourceCtx)]));
 const sourceState = {}; // id -> { msg, sig }
 
@@ -944,6 +949,7 @@ app.put('/api/settings', (req, res) => {
   saveSettings(updated);
   res.json(updated);
   scan();
+  pollSource(sources.agents); // turning agents on or off shows right away
 });
 
 app.post('/api/favorites/:port', (req, res) => {

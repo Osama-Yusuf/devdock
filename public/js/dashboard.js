@@ -334,7 +334,7 @@
           String(p.runtimeName || '').toLowerCase().includes(term) ||
           String(p.scriptPath || '').toLowerCase().includes(term) ||
           [p.appName, p.procName, p.branch, p.launcher?.name].some(v => String(v || '').toLowerCase().includes(term)) ||
-          (term === 'orphan' && p.orphan);
+          (term === 'orphan' && p.orphan) || (term === 'idle' && p.idle);
 
         const matchesRuntime = rtFilter === 'all' || p.runtime === rtFilter;
         return matchesSearch && matchesRuntime;
@@ -1079,6 +1079,8 @@ $('settingsBtn').addEventListener('click', openSettings);
       if (currentSettings.notifications) requestNotificationPermission();
       updateExportVisibility(currentSettings.showExport);
 
+      const q = new URLSearchParams(location.search).get('q'); // ?q= deep-links a search
+      if (q) searchInput.value = q;
       loadPorts();
       connectWebSocket();
     })();

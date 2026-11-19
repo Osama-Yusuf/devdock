@@ -44,15 +44,19 @@ Requires macOS on Apple Silicon.
    - **Before:** `lsof -i :3000`, then `ps` to work out which project that PID belongs to, then `kill`.
    - **With DevDock:** search `3000`, see the project, branch and uptime, kill it from the row.
 
+   <img src="docs/scenario-port.png" alt="Searching 3000 shows the project, branch and uptime" />
+
 2. **The server you forgot.** A terminal closed days ago, and `uvicorn` is still holding :8000.
    - **Before:** you find out when something else can't start, or from the fan.
-   - **With DevDock:** it's tagged `orphan` and `idle 3d`. Stop it, or let DevDock stop idle servers for you.
+   - **With DevDock:** search `idle` and it's there, tagged `orphan` and `idle 3d`. Stop it, or let DevDock stop idle servers for you.
+
+   <img src="docs/scenario-forgotten.png" alt="Idle and orphaned servers" />
 
 3. **Two copies of the same app.** A coding agent doesn't see your dev server is up and starts another one on the next free port.
    - **Before:** two servers on the same code, and you're testing the stale one.
    - **With DevDock:** both are marked `also on :3001`, grouped by the session that started them. Stop a whole session in one click.
 
-<p align="center"><img src="docs/sessions.png" alt="Servers grouped by the session that started them" /></p>
+   <img src="docs/scenario-duplicate.png" alt="Duplicate servers grouped by the agent session that started them" />
 
 ## Development
 

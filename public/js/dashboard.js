@@ -433,7 +433,8 @@
         const pill = document.createElement('span');
         pill.className = 'runtime-pill';
         pill.style.cssText = `background:${color}18;color:${color};border:1px solid ${color}40;`;
-        pill.innerHTML = `${runtimeIconHTML(rt, color, runtimeDefs[rt]?.icon, 12)}<span class="pill-count">${count}</span> ${name}`;
+        pill.title = `${count} ${name}`;
+        pill.innerHTML = `${runtimeIconHTML(rt, color, runtimeDefs[rt]?.icon, 12)}<span class="pill-count">${count}</span>`;
         runtimePills.appendChild(pill);
       });
     }

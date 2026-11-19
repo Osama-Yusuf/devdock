@@ -7,7 +7,7 @@
 <p align="center">Every dev server on your Mac, which project and agent started it, and one click to stop it.</p>
 
 <p align="center">
-  <a href="https://github.com/Osama-Yusuf/devdock-desktop/releases/latest"><b>Download for macOS</b></a>
+  <a href="https://github.com/Osama-Yusuf/devdock/releases/latest"><b>Download for macOS</b></a>
 </p>
 
 ---
@@ -29,7 +29,7 @@ Built lean: no frontend framework, under 1% CPU at idle, and the dashboard updat
 
 ## Install
 
-1. Download the `.dmg` from the [latest release](https://github.com/Osama-Yusuf/devdock-desktop/releases/latest) and drag DevDock to Applications.
+1. Download the `.dmg` from the [latest release](https://github.com/Osama-Yusuf/devdock/releases/latest) and drag DevDock to Applications.
 2. The app isn't notarized yet, so macOS blocks the first launch. Run this once:
 
    ```bash
@@ -43,8 +43,8 @@ Requires macOS on Apple Silicon.
 ## Development
 
 ```bash
-git clone https://github.com/Osama-Yusuf/devdock-desktop.git
-cd devdock-desktop
+git clone https://github.com/Osama-Yusuf/devdock.git
+cd devdock
 npm install
 npm start           # run the app
 npm run build:mac   # build the .dmg into dist/

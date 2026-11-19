@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icon.png" width="128" alt="DevDock icon" />
+  <img src="assets/icon.svg" width="128" alt="DevDock icon" />
 </p>
 
 <h1 align="center">DevDock</h1>

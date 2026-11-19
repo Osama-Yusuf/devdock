@@ -312,7 +312,8 @@ window.devdockCommand = (cmd) => {
     case 'find': $('searchInput').focus(); $('searchInput').select(); break;
     case 'back': window.location.href = '/'; break;
     case 'settings': window.location.href = '/#settings'; break;
-    case 'view-none': case 'view-project': groupBy = cmd.slice(5); syncSegs(); saveView(); renderTable(); break;
+    case 'tab-servers': case 'tab-sessions': case 'tab-containers': window.location.href = `/?tab=${cmd.slice(4)}`; break;
+    case 'group-menu': groupBy = groupBy === 'none' ? 'project' : 'none'; syncSegs(); saveView(); renderTable(); break;
   }
 };
 

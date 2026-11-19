@@ -14,7 +14,7 @@ const wss = new WebSocketServer({ server });
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 // demo pids are made up and may match real processes: never act on them
-if (DEMO) app.use(/^\/api\/(kill|restart|logs|start-server|tmux)/, (req, res) => res.status(403).json({ error: 'Disabled in demo mode' }));
+if (DEMO) app.use(/^\/api\/(kill|restart|logs|start-server|sources)/, (req, res) => res.status(403).json({ error: 'Disabled in demo mode' }));
 
 // ── Runtime definitions ──────────────────────────────────────────────
 const RUNTIMES = {
@@ -233,16 +233,22 @@ function appFromPath(p) {
   return m ? m[1] : null;
 }
 
+// Agent name for a process's ps comm, or null
+function agentOf(comm) {
+  // "claude bg-pty-host" -> "claude"; ".../claude/versions/2.1.322" -> "claude"
+  let base = path.basename(comm.split(' ')[0]).toLowerCase();
+  if (/^\d+(\.\d+)+$/.test(base)) base = path.basename(path.dirname(path.dirname(comm.split(' ')[0]))).toLowerCase();
+  return AGENTS[base] || null;
+}
+
 // Nearest ancestor that is a known CLI agent or a macOS app
 function findLauncher(pid, procs) {
   let cur = procs[pid]?.ppid;
   for (let i = 0; i < 25 && cur && cur !== '0' && cur !== '1'; i++) {
     const p = procs[cur];
     if (!p) break;
-    // "claude bg-pty-host" -> "claude"; ".../claude/versions/2.1.322" -> "claude"
-    let base = path.basename(p.comm.split(' ')[0]).toLowerCase();
-    if (/^\d+(\.\d+)+$/.test(base)) base = path.basename(path.dirname(path.dirname(p.comm.split(' ')[0]))).toLowerCase();
-    if (AGENTS[base]) return { kind: 'agent', name: AGENTS[base], pid: cur };
+    const agent = agentOf(p.comm);
+    if (agent) return { kind: 'agent', name: agent, pid: cur };
     const app = appFromPath(p.comm);
     if (app) return { kind: 'app', name: app, pid: cur };
     cur = p.ppid;
@@ -376,6 +382,8 @@ async function loadMeta(pids, runtimeOf) {
   }));
 }
 
+let latestProcs = {}; // full ps table from the last scan, shared with sources/
+
 async function getAllPorts() {
   if (DEMO) {
     const ports = require('./demo').demoPorts(RUNTIMES);
@@ -471,6 +479,7 @@ async function getAllPorts() {
     };
   }));
 
+  latestProcs = procs;
   // forget pids that are gone
   for (const pid of activity.keys()) if (!procs[pid]) activity.delete(pid);
   for (const pid of agentCwdCache.keys()) if (!procs[pid]) agentCwdCache.delete(pid);
@@ -742,52 +751,124 @@ app.post('/api/open-terminal', (req, res) => {
 const shq = s => `'${String(s).replace(/'/g, `'\\''`)}'`;
 const tmuxTargetOf = pid => (snapshot?.ports || []).find(p => p.pid === String(pid) && p.tmux)?.tmux;
 
-// Open Terminal attached to the tmux pane a server runs in. Only targets from the
-// current scan are accepted, so nothing user-typed reaches the shell.
-app.post('/api/tmux/attach', (req, res) => {
-  const t = (snapshot?.ports || []).map(p => p.tmux).find(t => t && t.target === req.body.target);
-  if (!t) return res.status(404).json({ error: 'No such tmux pane' });
-  const cmd = `tmux attach -t ${shq(t.session)} \\; select-window -t ${shq(t.target)} \\; select-pane -t ${shq(t.target)}`;
-  execFile('osascript', ['-e', 'on run argv', '-e', 'tell application "Terminal"', '-e', 'activate', '-e', 'do script (item 1 of argv)', '-e', 'end tell', '-e', 'end run', cmd],
-    err => err ? res.status(500).json({ error: 'Failed to open Terminal' }) : res.json({ success: true }));
-});
-
-// ── tmux pane inside DevDock ─────────────────────────────────────────
-// A real `tmux attach` in a pty, rendered by xterm.js: prefix keys, windows,
-// copy mode and mouse all behave like Terminal. Only panes in the snapshot.
-function openTmux(ws, m) {
-  ws._tmux?.kill();
-  const send = msg => ws.readyState === 1 && ws.send(JSON.stringify(msg));
-  const t = (snapshot?.ports || []).map(p => p.tmux).find(t => t && t.target === m.target);
-  if (DEMO || !t) return send({ type: 'tmux-exit', reason: 'No such tmux pane' });
-  const env = { ...process.env, TERM: 'xterm-256color' };
-  delete env.TMUX; // DevDock started from inside tmux would refuse a nested attach
-  let term;
-  try {
-    // Apps opened from Finder get a bare PATH without Homebrew
-    const bin = ['/opt/homebrew/bin/tmux', '/usr/local/bin/tmux', '/opt/local/bin/tmux'].find(f => fs.existsSync(f)) || 'tmux';
-    // Packaged, this file runs from app.asar.unpacked; node-pty appends ".unpacked" to its
-    // helper path itself, so load it through the asar path or it looks in "...unpacked.unpacked".
-    const ptyMod = __dirname.includes('app.asar.unpacked') ? path.join(__dirname.replace('app.asar.unpacked', 'app.asar'), 'node_modules', 'node-pty') : 'node-pty';
-    term = require(ptyMod).spawn(bin,
-      ['attach', '-t', t.session, ';', 'select-window', '-t', t.target, ';', 'select-pane', '-t', t.target],
-      { name: 'xterm-256color', cols: Math.max(20, m.cols | 0), rows: Math.max(5, m.rows | 0), cwd: require('os').homedir(), env });
-  } catch (e) { return send({ type: 'tmux-exit', reason: 'Could not start tmux: ' + e.message }); }
-  ws._tmux = term;
-  term.onData(data => send({ type: 'tmux-out', data }));
-  term.onExit(() => { if (ws._tmux === term) { ws._tmux = null; send({ type: 'tmux-exit', reason: 'Detached' }); } });
-  send({ type: 'tmux-start' });
+// ── Sources: each extra view's data comes from a module in sources/ ──
+// A source is create(ctx) -> {
+//   id, intervalMs,
+//   scan(): Promise<data>              polled; broadcast only when the JSON changes
+//   actions: { name(params) }          POST /api/sources/:id/:action
+//   terminal(params): {file, args}?    a command to open inside DevDock or Terminal
+// }
+// Sources validate every id they act on against their own last scan.
+const os = require('os');
+const BIN_DIRS = ['/opt/homebrew/bin', '/usr/local/bin', '/opt/local/bin',
+  path.join(os.homedir(), '.local/bin'), path.join(os.homedir(), '.cargo/bin')];
+// Apps opened from Finder get a bare PATH without Homebrew, so look in the usual places first
+function findBin(name) {
+  for (const dir of [...BIN_DIRS, ...(process.env.PATH || '').split(':')]) {
+    const f = path.join(dir, name);
+    try { fs.accessSync(f, fs.constants.X_OK); return f; } catch {}
+  }
+  return null;
+}
+// Never rejects: CLIs report "nothing here" through exit codes
+function run(file, args, { timeout = 10000 } = {}) {
+  return new Promise(resolve => execFile(file, args, { timeout, maxBuffer: 16 * 1024 * 1024 },
+    (err, stdout, stderr) => resolve({ code: err ? (typeof err.code === 'number' ? err.code : -1) : 0, stdout: stdout || '', stderr: stderr || '' })));
 }
 
+const sourceCtx = {
+  DEMO, run, findBin, agentOf, gitBranch, githubUrl,
+  cwdOf: agentCwd, // cached lsof cwd per pid
+  procs: () => latestProcs,
+  ports: () => snapshot?.ports || [],
+  settings: loadSettings,
+};
+const sources = Object.fromEntries(['sessions', 'containers']
+  .map(id => [id, require(`./sources/${id}`)(sourceCtx)]));
+const sourceState = {}; // id -> { msg, sig }
+
+function sendSource(id, ws) {
+  const st = sourceState[id];
+  if (st && ws.readyState === 1) ws.send(st.msg);
+}
+async function pollSource(src) {
+  clearTimeout(src._timer);
+  if (src._busy) return src._busy;
+  src._busy = (async () => {
+    if (!wss.clients.size) return; // nobody is looking
+    try {
+      const data = await src.scan();
+      const sig = JSON.stringify(data);
+      if (sig === sourceState[src.id]?.sig) return;
+      sourceState[src.id] = { sig, msg: JSON.stringify({ type: 'source', id: src.id, data }) };
+      wss.clients.forEach(c => sendSource(src.id, c));
+    } catch (e) { console.error(`Source ${src.id}:`, e.message); }
+  })().finally(() => { src._busy = null; src._timer = setTimeout(() => pollSource(src), src.intervalMs); });
+  return src._busy;
+}
+server.on('listening', () => Object.values(sources).forEach(pollSource));
+
+app.post('/api/sources/:id/:action', async (req, res) => {
+  const src = sources[req.params.id];
+  const fn = src && Object.hasOwn(src.actions, req.params.action) && src.actions[req.params.action];
+  if (!fn) return res.status(404).json({ error: 'Unknown action' });
+  try {
+    const result = await fn(req.body || {});
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+  pollSource(src); // show the effect right away
+});
+
+// Same command a source would run inside DevDock, in a new Terminal window instead
+app.post('/api/sources/:id/open-in-terminal', async (req, res) => {
+  const spec = await sources[req.params.id]?.terminal?.(req.body || {});
+  if (!spec) return res.status(404).json({ error: 'Nothing to open' });
+  const cmd = [spec.file, ...spec.args].map(shq).join(' ');
+  execFile('osascript', ['-e', 'on run argv', '-e', 'tell application "Terminal"', '-e', 'activate', '-e', 'do script (item 1 of argv)', '-e', 'end tell', '-e', 'end run', cmd],
+    err => err ? res.status(500).json({ error: 'Failed to open Terminal' }) : res.json({ ok: true }));
+});
+
+// ── Terminals inside DevDock ─────────────────────────────────────────
+// The source's command runs in a real pty (tmux attach, zellij attach, ...), rendered
+// by xterm.js, so prefix keys, windows, copy mode and mouse behave like Terminal.
+// Packaged, this file runs from app.asar.unpacked; node-pty appends ".unpacked" to its
+// helper path itself, so load it through the asar path or it looks in "...unpacked.unpacked".
+const ptyModule = __dirname.includes('app.asar.unpacked')
+  ? path.join(__dirname.replace('app.asar.unpacked', 'app.asar'), 'node_modules', 'node-pty') : 'node-pty';
+const NESTING_VARS = ['TMUX', 'TMUX_PANE', 'ZELLIJ', 'ZELLIJ_SESSION_NAME', 'STY', 'HERDR_SESSION', 'HERDR_SOCKET_PATH'];
+
+async function openTerm(ws, m) {
+  closeTerm(ws);
+  const send = msg => ws.readyState === 1 && ws.send(JSON.stringify(msg));
+  const spec = !DEMO && await sources[m.source]?.terminal?.(m.params || {});
+  if (!spec) return send({ type: 'term-exit', reason: 'This session is gone' });
+  const env = { ...process.env, TERM: 'xterm-256color' };
+  NESTING_VARS.forEach(k => delete env[k]); // DevDock started inside a multiplexer would refuse to nest
+  let term;
+  try {
+    term = require(ptyModule).spawn(spec.file, spec.args,
+      { name: 'xterm-256color', cols: Math.max(20, m.cols | 0), rows: Math.max(5, m.rows | 0), cwd: os.homedir(), env });
+  } catch (e) { return send({ type: 'term-exit', reason: 'Could not start: ' + e.message }); }
+  ws._term = term;
+  term.onData(data => send({ type: 'term-out', data }));
+  term.onExit(() => { if (ws._term === term) { ws._term = null; send({ type: 'term-exit', reason: 'Detached' }); } });
+  send({ type: 'term-start' });
+}
+function closeTerm(ws) { const t = ws._term; ws._term = null; t?.kill(); }
+
 wss.on('connection', (ws) => {
+  Object.keys(sources).forEach(id => sendSource(id, ws));
+  if (wss.clients.size === 1) Object.values(sources).forEach(pollSource); // first viewer: refresh now
   ws.on('message', raw => {
     let m; try { m = JSON.parse(raw); } catch { return; }
-    if (m.type === 'tmux-open' && typeof m.target === 'string') openTmux(ws, m);
-    else if (m.type === 'tmux-in' && typeof m.data === 'string') ws._tmux?.write(m.data);
-    else if (m.type === 'tmux-resize') ws._tmux?.resize(Math.max(20, m.cols | 0), Math.max(5, m.rows | 0));
-    else if (m.type === 'tmux-close') { const t = ws._tmux; ws._tmux = null; t?.kill(); }
+    if (m.type === 'term-open' && typeof m.source === 'string') openTerm(ws, m);
+    else if (m.type === 'term-in' && typeof m.data === 'string') ws._term?.write(m.data);
+    else if (m.type === 'term-resize') ws._term?.resize(Math.max(20, m.cols | 0), Math.max(5, m.rows | 0));
+    else if (m.type === 'term-close') closeTerm(ws);
   });
-  ws.on('close', () => { const t = ws._tmux; ws._tmux = null; t?.kill(); });
+  ws.on('close', () => closeTerm(ws));
 });
 
 app.get('/api/logs/:pid', (req, res) => {
@@ -795,7 +876,7 @@ app.get('/api/logs/:pid', (req, res) => {
   if (!/^\d+$/.test(pid)) return res.status(400).json({ error: 'Invalid PID' });
   // in tmux the output is the pane itself
   const t = tmuxTargetOf(pid);
-  if (t) return execFile('tmux', ['capture-pane', '-p', '-J', '-S', '-500', '-t', t.target], (err, out) =>
+  if (t) return execFile('tmux', ['capture-pane', '-p', '-J', '-S', '-500', '-t', '=' + t.target], (err, out) =>
     err ? res.json({ pid, logs: [], tty: null }) : res.json({ pid, logs: [{ file: `tmux pane ${t.target}`, text: out.replace(/\n+$/, '\n') }] }));
   execFile('lsof', ['-p', pid, '-a', '-d', '1,2', '-Fftn'], (err, out) => {
     const fds = [];

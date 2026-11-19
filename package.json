@@ -43,6 +43,7 @@
     "asar": true,
     "asarUnpack": [
       "server.js",
+      "sources/**/*",
       "assets/**/*",
       "public/**/*",
       "views/**/*",
@@ -51,6 +52,7 @@
     "files": [
       "electron/**/*",
       "server.js",
+      "sources/**/*",
       "assets/**/*",
       "public/**/*",
       "views/**/*",

@@ -4,9 +4,10 @@
   const MAP = [
     { key: ',', cmd: 'settings' },
     { key: 'f', cmd: 'find' },
-    { key: '1', cmd: 'view-none' },
-    { key: '2', cmd: 'view-project' },
-    { key: '3', cmd: 'view-session' },
+    { key: '1', cmd: 'tab-servers' },
+    { key: '2', cmd: 'tab-sessions' },
+    { key: '3', cmd: 'tab-containers' },
+    { key: 'g', shift: true, cmd: 'group-menu' },
     { key: 'y', cmd: 'history' },
     { key: '[', cmd: 'back' },
     { key: 'e', shift: true, cmd: 'export' },

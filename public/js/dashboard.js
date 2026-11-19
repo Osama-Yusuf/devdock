@@ -45,9 +45,9 @@
       document.documentElement.setAttribute('data-theme', theme);
       const icon = $('themeIcon');
       if (theme === 'light') {
-        icon.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+        icon.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>';
       } else {
-        icon.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
+        icon.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>';
       }
     }
 
@@ -124,65 +124,72 @@
 
     // ── Logs ──────────────────────────────────────────────────────────
     let logsTimer = null;
-    // ── tmux pane inside DevDock (xterm.js fed by the server's control-mode client) ──
+    // ── Sessions inside DevDock: xterm.js on a pty the server runs (tmux attach, ...) ──
+    const DETACH_KEYS = { tmux: 'Prefix + d', zellij: 'Ctrl+o d', screen: 'Ctrl+a d', herdr: 'Ctrl+b q' };
     let term = null;
-    // Size the terminal to the modal, so the tmux client gets the real grid.
+    // Size the terminal to the modal, so the attached client gets the real grid.
     function fitTerm() {
       const cell = term._core._renderService.dimensions.css.cell; // ponytail: private xterm 5.5 API, swap for @xterm/addon-fit if it breaks
-      const box = $('tmuxTerm');
+      const box = $('termBox');
       const cols = Math.max(20, Math.floor((box.clientWidth - 16) / cell.width));
       const rows = Math.max(5, Math.floor((box.clientHeight - 16) / cell.height));
       if (cols !== term.cols || rows !== term.rows) term.resize(cols, rows);
     }
-    function attachTmux(target) {
-      if ((currentSettings.tmuxOpen || 'devdock') === 'terminal') return attachTmuxTerminal(target);
+    // params: { mux, id, target? } as the sessions source lists them
+    function openSession(params, title) {
+      if ((currentSettings.tmuxOpen || 'devdock') === 'terminal') return openSessionInTerminal(params, title);
       if (!ws || ws.readyState !== 1) return showToast('Not connected', 'warn');
-      closeTmux();
-      $('tmuxTitle').textContent = `tmux \u00B7 ${target.split(':')[0]}`;
-      $('tmuxTerm').innerHTML = '';
-      $('tmuxModal').style.display = 'flex';
+      closeTerm();
+      $('termTitle').textContent = title;
+      $('termHint').innerHTML = `${DETACH_KEYS[params.mux] ? esc(DETACH_KEYS[params.mux]) + ' to detach, or ' : 'Close with '}<kbd>&#8984;.</kbd>`;
+      $('termBox').innerHTML = '';
+      $('termModal').style.display = 'flex';
       term = new Terminal({
         fontSize: 12, cursorBlink: true, scrollback: 0, macOptionIsMeta: true,
         // Nerd Fonts first, so prompt icons (powerlevel10k, starship) render when installed
         fontFamily: "'MesloLGS NF', 'MesloLGS Nerd Font', 'JetBrainsMono Nerd Font', 'Hack Nerd Font', 'FiraCode Nerd Font', 'Symbols Nerd Font Mono', Menlo, monospace",
         theme: { background: '#0b0f17', foreground: '#e5e7eb', cursor: '#e5e7eb', selectionBackground: '#334155' },
       });
-      term.open($('tmuxTerm'));
+      term.open($('termBox'));
       fitTerm();
-      term.onData(data => ws.send(JSON.stringify({ type: 'tmux-in', data })));
-      term.onResize(({ cols, rows }) => ws.send(JSON.stringify({ type: 'tmux-resize', cols, rows })));
+      term.onData(data => ws.send(JSON.stringify({ type: 'term-in', data })));
+      term.onResize(({ cols, rows }) => ws.send(JSON.stringify({ type: 'term-resize', cols, rows })));
       term.focus();
-      ws.send(JSON.stringify({ type: 'tmux-open', target, cols: term.cols, rows: term.rows }));
+      ws.send(JSON.stringify({ type: 'term-open', source: 'sessions', params, cols: term.cols, rows: term.rows }));
+    }
+    // A server's tmux pane: session name plus "session:window.pane"
+    function attachTmux(session, target) {
+      openSession({ mux: 'tmux', id: session, target: target.slice(session.length + 1) }, `tmux \u00B7 ${session}`);
     }
     window.addEventListener('resize', () => term && fitTerm());
-    function closeTmux() {
-      if ($('tmuxModal').style.display === 'none') return;
-      ws?.readyState === 1 && ws.send(JSON.stringify({ type: 'tmux-close' }));
+    function closeTerm() {
+      if ($('termModal').style.display === 'none') return;
+      ws?.readyState === 1 && ws.send(JSON.stringify({ type: 'term-close' }));
       term?.dispose(); term = null;
-      $('tmuxModal').style.display = 'none';
+      $('termModal').style.display = 'none';
     }
-    function handleTmuxMessage(m) {
+    function handleTermMessage(m) {
       if (!term) return;
-      if (m.type === 'tmux-out') term.write(m.data);
-      else if (m.type === 'tmux-exit') {
-        if (m.reason === 'Detached') return closeTmux(); // prefix + d, like a real terminal
+      if (m.type === 'term-out') term.write(m.data);
+      else if (m.type === 'term-exit') {
+        if (m.reason === 'Detached') return closeTerm(); // detach key, like a real terminal
         term.dispose(); term = null;
-        $('tmuxTerm').innerHTML = `<div class="tmux-status">${esc(m.reason)}</div>`;
+        $('termBox').innerHTML = `<div class="term-status">${esc(m.reason)}</div>`;
       }
     }
 
-    $('tmuxClose').addEventListener('click', closeTmux);
-    // Every key belongs to the pane (Esc included, for vim); only ⌘. closes.
-    $('tmuxModal').addEventListener('keydown', e => e.stopPropagation());
+    $('termClose').addEventListener('click', closeTerm);
+    // Every key belongs to the session (Esc included, for vim); only ⌘. closes.
+    $('termModal').addEventListener('keydown', e => e.stopPropagation());
     document.addEventListener('keydown', (e) => {
-      if (e.metaKey && e.key === '.' && $('tmuxModal').style.display !== 'none') { e.preventDefault(); e.stopImmediatePropagation(); closeTmux(); }
+      if (e.metaKey && e.key === '.' && $('termModal').style.display !== 'none') { e.preventDefault(); e.stopImmediatePropagation(); closeTerm(); }
     }, true);
 
-    async function attachTmuxTerminal(target) {
-      const res = await fetch('/api/tmux/attach', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target }),
+    async function openSessionInTerminal(params, title) {
+      const res = await fetch('/api/sources/sessions/open-in-terminal', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params),
       }).catch(() => null);
-      showToast(res?.ok ? `Opened tmux ${target}` : 'Could not open the tmux pane', res?.ok ? 'success' : 'warn');
+      showToast(res?.ok ? `Opened ${title} in Terminal` : 'Could not open the session', res?.ok ? 'success' : 'warn');
     }
 
     async function openLogs(pid, port) {
@@ -538,16 +545,19 @@
       </span>`;
     }
 
+    // Agent logo when we have one, a labeled chip otherwise
+    function agentHTML(name, title) {
+      const ico = AGENT_ICONS[name];
+      return ico
+        ? `<span class="agent-ico" title="${esc(title)}"><svg width="13" height="13" viewBox="0 0 24 24" fill="${ico.color}"><path d="${ico.d}"/></svg></span>`
+        : `<span class="chip chip-agent" title="${esc(title)}">${esc(name)}</span>`;
+    }
+
     function chipsHTML(p) {
       let html = '';
       if (p.branch) html += `<span class="branch trunc" title="git branch: ${esc(p.branch)}">\u2387 ${esc(p.branch)}</span>`;
-      if (p.launcher?.kind === 'agent') {
-        const ico = AGENT_ICONS[p.launcher.name];
-        html += ico
-          ? `<span class="agent-ico" title="Started by ${esc(p.launcher.name)}"><svg width="13" height="13" viewBox="0 0 24 24" fill="${ico.color}"><path d="${ico.d}"/></svg></span>`
-          : `<span class="chip chip-agent" title="Started from a ${esc(p.launcher.name)} session">${esc(p.launcher.name)}</span>`;
-      }
-      if (p.tmux) html += `<span class="chip chip-tmux" data-target="${esc(p.tmux.target)}" onclick="attachTmux(this.dataset.target)" title="Running in tmux pane ${esc(p.tmux.target)}\nClick to open it">tmux ${esc(p.tmux.session)}</span>`;
+      if (p.launcher?.kind === 'agent') html += agentHTML(p.launcher.name, `Started by ${p.launcher.name}`);
+      if (p.tmux) html += `<span class="chip chip-tmux" data-session="${esc(p.tmux.session)}" data-target="${esc(p.tmux.target)}" onclick="attachTmux(this.dataset.session, this.dataset.target)" title="Running in tmux pane ${esc(p.tmux.target)}\nClick to open it">tmux ${esc(p.tmux.session)}</span>`;
       if (p.idle) html += `<span class="chip chip-idle" title="No real CPU activity since ${new Date(p.lastActive).toLocaleString()}">idle ${timeAgo(p.lastActive).replace(' ago', '')}</span>`;
       if (p.dupOf?.length) html += `<span class="chip chip-dup" title="Another server from this folder is running:\n${p.dupOf.map(d => `:${d.port} (pid ${d.pid})`).join('\n')}">also on :${p.dupOf[0].port}</span>`;
       if (p.orphan) html += `<span class="chip chip-orphan" title="Parent process exited: probably left behind by a closed terminal or agent session">orphan</span>`;
@@ -627,7 +637,7 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
               Open branch on GitHub
             </button>` : ''}
-            ${p.tmux ? `<button onclick="attachTmux(this.dataset.target)" data-target="${esc(p.tmux.target)}">
+            ${p.tmux ? `<button onclick="attachTmux(this.dataset.session, this.dataset.target)" data-session="${esc(p.tmux.session)}" data-target="${esc(p.tmux.target)}">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="12" y1="12" x2="21" y2="12"/></svg>
               Open tmux pane
             </button>` : ''}
@@ -701,8 +711,10 @@
       killBtn.style.display = filtering && filtered.length ? '' : 'none';
       killBtn.textContent = `\u2715 Kill ${filtered.length} matching`;
 
-      // Update counters
-      if (allPorts.length === 0) {
+      // Update counters (the counter is shared; other tabs write their own)
+      if (DevDock.tab !== 'servers') {
+        // leave it
+      } else if (allPorts.length === 0) {
         resultInfo.textContent = '';
       } else if (filtered.length !== allPorts.length) {
         resultInfo.textContent = `Showing ${filtered.length} of ${allPorts.length}`;
@@ -897,7 +909,8 @@
         try {
           const data = JSON.parse(event.data);
           if (data.type === 'ports') handlePortsData(data, true);
-          if (data.type?.startsWith('tmux-')) handleTmuxMessage(data);
+          if (data.type === 'source') handleSourceData(data);
+          if (data.type?.startsWith('term-')) handleTermMessage(data);
           if (data.type === 'reaped') {
             const ports = data.reaped.map(r => ':' + r.port).join(', ');
             notify('Idle servers stopped', `Auto-killed ${data.reaped.length}: ${ports}`);
@@ -1009,26 +1022,101 @@
       loadPorts(true);
     }
 
-    // ── Group toggle ─────────────────────────────────────────────────
+    // ── Group by (Servers): one button, a menu of modes, ⇧⌘G ─────────
     const GROUP_MODES = ['none', 'project', 'session'];
     function setGroupBy(mode, render = true) {
       groupBy = mode;
-      $('groupSeg').querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.g === mode));
+      $('groupMenu').querySelectorAll('[data-g]').forEach(b => b.setAttribute('aria-checked', b.dataset.g === mode));
+      $('groupBtn').classList.toggle('active', mode !== 'none');
       document.querySelector('.scroll').classList.toggle('grouped', mode !== 'none');
       saveView();
       lastFilteredKeys = '';
       if (render) renderTable();
     }
-    $('groupSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setGroupBy(b.dataset.g); });
+    function toggleGroupMenu(open = !$('groupMenu').classList.contains('open')) {
+      $('groupMenu').classList.toggle('open', open);
+      if (open) $('groupMenu').querySelector(`[data-g="${groupBy}"]`).focus();
+    }
+    $('groupBtn').addEventListener('click', (e) => { e.stopPropagation(); toggleGroupMenu(); });
+    $('groupMenu').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-g]');
+      if (!b) return;
+      setGroupBy(b.dataset.g);
+      toggleGroupMenu(false);
+      $('groupBtn').focus();
+    });
+    $('groupMenu').addEventListener('keydown', (e) => {
+      const items = [...$('groupMenu').querySelectorAll('[data-g]')];
+      const i = items.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
+      } else if (e.key === 'Escape') {
+        e.stopPropagation();
+        toggleGroupMenu(false);
+        $('groupBtn').focus();
+      }
+    });
+    document.addEventListener('click', (e) => { if (!e.target.closest('.group-wrapper')) toggleGroupMenu(false); });
     setGroupBy(GROUP_MODES.includes(groupBy) ? groupBy : 'none', false);
+
+    // ── Tabs: Servers (this file), Sessions and Containers (js/views/) ──
+    // A view registers window.DevDockViews[id] = { render() } and reads
+    // DevDock.sourceData[id], filled from the server's "source" messages.
+    const TABS = ['servers', 'sessions', 'containers'];
+    const SEARCH_HINTS = {
+      servers: 'Search ports, PIDs, processes, paths\u2026',
+      sessions: 'Search sessions, folders, branches, agents\u2026',
+      containers: 'Search containers, images, volumes\u2026',
+    };
+    window.DevDockViews = {};
+    window.DevDock = { sourceData: {}, tab: 'servers' };
+    function setTab(next) {
+      if (!TABS.includes(next)) return;
+      DevDock.tab = next;
+      document.body.dataset.tab = next;
+      $('tabs').querySelectorAll('[data-tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === next));
+      document.querySelectorAll('[data-view]').forEach(el => { el.hidden = !el.dataset.view.split(' ').includes(next); });
+      searchInput.placeholder = `${SEARCH_HINTS[next]}  \u2318F`;
+      closeAllMenus();
+      try { localStorage.setItem('devdock:tab', next); } catch {}
+      resultInfo.textContent = '';
+      if (next !== 'servers') renderActiveView(); else if (allPorts.length) { lastFilteredKeys = ''; renderTable(); }
+      updateClearBtn();
+    }
+    function renderActiveView() {
+      if (DevDock.tab !== 'servers') DevDockViews[DevDock.tab]?.render();
+    }
+    // Views report what the search left, same wording as Servers
+    function setViewResult(shown, total) {
+      resultInfo.textContent = searchInput.value && shown !== total ? `Showing ${shown} of ${total}` : '';
+    }
+    $('tabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });
+    // POST an action to a source; errors become a toast. Returns the result or null.
+    async function sourceAction(source, action, params) {
+      const res = await fetch(`/api/sources/${source}/${action}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params || {}),
+      }).catch(() => null);
+      const body = res && await res.json().catch(() => ({}));
+      if (res?.ok) return body;
+      showToast(body?.error || 'Something went wrong', 'warn');
+      return null;
+    }
+    function handleSourceData(m) {
+      DevDock.sourceData[m.id] = m.data;
+      if (m.id === DevDock.tab) renderActiveView();
+    }
 
     // ── Event listeners ──────────────────────────────────────────────
     function updateClearBtn() {
-      clearBtn.style.display = (searchInput.value || runtimeFilter.value !== 'all') ? '' : 'none';
+      clearBtn.style.display = (searchInput.value || (DevDock.tab === 'servers' && runtimeFilter.value !== 'all')) ? '' : 'none';
     }
     updateClearBtn();
 
-    searchInput.addEventListener('input', () => { renderTable(); updateClearBtn(); });
+    searchInput.addEventListener('input', () => {
+      if (DevDock.tab === 'servers') renderTable(); else renderActiveView();
+      updateClearBtn();
+    });
     $('idleBtn').addEventListener('click', () => {
       const idle = allPorts.filter(p => p.idle);
       killPids(idle.map(p => p.pid), `Kill ${idle.length} idle server${idle.length > 1 ? 's' : ''}?`);
@@ -1045,8 +1133,7 @@
     runtimeFilter.addEventListener('change', () => { renderTable(); updateClearBtn(); });
     clearBtn.addEventListener('click', () => {
       searchInput.value = '';
-      runtimeFilter.value = 'all';
-      renderTable();
+      if (DevDock.tab === 'servers') { runtimeFilter.value = 'all'; renderTable(); } else renderActiveView();
       updateClearBtn();
     });
 
@@ -1125,7 +1212,7 @@ $('settingsBtn').addEventListener('click', openSettings);
       }
       switch (e.key) {
         case '?': if (!e.metaKey && !e.ctrlKey) window.devdockCommand('help'); break; // like GitHub, Gmail
-        case 'Escape': closeSettings(); $('helpModal').style.display = 'none'; $('exportMenu').classList.remove('open'); break;
+        case 'Escape': closeSettings(); $('helpModal').style.display = 'none'; $('exportMenu').classList.remove('open'); toggleGroupMenu(false); break;
       }
     });
 
@@ -1134,7 +1221,8 @@ $('settingsBtn').addEventListener('click', openSettings);
       switch (cmd) {
         case 'settings': openSettings(); break;
         case 'find': searchInput.focus(); searchInput.select(); break;
-        case 'view-none': case 'view-project': case 'view-session': setGroupBy(cmd.slice(5)); break;
+        case 'tab-servers': case 'tab-sessions': case 'tab-containers': setTab(cmd.slice(4)); break;
+        case 'group-menu': setTab('servers'); toggleGroupMenu(true); break;
         case 'history': window.location.href = '/history'; break;
         case 'export': if ($('exportBtn').offsetParent) $('exportBtn').click(); else showToast('Turn on the export button in Settings', 'info'); break;
         case 'theme': $('themeToggle').click(); break;
@@ -1155,8 +1243,12 @@ $('settingsBtn').addEventListener('click', openSettings);
       if (currentSettings.notifications) requestNotificationPermission();
       updateExportVisibility(currentSettings.showExport);
 
-      const q = new URLSearchParams(location.search).get('q'); // ?q= deep-links a search
+      const params = new URLSearchParams(location.search);
+      const q = params.get('q'); // ?q= deep-links a search, ?tab= a tab
       if (q) searchInput.value = q;
+      let savedTab = null;
+      try { savedTab = localStorage.getItem('devdock:tab'); } catch {}
+      setTab(TABS.includes(params.get('tab')) ? params.get('tab') : TABS.includes(savedTab) ? savedTab : 'servers');
       loadPorts();
       connectWebSocket();
     })();

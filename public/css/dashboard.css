@@ -758,7 +758,8 @@
     .usage-bar.hot { background: var(--red); }
 
     .actions-trigger { opacity: 0; transition: opacity 0.12s; }
-    tbody tr:hover .actions-trigger, .actions-trigger:focus-visible { opacity: 1; }
+    tbody tr:hover .actions-trigger, .actions-trigger:focus-visible, .actions-trigger.open { opacity: 1; }
+    .actions-trigger.open { background: var(--bg-hover); color: var(--text); }
 
     .header-actions .btn-icon { border-color: transparent; }
     .header-actions .btn-icon:hover { border-color: var(--border); }
@@ -839,3 +840,16 @@
     .danger-zone { border-color: rgba(239,68,68,0.25); }
     .bulk-btn.danger { color: #fca5a5; border-color: rgba(239,68,68,0.4); }
     .bulk-btn.danger:hover { background: rgba(239,68,68,0.12); }
+
+    /* Path cell: the path gives way first and cuts from the left, so the project
+       end stays readable; branch keeps up to 150px, badges never shrink. */
+    .path-cell .path-link { flex: 0 1 auto; min-width: 48px; direction: rtl; text-align: left; }
+    .path-cell .branch { flex: 0 0 auto; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .path-cell .chip, .path-cell .agent-ico { flex: 0 0 auto; }
+
+    /* tmux pane modal */
+    .tmux-modal { width: min(1200px, 94vw); max-width: none; height: 82vh; display: flex; flex-direction: column; padding: 18px 18px 16px; }
+    .tmux-modal .modal-header { margin-bottom: 12px; gap: 16px; }
+    .tmux-hint { margin-left: auto; font-size: 0.72rem; color: var(--text-dim); }
+    .tmux-term { flex: 1; min-height: 0; background: #0b0f17; border: 1px solid var(--border); border-radius: 10px; padding: 8px; overflow: hidden; }
+    .tmux-status { padding: 40px 60px; color: var(--text-dim); font-size: 0.85rem; text-align: center; }

@@ -153,6 +153,7 @@ function getDefaultSettings() {
     history: [],
     idleAfterHours: 24,   // 0 = never flag idle
     autoKillIdle: false,
+    tmuxOpen: 'devdock',  // 'devdock' = in-app terminal, 'terminal' = Terminal.app
     editor: '',           // '' = first installed
   };
 }
@@ -749,6 +750,44 @@ app.post('/api/tmux/attach', (req, res) => {
   const cmd = `tmux attach -t ${shq(t.session)} \\; select-window -t ${shq(t.target)} \\; select-pane -t ${shq(t.target)}`;
   execFile('osascript', ['-e', 'on run argv', '-e', 'tell application "Terminal"', '-e', 'activate', '-e', 'do script (item 1 of argv)', '-e', 'end tell', '-e', 'end run', cmd],
     err => err ? res.status(500).json({ error: 'Failed to open Terminal' }) : res.json({ success: true }));
+});
+
+// ── tmux pane inside DevDock ─────────────────────────────────────────
+// A real `tmux attach` in a pty, rendered by xterm.js: prefix keys, windows,
+// copy mode and mouse all behave like Terminal. Only panes in the snapshot.
+function openTmux(ws, m) {
+  ws._tmux?.kill();
+  const send = msg => ws.readyState === 1 && ws.send(JSON.stringify(msg));
+  const t = (snapshot?.ports || []).map(p => p.tmux).find(t => t && t.target === m.target);
+  if (DEMO || !t) return send({ type: 'tmux-exit', reason: 'No such tmux pane' });
+  const env = { ...process.env, TERM: 'xterm-256color' };
+  delete env.TMUX; // DevDock started from inside tmux would refuse a nested attach
+  let term;
+  try {
+    // Apps opened from Finder get a bare PATH without Homebrew
+    const bin = ['/opt/homebrew/bin/tmux', '/usr/local/bin/tmux', '/opt/local/bin/tmux'].find(f => fs.existsSync(f)) || 'tmux';
+    // Packaged, this file runs from app.asar.unpacked; node-pty appends ".unpacked" to its
+    // helper path itself, so load it through the asar path or it looks in "...unpacked.unpacked".
+    const ptyMod = __dirname.includes('app.asar.unpacked') ? path.join(__dirname.replace('app.asar.unpacked', 'app.asar'), 'node_modules', 'node-pty') : 'node-pty';
+    term = require(ptyMod).spawn(bin,
+      ['attach', '-t', t.session, ';', 'select-window', '-t', t.target, ';', 'select-pane', '-t', t.target],
+      { name: 'xterm-256color', cols: Math.max(20, m.cols | 0), rows: Math.max(5, m.rows | 0), cwd: require('os').homedir(), env });
+  } catch (e) { return send({ type: 'tmux-exit', reason: 'Could not start tmux: ' + e.message }); }
+  ws._tmux = term;
+  term.onData(data => send({ type: 'tmux-out', data }));
+  term.onExit(() => { if (ws._tmux === term) { ws._tmux = null; send({ type: 'tmux-exit', reason: 'Detached' }); } });
+  send({ type: 'tmux-start' });
+}
+
+wss.on('connection', (ws) => {
+  ws.on('message', raw => {
+    let m; try { m = JSON.parse(raw); } catch { return; }
+    if (m.type === 'tmux-open' && typeof m.target === 'string') openTmux(ws, m);
+    else if (m.type === 'tmux-in' && typeof m.data === 'string') ws._tmux?.write(m.data);
+    else if (m.type === 'tmux-resize') ws._tmux?.resize(Math.max(20, m.cols | 0), Math.max(5, m.rows | 0));
+    else if (m.type === 'tmux-close') { const t = ws._tmux; ws._tmux = null; t?.kill(); }
+  });
+  ws.on('close', () => { const t = ws._tmux; ws._tmux = null; t?.kill(); });
 });
 
 app.get('/api/logs/:pid', (req, res) => {

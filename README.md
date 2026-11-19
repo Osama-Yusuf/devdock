@@ -23,7 +23,7 @@
 - 👻 **Catch leftovers:** idle, orphaned and duplicate servers get flagged. Idle ones can auto-stop.
 - 🎯 **No noise:** short-lived test listeners stay hidden, and alerts fire only on real changes.
 - 🛠️ **Jump in:** open in your editor, open the branch on GitHub, tail logs.
-- 🪟 **tmux aware:** see which pane runs each server, jump into it in one click, read its output.
+- 🪟 **tmux aware:** see which pane runs each server and work in it without leaving DevDock.
 - 🕘 **History:** restart servers you stopped earlier.
 - ⌨️ **Feels native:** menu bar count, launch at login, Mac shortcuts.
 

@@ -5,6 +5,7 @@
   <title>DevDock</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="/css/dashboard.css" />
+  <link rel="stylesheet" href="/vendor/xterm/xterm.css" />
 </head>
 <body>
   <div class="titlebar"></div>
@@ -133,6 +134,17 @@
   <div class="menu-backdrop" id="menuBackdrop"></div>
   <div class="actions-menu" id="floatingMenu"></div>
 
+  <div class="modal-overlay" id="tmuxModal" style="display:none;">
+    <div class="modal tmux-modal">
+      <div class="modal-header">
+        <div class="modal-title" id="tmuxTitle">tmux</div>
+        <div class="tmux-hint">Prefix + d to detach, or <kbd>&#8984;.</kbd></div>
+        <button class="modal-close" id="tmuxClose" title="Close (⌘.)">&times;</button>
+      </div>
+      <div id="tmuxTerm" class="tmux-term"></div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="logsModal" style="display:none;">
     <div class="modal logs-modal">
       <div class="modal-header">
@@ -260,6 +272,13 @@
                 <div><label>Open projects in</label><div class="sub">Used by "Open in editor" in the row menu</div></div>
                 <select class="refresh-select" id="editorSelect"></select>
               </div>
+              <div class="settings-row">
+                <div><label>Open tmux panes in</label><div class="sub">Where the tmux badge and menu item take you</div></div>
+                <select class="refresh-select" id="tmuxOpen">
+                  <option value="devdock">DevDock</option>
+                  <option value="terminal">Terminal</option>
+                </select>
+              </div>
             </div>
           </section>
 
@@ -286,6 +305,7 @@
   <script src="/js/runtime-icons.js"></script>
   <script src="/js/tooltip.js"></script>
   <script src="/js/confirm.js"></script>
+  <script src="/vendor/xterm/xterm.js"></script>
   <script src="/js/shortcuts.js"></script>
   <script src="/js/dashboard.js"></script>
 </body>

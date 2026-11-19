@@ -124,7 +124,61 @@
 
     // ── Logs ──────────────────────────────────────────────────────────
     let logsTimer = null;
-    async function attachTmux(target) {
+    // ── tmux pane inside DevDock (xterm.js fed by the server's control-mode client) ──
+    let term = null;
+    // Size the terminal to the modal, so the tmux client gets the real grid.
+    function fitTerm() {
+      const cell = term._core._renderService.dimensions.css.cell; // ponytail: private xterm 5.5 API, swap for @xterm/addon-fit if it breaks
+      const box = $('tmuxTerm');
+      const cols = Math.max(20, Math.floor((box.clientWidth - 16) / cell.width));
+      const rows = Math.max(5, Math.floor((box.clientHeight - 16) / cell.height));
+      if (cols !== term.cols || rows !== term.rows) term.resize(cols, rows);
+    }
+    function attachTmux(target) {
+      if ((currentSettings.tmuxOpen || 'devdock') === 'terminal') return attachTmuxTerminal(target);
+      if (!ws || ws.readyState !== 1) return showToast('Not connected', 'warn');
+      closeTmux();
+      $('tmuxTitle').textContent = `tmux \u00B7 ${target}`;
+      $('tmuxTerm').innerHTML = '';
+      $('tmuxModal').style.display = 'flex';
+      term = new Terminal({
+        fontSize: 12, cursorBlink: true, scrollback: 0, macOptionIsMeta: true,
+        // Nerd Fonts first, so prompt icons (powerlevel10k, starship) render when installed
+        fontFamily: "'MesloLGS NF', 'MesloLGS Nerd Font', 'JetBrainsMono Nerd Font', 'Hack Nerd Font', 'FiraCode Nerd Font', 'Symbols Nerd Font Mono', Menlo, monospace",
+        theme: { background: '#0b0f17', foreground: '#e5e7eb', cursor: '#e5e7eb', selectionBackground: '#334155' },
+      });
+      term.open($('tmuxTerm'));
+      fitTerm();
+      term.onData(data => ws.send(JSON.stringify({ type: 'tmux-in', data })));
+      term.onResize(({ cols, rows }) => ws.send(JSON.stringify({ type: 'tmux-resize', cols, rows })));
+      term.focus();
+      ws.send(JSON.stringify({ type: 'tmux-open', target, cols: term.cols, rows: term.rows }));
+    }
+    window.addEventListener('resize', () => term && fitTerm());
+    function closeTmux() {
+      if ($('tmuxModal').style.display === 'none') return;
+      ws?.readyState === 1 && ws.send(JSON.stringify({ type: 'tmux-close' }));
+      term?.dispose(); term = null;
+      $('tmuxModal').style.display = 'none';
+    }
+    function handleTmuxMessage(m) {
+      if (!term) return;
+      if (m.type === 'tmux-out') term.write(m.data);
+      else if (m.type === 'tmux-exit') {
+        if (m.reason === 'Detached') return closeTmux(); // prefix + d, like a real terminal
+        term.dispose(); term = null;
+        $('tmuxTerm').innerHTML = `<div class="tmux-status">${esc(m.reason)}</div>`;
+      }
+    }
+
+    $('tmuxClose').addEventListener('click', closeTmux);
+    // Every key belongs to the pane (Esc included, for vim); only ⌘. closes.
+    $('tmuxModal').addEventListener('keydown', e => e.stopPropagation());
+    document.addEventListener('keydown', (e) => {
+      if (e.metaKey && e.key === '.' && $('tmuxModal').style.display !== 'none') { e.preventDefault(); e.stopImmediatePropagation(); closeTmux(); }
+    }, true);
+
+    async function attachTmuxTerminal(target) {
       const res = await fetch('/api/tmux/attach', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target }),
       }).catch(() => null);
@@ -284,6 +338,7 @@
       floatingMenu.innerHTML = '';
       document.querySelectorAll('.export-menu').forEach(m => m.classList.remove('open'));
       menuBackdrop.classList.remove('open');
+      document.querySelectorAll('.actions-trigger.open').forEach(b => b.classList.remove('open'));
       activeMenuId = null;
     }
 
@@ -296,6 +351,7 @@
       if (wasOpen) return;
 
       floatingMenu.innerHTML = sourceMenu.innerHTML;
+      triggerEl.classList.add('open');
 
       const rect = triggerEl.getBoundingClientRect();
       const spaceBelow = window.innerHeight - rect.bottom;
@@ -491,7 +547,7 @@
           ? `<span class="agent-ico" title="Started by ${esc(p.launcher.name)}"><svg width="13" height="13" viewBox="0 0 24 24" fill="${ico.color}"><path d="${ico.d}"/></svg></span>`
           : `<span class="chip chip-agent" title="Started from a ${esc(p.launcher.name)} session">${esc(p.launcher.name)}</span>`;
       }
-      if (p.tmux) html += `<span class="chip chip-tmux" data-target="${esc(p.tmux.target)}" onclick="attachTmux(this.dataset.target)" title="Running in tmux pane ${esc(p.tmux.target)}\nClick to open it in Terminal">tmux ${esc(p.tmux.target)}</span>`;
+      if (p.tmux) html += `<span class="chip chip-tmux" data-target="${esc(p.tmux.target)}" onclick="attachTmux(this.dataset.target)" title="Running in tmux pane ${esc(p.tmux.target)}\nClick to open it">tmux ${esc(p.tmux.session)}</span>`;
       if (p.idle) html += `<span class="chip chip-idle" title="No real CPU activity since ${new Date(p.lastActive).toLocaleString()}">idle ${timeAgo(p.lastActive).replace(' ago', '')}</span>`;
       if (p.dupOf?.length) html += `<span class="chip chip-dup" title="Another server from this folder is running:\n${p.dupOf.map(d => `:${d.port} (pid ${d.pid})`).join('\n')}">also on :${p.dupOf[0].port}</span>`;
       if (p.orphan) html += `<span class="chip chip-orphan" title="Parent process exited: probably left behind by a closed terminal or agent session">orphan</span>`;
@@ -551,7 +607,7 @@
           : '<span class="code">\u2014</span>'}</td>
         <td class="col-cmd">${processCell(p)}</td>
         <td class="col-path"><span class="path-cell">${hasProject(p)
-          ? `<span class="path-link trunc" data-path="${esc(p.scriptPath)}" onclick="copyText(this.dataset.path, 'Path')" oncontextmenu="event.preventDefault();openTerminal(this.dataset.path)" title="${esc(p.scriptPath)}\nClick to copy \u00B7 Right-click to open terminal">${esc(displayPath(p.scriptPath))}</span>`
+          ? `<span class="path-link trunc" data-path="${esc(p.scriptPath)}" onclick="copyText(this.dataset.path, 'Path')" oncontextmenu="event.preventDefault();openTerminal(this.dataset.path)" title="${esc(p.scriptPath)}\nClick to copy \u00B7 Right-click to open terminal">\u200E${esc(displayPath(p.scriptPath))}\u200E</span>`
           : `<span class="app-name trunc" title="No project directory${p.appName ? ', owned by ' + esc(p.appName) : ''}">${esc(p.appName || '\u2014')}</span>`
         }${chipsHTML(p)}</span></td>
         <td class="usage-cell ${cpuClass(p.cpu || 0)}" title="CPU: ${p.cpu || 0}%">${(p.cpu || 0).toFixed(1)}%</td>
@@ -841,6 +897,7 @@
         try {
           const data = JSON.parse(event.data);
           if (data.type === 'ports') handlePortsData(data, true);
+          if (data.type?.startsWith('tmux-')) handleTmuxMessage(data);
           if (data.type === 'reaped') {
             const ports = data.reaped.map(r => ':' + r.port).join(', ');
             notify('Idle servers stopped', `Auto-killed ${data.reaped.length}: ${ports}`);
@@ -870,6 +927,7 @@
       $('showExportToggle').checked = currentSettings.showExport || false;
       $('idleAfterHours').value = String(currentSettings.idleAfterHours ?? 24);
       $('autoKillIdle').checked = !!currentSettings.autoKillIdle;
+      $('tmuxOpen').value = currentSettings.tmuxOpen || 'devdock';
       editors = await fetch('/api/editors').then(r => r.json()).catch(() => []);
       $('editorSelect').innerHTML = editors.length
         ? editors.map(e => `<option ${e === editorName() ? 'selected' : ''}>${esc(e)}</option>`).join('')
@@ -933,6 +991,7 @@
         idleAfterHours: parseInt($('idleAfterHours').value),
         autoKillIdle: $('autoKillIdle').checked,
         editor: $('editorSelect').value,
+        tmuxOpen: $('tmuxOpen').value,
       };
 
       const ok = await fetch('/api/settings', {

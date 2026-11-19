@@ -1,6 +1,6 @@
 {
   "name": "devdock-desktop",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "license": "MIT",
   "description": "DevDock Desktop — Monitor, manage, and control all dev processes listening on TCP ports",
   "main": "electron/main.js",
@@ -10,11 +10,13 @@
     "build": "electron-builder",
     "build:mac": "electron-builder --mac",
     "build:win": "electron-builder --win",
-    "build:linux": "electron-builder --linux"
+    "build:linux": "electron-builder --linux",
+    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true"
   },
   "build": {
     "appId": "com.devdock.desktop",
     "productName": "DevDock",
+    "npmRebuild": false,
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "assets/icon.icns",
@@ -57,6 +59,7 @@
   },
   "dependencies": {
     "express": "^4.19.0",
+    "node-pty": "1.1.0",
     "ws": "^8.20.0"
   },
   "devDependencies": {

@@ -12,18 +12,19 @@
 
 <p align="center"><img src="docs/dashboard.png" alt="DevDock dashboard" /></p>
 
-Built lean: no frontend framework, under 1% CPU at idle, and changes show up within a second.
+<p align="center">Built lean: no frontend framework, under 1% CPU at idle, and changes show up within a second.<br />
+<sub>Click a port to open it · click a PID or path to copy it · right-click a path to open a terminal there</sub></p>
 
 ## Features
 
-- **Know what's running.** Port, project folder, git branch, runtime and version, CPU, memory, and how long it's been up.
-- **See who started it.** Group by project, or by the terminal session that launched it. Works with coding agents too, like Claude Code, Codex and Cursor.
-- **Clean up fast.** Kill one server, a whole group, or everything matching a search. Enter confirms.
-- **Catch the leftovers.** Flags idle servers, orphans whose terminal is gone, and duplicate servers on the same project. Idle servers can be auto-killed.
-- **No false alarms.** Short-lived listeners from test runs and health probes are kept out of the table. Up and down notifications fire only once a change holds.
-- **Jump in.** Tail a server's logs, open its project in your editor, open a terminal there, or copy the path.
-- **History.** Stopped servers are remembered and can be restarted from where they ran.
-- **Feels native.** Menu bar icon with a live count, launch at login, and standard Mac shortcuts (⌘, ⌘F ⌘1–3 ⌘Y, and `?` for the rest).
+- 🔍 **See everything:** port, project, git branch, runtime, CPU, memory, uptime.
+- 🧭 **Know who started it:** group by project or by session, coding agents included.
+- 🧹 **Clean up fast:** kill one server, a whole group, or every search match.
+- 👻 **Catch leftovers:** idle, orphaned and duplicate servers get flagged. Idle ones can auto-stop.
+- 🎯 **No noise:** short-lived test listeners stay hidden, and alerts fire only on real changes.
+- 🛠️ **Jump in:** logs, editor and terminal from the row menu.
+- 🕘 **History:** restart servers you stopped earlier.
+- ⌨️ **Feels native:** menu bar count, launch at login, Mac shortcuts.
 
 ## Install
 

@@ -770,3 +770,24 @@
     .help-grid kbd { justify-self: start; font-size: 0.72rem; padding: 2px 7px; }
     .help-tips { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-row); display: grid; gap: 6px; font-size: 0.8rem; color: var(--text-muted); }
     .help-tips b { color: var(--text); font-weight: 600; }
+
+    /* ── History page ─────────────────────────── */
+    .history-table th:nth-child(1) { width: 110px; }
+    .history-table th:nth-child(2) { width: 80px; }
+    .history-table th:nth-child(3) { width: 170px; }
+    .history-table th:nth-child(4) { width: auto; }
+    .history-table th:nth-child(5) { width: 110px; }
+    .history-table th:nth-child(6) { width: 56px; }
+    .stat-value.small { font-size: 1.05rem; }
+    .stat-value.muted { color: var(--text-muted); }
+    .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 9px; vertical-align: middle; }
+    .status-dot.running { background: var(--green); box-shadow: 0 0 0 3px rgba(34,197,94,0.12); }
+    .status-dot.stopped { border: 1.5px solid var(--text-dim); }
+    tr.row-stopped td:not(.actions-cell) { opacity: 0.6; }
+    tr.row-stopped:hover td { opacity: 1; }
+    .path-gone { text-decoration: line-through; color: var(--text-dim); cursor: default; }
+    .clear-history-btn {
+      padding: 6px 12px; border-radius: 8px; font-size: 0.78rem; cursor: pointer;
+      border: 1px solid transparent; background: transparent; color: var(--text-muted);
+    }
+    .clear-history-btn:hover { color: #fca5a5; border-color: rgba(239,68,68,0.4); background: rgba(239,68,68,0.1); }

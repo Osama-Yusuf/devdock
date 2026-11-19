@@ -77,32 +77,6 @@
     }
 
     // ── Kill / Restart ───────────────────────────────────────────────
-    // Custom confirm: the primary button is focused, so Enter = yes, Esc = no
-    function confirmDialog(message, detail = '', okLabel = 'Kill') {
-      return new Promise(resolve => {
-        const modal = $('confirmModal'), yes = $('confirmYes'), no = $('confirmNo');
-        $('confirmMsg').textContent = message;
-        $('confirmDetail').textContent = detail;
-        yes.firstChild.textContent = okLabel + ' ';
-        const done = (ok) => {
-          modal.style.display = 'none';
-          modal.removeEventListener('keydown', onKey);
-          yes.onclick = no.onclick = modal.onclick = null;
-          resolve(ok);
-        };
-        const onKey = (e) => {
-          e.stopPropagation(); // keep global shortcuts (s, g, t...) out while open
-          if (e.key === 'Escape') done(false);
-        };
-        yes.onclick = () => done(true);
-        no.onclick = () => done(false);
-        modal.onclick = (e) => { if (e.target === modal) done(false); };
-        modal.addEventListener('keydown', onKey);
-        modal.style.display = 'flex';
-        yes.focus();
-      });
-    }
-
     async function killPids(pids, message) {
       closeAllMenus();
       pids = [...new Set(pids.map(String))];

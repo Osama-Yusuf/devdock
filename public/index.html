@@ -21,13 +21,19 @@
               <rect x="3" y="19" width="14" height="2.5" rx="1.2" fill="#fff" opacity="0.2"/>
             </svg>
           </div>
-          <div>
-            <div class="title">DevDock</div>
-            <div class="subtitle">All your dev processes, one dashboard</div>
+          <div class="stats-left">
+            <div class="stat">
+              <span class="stat-value" id="count">0</span>
+              <span class="stat-label">listeners</span>
+            </div>
+            <div class="runtime-pills" id="runtimePills"></div>
+            <span class="transient-pill" id="transientBtn" style="display:none;"></span>
+            <button class="idle-btn" id="idleBtn" style="display:none;" title="Project servers with no real CPU activity past the idle threshold. Click to kill them."></button>
+            <button class="orphan-btn" id="orphanBtn" style="display:none;" title="Dev servers whose terminal or agent session is gone. Click to kill them."></button>
           </div>
         </div>
         <div class="header-actions">
-          <div class="badge" title="Real-time updates via WebSocket"><span class="badge-dot"></span> Live</div>
+          <div class="badge badge-offline" id="offlineBadge" style="display:none;" title="Lost connection to the DevDock server. Retrying every 2s."><span class="badge-dot"></span> Reconnecting…</div>
 
 
           <!-- History -->
@@ -35,10 +41,6 @@
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           </button>
 
-          <!-- Group toggle -->
-          <button class="btn-icon" id="groupToggle" title="Group by project">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-          </button>
 
           <!-- Export -->
           <div class="export-wrapper">
@@ -75,16 +77,6 @@
         </div>
       </div>
 
-      <!-- Stats -->
-      <div class="stats-row">
-        <div class="stats-left">
-          <div class="stat">
-            <span class="stat-value" id="count">0</span>
-            <span class="stat-label">listeners</span>
-          </div>
-          <div class="runtime-pills" id="runtimePills"></div>
-        </div>
-      </div>
 
       <!-- Search & filter -->
       <div class="search-filter-row">
@@ -94,11 +86,17 @@
           </span>
           <input type="text" class="search-input" id="searchInput" placeholder="Search ports, PIDs, processes, paths... ( / )" />
         </div>
+        <div class="seg" id="groupSeg" title="Group rows (G)">
+          <button data-g="none">Flat</button>
+          <button data-g="project">Project</button>
+          <button data-g="session">Agent session</button>
+        </div>
         <div class="filter-group">
           <select class="filter-select" id="runtimeFilter"><option value="all">All Runtimes</option></select>
           <button class="clear-btn" id="clearBtn">Clear</button>
         </div>
         <div class="result-info" id="resultInfo"></div>
+        <button class="kill-all-btn" id="killFilteredBtn" style="display:none;"></button>
       </div>
 
       <!-- Table -->
@@ -108,40 +106,26 @@
             <tr>
               <th style="width:30px;"></th>
               <th class="sortable" data-column="port">Port</th>
-              <th>Health</th>
               <th class="sortable" data-column="pid">PID</th>
-              <th class="sortable col-user" data-column="user">User</th>
-              <th class="sortable col-cmd" data-column="command">Process</th>
-              <th class="sortable" data-column="runtimeName">Runtime</th>
+              <th class="sortable col-user" data-column="startedAt">Started</th>
+              <th class="sortable col-cmd" data-column="runtimeName">Runtime</th>
               <th class="sortable col-path" data-column="scriptPath">Path</th>
               <th class="sortable" data-column="cpu">CPU</th>
-              <th class="sortable" data-column="rss">MEM</th>
-              <th style="text-align:right;">Actions</th>
+              <th class="sortable" data-column="memMB">MEM</th>
+              <th aria-label="Actions"></th>
             </tr>
           </thead>
           <tbody id="tableBody">
-            <tr class="skeleton-row"><td><div class="skeleton-bar" style="width:16px"></div></td><td><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:10px;border-radius:50%"></div></td><td><div class="skeleton-bar" style="width:48px"></div></td><td class="col-user"><div class="skeleton-bar" style="width:70px"></div></td><td class="col-cmd"><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:72px"></div></td><td class="col-path"><div class="skeleton-bar" style="width:180px"></div></td><td><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:50px"></div></td><td><div class="skeleton-bar" style="width:24px"></div></td></tr>
-            <tr class="skeleton-row"><td><div class="skeleton-bar" style="width:16px"></div></td><td><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:10px;border-radius:50%"></div></td><td><div class="skeleton-bar" style="width:48px"></div></td><td class="col-user"><div class="skeleton-bar" style="width:70px"></div></td><td class="col-cmd"><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:72px"></div></td><td class="col-path"><div class="skeleton-bar" style="width:140px"></div></td><td><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:50px"></div></td><td><div class="skeleton-bar" style="width:24px"></div></td></tr>
-            <tr class="skeleton-row"><td><div class="skeleton-bar" style="width:16px"></div></td><td><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:10px;border-radius:50%"></div></td><td><div class="skeleton-bar" style="width:48px"></div></td><td class="col-user"><div class="skeleton-bar" style="width:70px"></div></td><td class="col-cmd"><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:72px"></div></td><td class="col-path"><div class="skeleton-bar" style="width:160px"></div></td><td><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:50px"></div></td><td><div class="skeleton-bar" style="width:24px"></div></td></tr>
+            <tr class="skeleton-row"><td><div class="skeleton-bar" style="width:16px"></div></td><td><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:48px"></div></td><td class="col-user"><div class="skeleton-bar" style="width:70px"></div></td><td class="col-cmd"><div class="skeleton-bar" style="width:40px"></div></td><td class="col-path"><div class="skeleton-bar" style="width:180px"></div></td><td><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:50px"></div></td><td><div class="skeleton-bar" style="width:24px"></div></td></tr>
+            <tr class="skeleton-row"><td><div class="skeleton-bar" style="width:16px"></div></td><td><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:48px"></div></td><td class="col-user"><div class="skeleton-bar" style="width:70px"></div></td><td class="col-cmd"><div class="skeleton-bar" style="width:40px"></div></td><td class="col-path"><div class="skeleton-bar" style="width:140px"></div></td><td><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:50px"></div></td><td><div class="skeleton-bar" style="width:24px"></div></td></tr>
+            <tr class="skeleton-row"><td><div class="skeleton-bar" style="width:16px"></div></td><td><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:48px"></div></td><td class="col-user"><div class="skeleton-bar" style="width:70px"></div></td><td class="col-cmd"><div class="skeleton-bar" style="width:40px"></div></td><td class="col-path"><div class="skeleton-bar" style="width:160px"></div></td><td><div class="skeleton-bar" style="width:40px"></div></td><td><div class="skeleton-bar" style="width:50px"></div></td><td><div class="skeleton-bar" style="width:24px"></div></td></tr>
           </tbody>
         </table>
       </div>
 
       <div class="empty" id="emptyState" style="display:none;"></div>
 
-      <!-- Pro tips & shortcuts -->
-      <div style="margin-top:16px;padding-top:10px;border-top:1px solid var(--border-row);display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
-        <span style="font-size:0.72rem;color:var(--accent);font-weight:500;">Pro tips</span>
-        <span style="font-size:0.7rem;color:var(--text-dim);">Click <strong style="color:var(--text-muted);">Port</strong> to open in browser</span>
-        <span style="font-size:0.7rem;color:var(--text-dim);">Click <strong style="color:var(--text-muted);">PID</strong> to copy</span>
-        <span style="font-size:0.7rem;color:var(--text-dim);">Click <strong style="color:var(--text-muted);">Path</strong> to open terminal</span>
-        <span style="width:1px;height:12px;background:var(--border);"></span>
-        <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">/</kbd> Search</span>
-        <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">S</kbd> Settings</span>
-        <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">G</kbd> Group</span>
-        <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">H</kbd> History</span>
-        <span style="font-size:0.7rem;color:var(--text-dim);"><kbd style="font-family:var(--mono);padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);font-size:0.65rem;">T</kbd> Theme</span>
-      </div>
+      <div class="tips-hint">Press <kbd>?</kbd> for shortcuts and tips</div>
     </div>
   </div>
 
@@ -149,12 +133,59 @@
   <div class="menu-backdrop" id="menuBackdrop"></div>
   <div class="actions-menu" id="floatingMenu"></div>
 
+  <div class="modal-overlay confirm-overlay" id="confirmModal" style="display:none;">
+    <div class="modal confirm-modal" role="alertdialog" aria-labelledby="confirmMsg">
+      <div class="confirm-msg" id="confirmMsg"></div>
+      <div class="confirm-detail" id="confirmDetail"></div>
+      <div class="modal-footer">
+        <button class="btn-cancel" id="confirmNo">Cancel <kbd>Esc</kbd></button>
+        <button class="btn-danger" id="confirmYes">Kill <kbd>&#x21B5;</kbd></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="logsModal" style="display:none;">
+    <div class="modal logs-modal">
+      <div class="modal-header">
+        <div class="modal-title" id="logsTitle">Logs</div>
+        <button class="modal-close" id="logsClose" title="Close (Esc)">&times;</button>
+      </div>
+      <div class="logs-meta" id="logsMeta"></div>
+      <pre class="logs-body" id="logsBody"></pre>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="helpModal" style="display:none;">
+    <div class="modal help-modal" role="dialog" aria-labelledby="helpTitle">
+      <div class="modal-header">
+        <div class="modal-title" id="helpTitle">Shortcuts &amp; tips</div>
+        <button class="modal-close" id="helpClose" title="Close (Esc)">&times;</button>
+      </div>
+      <div class="help-grid">
+        <kbd>/</kbd><span>Search</span>
+        <kbd>G</kbd><span>Cycle view: Flat, Project, Agent session</span>
+        <kbd>S</kbd><span>Settings</span>
+        <kbd>H</kbd><span>History</span>
+        <kbd>T</kbd><span>Toggle theme</span>
+        <kbd>E</kbd><span>Export (when enabled)</span>
+        <kbd>?</kbd><span>This panel</span>
+        <kbd>Esc</kbd><span>Close any panel</span>
+      </div>
+      <div class="help-tips">
+        <div>Click a <b>port</b> to open it in the browser.</div>
+        <div>Click a <b>PID</b> to copy it.</div>
+        <div>Click a <b>path</b> to copy it, right-click to open a terminal there.</div>
+        <div>Type <b>orphan</b> in search to list servers whose session is gone.</div>
+      </div>
+    </div>
+  </div>
+
   <div id="settingsModal" style="display:none;">
     <div class="modal-overlay" id="modalOverlay">
       <div class="modal">
         <div class="modal-header">
           <div class="modal-title">Settings</div>
-          <button class="modal-close" id="modalClose">&times;</button>
+          <button class="modal-close" id="modalClose" title="Close (Esc)">&times;</button>
         </div>
 
         <div class="settings-section">
@@ -187,6 +218,34 @@
         </div>
 
         <div class="settings-section">
+          <div class="section-title">Idle servers</div>
+          <div class="section-desc">A server is idle when it hasn't used real CPU for this long.</div>
+          <div class="settings-row">
+            <div><label>Flag idle after</label><div class="sub">Shows an "idle" badge and a kill-all pill</div></div>
+            <select class="refresh-select" id="idleAfterHours">
+              <option value="0">Never</option>
+              <option value="1">1 hour</option>
+              <option value="6">6 hours</option>
+              <option value="24">1 day</option>
+              <option value="72">3 days</option>
+              <option value="168">1 week</option>
+            </select>
+          </div>
+          <div class="settings-row">
+            <div><label>Auto-kill idle servers</label><div class="sub">Checks every minute. Skips pinned ports and apps.</div></div>
+            <label class="toggle"><input type="checkbox" id="autoKillIdle" /><span class="toggle-slider"></span></label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="section-title">Editor</div>
+          <div class="settings-row">
+            <div><label>Open projects in</label><div class="sub">Used by "Open in editor" in the row menu</div></div>
+            <select class="refresh-select" id="editorSelect"></select>
+          </div>
+        </div>
+
+        <div class="settings-section">
           <div class="section-title">History</div>
           <div class="settings-row">
             <div><label>Remember stopped processes</label><div class="sub">Keep a record of previously discovered ports</div></div>
@@ -214,14 +273,12 @@
           </div>
         </div>
 
-        <div class="modal-footer">
-          <button class="btn-cancel" id="settingsCancel">Cancel</button>
-          <button class="btn-save" id="settingsSave">Save Settings</button>
-        </div>
       </div>
     </div>
   </div>
 
+  <script src="/js/runtime-icons.js"></script>
+  <script src="/js/tooltip.js"></script>
   <script src="/js/dashboard.js"></script>
 </body>
 </html>

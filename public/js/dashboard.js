@@ -12,14 +12,32 @@
     let allPorts = [];
     let previousPorts = [];
     let healthMap = {};
-    let sortColumn = 'port';
-    let sortDirection = 'asc';
     let runtimeDefs = {};
     let currentSettings = {};
     let ws = null;
-    let groupByProject = false;
     let groupingDepth = 1;
-    let openMenuId = null;
+
+    // View state survives refresh (per-window convenience, so localStorage)
+    const VIEW_KEY = 'devdock:view';
+    let savedView = {};
+    try { savedView = JSON.parse(localStorage.getItem(VIEW_KEY)) || {}; } catch {}
+    let sortColumn = savedView.sortColumn || 'port';
+    let sortDirection = savedView.sortDirection || 'asc';
+    // 'none' | 'project' | 'session' (older saves stored a boolean)
+    let groupBy = savedView.groupBy || (savedView.groupByProject ? 'project' : 'none');
+    const collapsedGroups = new Set(savedView.collapsed || []);
+
+    function saveView() {
+      try {
+        localStorage.setItem(VIEW_KEY, JSON.stringify({
+          sortColumn, sortDirection, groupBy, collapsed: [...collapsedGroups],
+        }));
+      } catch {}
+    }
+
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
 
     // ── Theme ────────────────────────────────────────────────────────
     function setTheme(theme) {
@@ -44,23 +62,66 @@
     });
 
     // ── Toast ─────────────────────────────────────────────────────────
-    function showToast(msg, type = 'success') {
-      const t = document.createElement('div');
+    // key: reuse one toast instead of stacking (e.g. rapid auto-saves)
+    function showToast(msg, type = 'success', key) {
+      let t = key && document.querySelector(`.toast[data-key="${key}"]`);
+      if (!t) {
+        t = document.createElement('div');
+        if (key) t.dataset.key = key;
+        document.body.appendChild(t);
+      }
       t.className = `toast toast-${type}`;
       t.textContent = msg;
-      document.body.appendChild(t);
-      setTimeout(() => t.remove(), 3000);
+      clearTimeout(t._timer);
+      t._timer = setTimeout(() => t.remove(), 2500);
     }
 
     // ── Kill / Restart ───────────────────────────────────────────────
-    async function killProcess(pid) {
+    // Custom confirm: the primary button is focused, so Enter = yes, Esc = no
+    function confirmDialog(message, detail = '', okLabel = 'Kill') {
+      return new Promise(resolve => {
+        const modal = $('confirmModal'), yes = $('confirmYes'), no = $('confirmNo');
+        $('confirmMsg').textContent = message;
+        $('confirmDetail').textContent = detail;
+        yes.firstChild.textContent = okLabel + ' ';
+        const done = (ok) => {
+          modal.style.display = 'none';
+          modal.removeEventListener('keydown', onKey);
+          yes.onclick = no.onclick = modal.onclick = null;
+          resolve(ok);
+        };
+        const onKey = (e) => {
+          e.stopPropagation(); // keep global shortcuts (s, g, t...) out while open
+          if (e.key === 'Escape') done(false);
+        };
+        yes.onclick = () => done(true);
+        no.onclick = () => done(false);
+        modal.onclick = (e) => { if (e.target === modal) done(false); };
+        modal.addEventListener('keydown', onKey);
+        modal.style.display = 'flex';
+        yes.focus();
+      });
+    }
+
+    async function killPids(pids, message) {
       closeAllMenus();
-      if (!confirm(`Kill process ${pid}?`)) return;
-      try {
-        const res = await fetch(`/api/kill/${pid}`, { method: 'POST' });
-        if (res.ok) { showToast(`Process ${pid} killed`); setTimeout(() => loadPorts(true), 800); }
-        else { const d = await res.json(); showToast(d.error, 'warn'); }
-      } catch { showToast('Failed to kill process', 'warn'); }
+      pids = [...new Set(pids.map(String))];
+      if (!pids.length) return;
+      if (!await confirmDialog(message, `PID${pids.length > 1 ? 's' : ''} ${pids.join(', ')}`)) return;
+      const results = await Promise.all(pids.map(pid =>
+        fetch(`/api/kill/${pid}`, { method: 'POST' }).then(r => r.ok).catch(() => false)));
+      const failed = results.filter(ok => !ok).length;
+      if (failed) showToast(`Killed ${pids.length - failed}, ${failed} failed`, 'warn');
+      else showToast(pids.length > 1 ? `Killed ${pids.length} processes` : `Process ${pids[0]} killed`);
+      setTimeout(() => loadPorts(true), 800);
+    }
+
+    function killProcess(pid) { return killPids([pid], `Kill process ${pid}?`); }
+
+    function killGroup(btn) {
+      const group = btn.closest('tr').dataset.key.slice(2);
+      const ports = getFilteredAndSortedPorts().filter(p => groupKeyFor(p) === group);
+      killPids(ports.map(p => p.pid), `Kill all ${ports.length} processes in ${group}?`);
     }
 
     async function restartProcess(pid) {
@@ -71,6 +132,60 @@
         else { showToast('Failed to restart', 'warn'); }
       } catch { showToast('Failed to restart', 'warn'); }
     }
+
+    // ── Editor ────────────────────────────────────────────────────────
+    let editors = [];
+    function editorName() {
+      return editors.includes(currentSettings.editor) ? currentSettings.editor : (editors[0] || 'editor');
+    }
+    async function openEditor(dir) {
+      const res = await fetch('/api/open-editor', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: dir }),
+      }).catch(() => null);
+      const d = res && await res.json().catch(() => ({}));
+      if (res?.ok) showToast(`Opened in ${d.editor}`);
+      else showToast(d?.error || 'Failed to open editor', 'warn');
+    }
+
+    // ── Logs ──────────────────────────────────────────────────────────
+    let logsTimer = null;
+    async function openLogs(pid, port) {
+      $('logsTitle').textContent = `Logs \u00B7 :${port} \u00B7 pid ${pid}`;
+      $('logsBody').textContent = 'Loading\u2026';
+      $('logsMeta').textContent = '';
+      $('logsModal').style.display = 'flex';
+      const body = $('logsBody');
+      const tick = async () => {
+        const d = await fetch(`/api/logs/${pid}`).then(r => r.json()).catch(() => null);
+        if (!d) return;
+        if (!d.logs.length) {
+          clearInterval(logsTimer);
+          $('logsMeta').textContent = '';
+          body.textContent = d.tty
+            ? `This process writes to a terminal (${d.tty}). Its output lives in that terminal window and can't be read from outside.`
+            : d.piped
+              ? 'Output goes to a pipe owned by its parent app, so there is no log file to show.'
+              : 'No stdout/stderr found. The process may have exited.';
+          return;
+        }
+        const atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 40;
+        $('logsMeta').textContent = d.logs.map(l => l.file).join('  \u00B7  ');
+        body.textContent = d.logs.map(l => l.error ? `[${l.error}]` : l.text).join('\n');
+        if (atBottom) body.scrollTop = body.scrollHeight;
+      };
+      clearInterval(logsTimer);
+      await tick();
+      body.scrollTop = body.scrollHeight;
+      logsTimer = setInterval(tick, 1000);
+    }
+    function closeLogs() { clearInterval(logsTimer); $('logsModal').style.display = 'none'; }
+    $('logsClose').addEventListener('click', closeLogs);
+    $('helpClose').addEventListener('click', () => { $('helpModal').style.display = 'none'; });
+    $('helpModal').addEventListener('click', (e) => { if (e.target === $('helpModal')) $('helpModal').style.display = 'none'; });
+    $('logsModal').addEventListener('click', (e) => { if (e.target === $('logsModal')) closeLogs(); });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && $('logsModal').style.display !== 'none') { e.stopImmediatePropagation(); closeLogs(); }
+    }, true);
 
     // ── Open terminal ─────────────────────────────────────────────────
     async function openTerminal(dir) {
@@ -113,32 +228,40 @@
     }
 
     // ── Notifications ────────────────────────────────────────────────
-    let notifiedPorts = new Set();  // track what we already notified about
+    // A port must be seen (or missing) for STABLE_POLLS polls in a row before we
+    // notify. Scripts that restart a listener every second would otherwise spam up/down.
+    const STABLE_POLLS = 3; // ~9s at the server's 3s broadcast interval
+    let notifiedPorts = new Set();  // ports we've announced as up
     let notifyReady = false;        // skip until first stable load
+    const seenStreak = {}, missStreak = {}, lastInfo = {};
 
     function checkNotifications() {
-      if (!currentSettings.notifications) return;
       if (!notifyReady) return;
 
       const currSet = new Set(allPorts.map(p => p.port));
+      allPorts.forEach(p => { lastInfo[p.port] = p; });
 
-      // New ports we haven't notified about
-      allPorts.forEach(p => {
-        if (!notifiedPorts.has(p.port)) {
-          notify(`Port ${p.port} is up`, `${p.runtimeName} process started (${p.command})`);
+      for (const port of currSet) {
+        delete missStreak[port];
+        seenStreak[port] = (seenStreak[port] || 0) + 1;
+        if (seenStreak[port] >= STABLE_POLLS && !notifiedPorts.has(port)) {
+          notifiedPorts.add(port);
+          const p = lastInfo[port];
+          if (currentSettings.notifications) notify(`Port ${port} is up`, `${p.runtimeName} process started (${p.command})`);
         }
-      });
+      }
 
-      // Ports that disappeared
-      notifiedPorts.forEach(port => {
-        if (!currSet.has(port)) {
-          const prev = previousPorts.find(p => p.port === port);
+      for (const port of Object.keys(seenStreak).map(Number)) {
+        if (currSet.has(port)) continue;
+        missStreak[port] = (missStreak[port] || 0) + 1;
+        if (missStreak[port] < STABLE_POLLS) continue;
+        delete seenStreak[port]; delete missStreak[port];
+        if (notifiedPorts.delete(port) && currentSettings.notifications) {
+          const prev = lastInfo[port];
           notify(`Port ${port} is down`, prev ? `${prev.runtimeName} process stopped` : 'Process stopped');
         }
-      });
-
-      // Update tracked set to current state
-      notifiedPorts = new Set(currSet);
+        delete lastInfo[port];
+      }
     }
 
     function notify(title, body) {
@@ -247,6 +370,8 @@
     });
 
     // ── Filter & sort ────────────────────────────────────────────────
+    const NUMERIC_COLUMNS = new Set(['port', 'pid', 'cpu', 'memMB', 'startedAt']);
+
     function getFilteredAndSortedPorts() {
       const term = searchInput.value.toLowerCase();
       const rtFilter = runtimeFilter.value;
@@ -258,7 +383,9 @@
           String(p.user || '').toLowerCase().includes(term) ||
           String(p.command || '').toLowerCase().includes(term) ||
           String(p.runtimeName || '').toLowerCase().includes(term) ||
-          String(p.scriptPath || '').toLowerCase().includes(term);
+          String(p.scriptPath || '').toLowerCase().includes(term) ||
+          [p.appName, p.procName, p.branch, p.launcher?.name].some(v => String(v || '').toLowerCase().includes(term)) ||
+          (term === 'orphan' && p.orphan);
 
         const matchesRuntime = rtFilter === 'all' || p.runtime === rtFilter;
         return matchesSearch && matchesRuntime;
@@ -271,9 +398,9 @@
 
         let aVal = a[sortColumn];
         let bVal = b[sortColumn];
-        if (sortColumn === 'port' || sortColumn === 'pid') {
-          aVal = parseInt(aVal) || 0;
-          bVal = parseInt(bVal) || 0;
+        if (NUMERIC_COLUMNS.has(sortColumn)) {
+          aVal = parseFloat(aVal) || 0;
+          bVal = parseFloat(bVal) || 0;
           return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
         }
         aVal = String(aVal || '').toLowerCase();
@@ -306,6 +433,45 @@
     }
 
     let lastPillsKey = '';
+    // Same folder, different (unrelated) processes -> probably a second dev server by mistake
+    function markDuplicates() {
+      const byPath = {};
+      allPorts.forEach(p => { p.dupOf = []; if (hasProject(p)) (byPath[p.scriptPath] ||= []).push(p); });
+      // parent/child (cluster master + worker) is one server, not a duplicate
+      const related = (a, b) => a.pid === b.pid || a.ppid === b.pid || b.ppid === a.pid;
+      Object.values(byPath).forEach(list => list.forEach(a => {
+        a.dupOf = list.filter(b => !related(a, b)).map(b => ({ port: b.port, pid: b.pid }));
+      }));
+    }
+
+    const announcedDups = new Set();
+    function announceDuplicates() {
+      const now = new Set();
+      allPorts.forEach(p => {
+        if (!p.dupOf.length) return;
+        now.add(p.scriptPath);
+        if (notifyReady && !announcedDups.has(p.scriptPath)) {
+          const ports = [p.port, ...p.dupOf.map(d => d.port)].sort((a, b) => a - b).map(x => ':' + x).join(', ');
+          if (currentSettings.notifications) notify('Duplicate dev server', `${p.scriptPath.split('/').slice(-2).join('/')} is running on ${ports}`);
+        }
+      });
+      announcedDups.clear(); now.forEach(k => announcedDups.add(k));
+    }
+
+    function updateIdle() {
+      const idle = allPorts.filter(p => p.idle);
+      const btn = $('idleBtn');
+      btn.style.display = idle.length ? '' : 'none';
+      btn.textContent = `${idle.length} idle`;
+    }
+
+    function updateOrphans() {
+      const orphans = allPorts.filter(p => p.orphan);
+      const btn = $('orphanBtn');
+      btn.style.display = orphans.length ? '' : 'none';
+      btn.textContent = `${orphans.length} orphaned`;
+    }
+
     function updateRuntimePills() {
       const counts = {};
       allPorts.forEach(p => { counts[p.runtime] = (counts[p.runtime] || 0) + 1; });
@@ -319,7 +485,7 @@
         const pill = document.createElement('span');
         pill.className = 'runtime-pill';
         pill.style.cssText = `background:${color}18;color:${color};border:1px solid ${color}40;`;
-        pill.innerHTML = `<span class="pill-count">${count}</span> ${name}`;
+        pill.innerHTML = `${runtimeIconHTML(rt, color, runtimeDefs[rt]?.icon, 12)}<span class="pill-count">${count}</span> ${name}`;
         runtimePills.appendChild(pill);
       });
     }
@@ -331,9 +497,80 @@
 
     function formatMem(mb) {
       if (!mb || mb === 0) return '0 MB';
-      if (mb < 1024) return mb.toFixed(1) + ' MB';
+      if (mb < 1024) return Math.round(mb) + ' MB';
       return (mb / 1024).toFixed(1) + ' GB';
     }
+
+    // Official logo when we have one, letter badge otherwise
+    function runtimeIconHTML(key, color, letters, size = 16) {
+      const d = RUNTIME_ICONS[key];
+      return d
+        ? `<svg class="runtime-logo" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${color}" aria-hidden="true"><path d="${d}"/></svg>`
+        : `<span class="runtime-icon" style="background:${color}">${esc(letters || '?')}</span>`;
+    }
+
+    // Icon + process name (only when it isn't just the runtime binary) + subtle version
+    function processCell(p) {
+      const cmd = String(p.procName || p.command || '');
+      const plain = cmd.toLowerCase().startsWith(p.runtime) || cmd.toLowerCase().startsWith(String(p.runtimeName).toLowerCase());
+      const tip = [`${p.runtimeName}${p.version ? ' ' + p.version : ''}`, `process: ${cmd}`, p.exePath, `user: ${p.user}`,
+        p.launcher && `launched by ${p.launcher.name}`].filter(Boolean).join('\n');
+      // logo, then label with the version stacked underneath
+      return `<span class="proc" title="${esc(tip)}">
+        ${runtimeIconHTML(p.runtime, p.runtimeColor, p.runtimeIcon)}
+        <span class="proc-text">
+          <span class="proc-name trunc ${plain ? 'is-runtime' : ''}">${esc(plain ? p.runtimeName : cmd)}</span>
+          ${p.version ? `<span class="proc-ver">v${esc(p.version)}</span>` : ''}
+        </span>
+      </span>`;
+    }
+
+    function chipsHTML(p) {
+      let html = '';
+      if (p.branch) html += `<span class="branch trunc" title="git branch: ${esc(p.branch)}">\u2387 ${esc(p.branch)}</span>`;
+      if (p.launcher?.kind === 'agent') {
+        const ico = AGENT_ICONS[p.launcher.name];
+        html += ico
+          ? `<span class="agent-ico" title="Started by ${esc(p.launcher.name)}"><svg width="13" height="13" viewBox="0 0 24 24" fill="${ico.color}"><path d="${ico.d}"/></svg></span>`
+          : `<span class="chip chip-agent" title="Started from a ${esc(p.launcher.name)} session">${esc(p.launcher.name)}</span>`;
+      }
+      if (p.idle) html += `<span class="chip chip-idle" title="No real CPU activity since ${new Date(p.lastActive).toLocaleString()}">idle ${timeAgo(p.lastActive).replace(' ago', '')}</span>`;
+      if (p.dupOf?.length) html += `<span class="chip chip-dup" title="Another server from this folder is running:\n${p.dupOf.map(d => `:${d.port} (pid ${d.pid})`).join('\n')}">also on :${p.dupOf[0].port}</span>`;
+      if (p.orphan) html += `<span class="chip chip-orphan" title="Parent process exited: probably left behind by a closed terminal or agent session">orphan</span>`;
+      return html;
+    }
+
+    function contextLine(p) {
+      return [`port ${p.port}`, `${p.runtimeName}${p.version ? ' ' + p.version : ''}`, `pid ${p.pid}`,
+        p.scriptPath, p.branch && `branch ${p.branch}`, p.launcher && `via ${p.launcher.name}`].filter(Boolean).join(' \u00B7 ');
+    }
+
+    function copyText(text, label) {
+      navigator.clipboard.writeText(text).then(() => showToast(`${label} copied`));
+    }
+
+    function timeAgo(ts) {
+      const s = Math.max(0, (Date.now() - ts) / 1000);
+      if (s < 60) return 'just now';
+      if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+      if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+      return `${Math.floor(s / 86400)}d ago`;
+    }
+
+    // In group view the group header already shows the common prefix
+    function tildify(path) {
+      const home = currentSettings.home;
+      return home && (path === home || path.startsWith(home + '/')) ? '~' + path.slice(home.length) : path;
+    }
+
+    function displayPath(path) {
+      if (groupBy !== 'project') return tildify(path);
+      const group = getGroupKey(path, groupingDepth);
+      return path.startsWith(group + '/') ? '\u2026/' + path.slice(group.length + 1) : tildify(path);
+    }
+
+    // CPU: dim at zero, colored only when it's actually busy
+    function cpuClass(cpu) { return cpu >= 80 ? 'cpu-hot' : cpu >= 30 ? 'cpu-warm' : cpu < 0.05 ? 'cpu-zero' : ''; }
 
     function usageColor(val, max) {
       if (val < max * 0.3) return 'var(--green)';
@@ -346,35 +583,45 @@
       const uid = `${p.pid}-${p.port}`;
       return `
         <td><button class="fav-btn ${p.favorite ? 'is-fav' : ''}" onclick="toggleFavorite(${p.port}, ${p.favorite})" title="${p.favorite ? 'Unpin' : 'Pin to top'}">${p.favorite ? '\u2605' : '\u2606'}</button></td>
-        <td>${p.port
-          ? `<a href="http://localhost:${p.port}" target="_blank" class="code" style="color:var(--accent);text-decoration:none;">${p.port}</a>`
+        <td><span class="health-dot ${health}" data-port="${p.port}" title="${health}"></span>${p.port
+          ? `<a href="http://localhost:${p.port}" target="_blank" class="code port-link" title="Open in browser">${p.port}</a>`
           : '<span class="code">&mdash;</span>'
         }</td>
-        <td><span class="health-dot ${health}" data-port="${p.port}" title="${health}"></span></td>
         <td><span class="pid-copy" onclick="navigator.clipboard.writeText('${p.pid}');showToast('PID ${p.pid} copied')" title="Click to copy PID">${p.pid}</span></td>
-        <td class="col-user">${p.user || '\u2014'}</td>
-        <td class="col-cmd"><span class="code">${p.command}</span></td>
-        <td>
-          <span class="runtime-tag" style="background:${p.runtimeColor}18;color:${p.runtimeColor};border:1px solid ${p.runtimeColor}40;">
-            <span class="runtime-icon" style="background:${p.runtimeColor}">${p.runtimeIcon || '?'}</span>
-            ${p.runtimeName}
-          </span>
-        </td>
-        <td class="col-path">${p.scriptPath
-          ? `<span class="path-link" onclick="openTerminal('${p.scriptPath.replace(/'/g, "\\'")}')" title="Click to open terminal here">${p.scriptPath}</span>`
-          : '<span class="code">\u2014</span>'
-        }</td>
-        <td class="usage-cell" title="CPU: ${p.cpu || 0}%">
-          <span class="usage-bar" style="width:${Math.min(p.cpu || 0, 100) * 0.4}px;background:${usageColor(p.cpu || 0, 100)};"></span>${(p.cpu || 0).toFixed(1)}%
-        </td>
+        <td class="col-user">${p.startedAt
+          ? `<span class="trunc started" title="${new Date(p.startedAt).toLocaleString()}">${timeAgo(p.startedAt)}</span>`
+          : '<span class="code">\u2014</span>'}</td>
+        <td class="col-cmd">${processCell(p)}</td>
+        <td class="col-path"><span class="path-cell">${hasProject(p)
+          ? `<span class="path-link trunc" data-path="${esc(p.scriptPath)}" onclick="copyText(this.dataset.path, 'Path')" oncontextmenu="event.preventDefault();openTerminal(this.dataset.path)" title="${esc(p.scriptPath)}\nClick to copy \u00B7 Right-click to open terminal">${esc(displayPath(p.scriptPath))}</span>`
+          : `<span class="app-name trunc" title="No project directory${p.appName ? ', owned by ' + esc(p.appName) : ''}">${esc(p.appName || '\u2014')}</span>`
+        }${chipsHTML(p)}</span></td>
+        <td class="usage-cell ${cpuClass(p.cpu || 0)}" title="CPU: ${p.cpu || 0}%">${(p.cpu || 0).toFixed(1)}%</td>
         <td class="usage-cell" title="Memory: ${formatMem(p.memMB || 0)}">
-          <span class="usage-bar" style="width:${Math.min((p.memMB || 0) * 0.08, 40)}px;background:${usageColor(p.memMB || 0, 500)};"></span>${formatMem(p.memMB || 0)}
+          <span class="usage-bar ${(p.memMB || 0) > 2048 ? 'hot' : ''}" style="width:${Math.max(3, Math.min((p.memMB || 0) / 1024 * 40, 40))}px;"></span>${formatMem(p.memMB || 0)}
         </td>
         <td class="actions-cell" style="text-align:right;">
           <button class="actions-trigger" onclick="event.stopPropagation();toggleActionsMenu('${uid}',this)">
             \u22EF
           </button>
           <div class="actions-menu" id="menu-${uid}">
+            ${hasProject(p) ? `<button onclick="openEditor(this.dataset.path)" data-path="${esc(p.scriptPath)}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              Open in ${esc(editorName())}
+            </button>` : ''}
+            <button onclick="openLogs('${p.pid}', ${p.port})">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              View logs
+            </button>
+            <div class="actions-divider"></div>
+            <button onclick="copyText('http://localhost:${p.port}', 'URL')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+              Copy URL
+            </button>
+            <button onclick="copyText(this.dataset.ctx, 'Context')" data-ctx="${esc(contextLine(p))}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Copy context for agent
+            </button>
             <button onclick="restartProcess('${p.pid}')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
               Restart (SIGHUP)
@@ -388,6 +635,24 @@
         </td>`;
     }
 
+    function hasProject(p) { return !!p.scriptPath && p.scriptPath !== '/'; }
+
+    function groupKeyFor(p) {
+      if (groupBy === 'session') return sessionKey(p);
+      return hasProject(p) ? getGroupKey(p.scriptPath, groupingDepth) : (p.appName || 'Unknown');
+    }
+
+    // One group per agent process: everything a single Claude/Codex session spawned
+    function sessionKey(p) {
+      const l = p.launcher;
+      if (l?.kind === 'agent') {
+        const where = l.cwd ? l.cwd.split('/').slice(-2).join('/') : '';
+        return `${l.name}${where ? ' \u00B7 ' + where : ''} \u00B7 pid ${l.pid}`;
+      }
+      if (l?.kind === 'app') return `Started from ${l.name}`;
+      return p.orphan ? 'Orphaned (session gone)' : 'No agent';
+    }
+
     function getGroupKey(scriptPath, depth) {
       if (!scriptPath || scriptPath === '/') return 'Unknown';
       const parts = scriptPath.replace(/\/$/, '').split('/');
@@ -399,7 +664,7 @@
 
     // Fingerprint a port entry for change detection
     function portFingerprint(p) {
-      return `${p.pid}|${p.port}|${p.user}|${p.command}|${p.runtime}|${p.scriptPath}|${p.favorite}|${(p.cpu||0).toFixed(1)}|${p.memMB||0}`;
+      return `${p.pid}|${p.port}|${p.user}|${p.command}|${p.runtime}|${p.scriptPath}|${p.favorite}|${(p.cpu||0).toFixed(1)}|${p.memMB||0}|${p.startedAt && timeAgo(p.startedAt)}|${p.version}|${p.branch}|${p.orphan}|${p.appName}|${p.procName}|${p.idle}|${(p.dupOf || []).map(d => d.port)}`;
     }
 
     let lastFingerprints = {};
@@ -407,6 +672,11 @@
 
     function renderTable() {
       const filtered = getFilteredAndSortedPorts();
+
+      const filtering = searchInput.value || runtimeFilter.value !== 'all';
+      const killBtn = $('killFilteredBtn');
+      killBtn.style.display = filtering && filtered.length ? '' : 'none';
+      killBtn.textContent = `\u2715 Kill ${filtered.length} matching`;
 
       // Update counters
       if (allPorts.length === 0) {
@@ -435,16 +705,24 @@
 
       // Build the desired row list (flat, no grouping for reconciliation)
       let rows;
-      if (groupByProject) {
+      if (groupBy !== 'none') {
         rows = [];
         const groups = {};
         filtered.forEach(p => {
-          const key = getGroupKey(p.scriptPath, groupingDepth);
+          const key = groupKeyFor(p);
           if (!groups[key]) groups[key] = [];
           groups[key].push(p);
         });
-        Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0])).forEach(([groupPath, ports]) => {
-          rows.push({ _groupHeader: true, groupPath, count: ports.length });
+        const total = (ports, col) => ports.reduce((s, p) => s + (p[col] || 0), 0);
+        const entries = Object.entries(groups);
+        if (sortColumn === 'cpu' || sortColumn === 'memMB') {
+          const dir = sortDirection === 'asc' ? 1 : -1;
+          entries.sort((a, b) => dir * (total(a[1], sortColumn) - total(b[1], sortColumn)));
+        } else {
+          entries.sort((a, b) => a[0].localeCompare(b[0]));
+        }
+        entries.forEach(([groupPath, ports]) => {
+          rows.push({ _groupHeader: true, groupPath, count: ports.length, cpu: total(ports, 'cpu'), memMB: total(ports, 'memMB') });
           ports.forEach(p => rows.push(p));
         });
       } else {
@@ -459,17 +737,28 @@
         tableBody.innerHTML = '';
         lastFingerprints = {};
 
+        let collapsed = false;
         rows.forEach(r => {
           const tr = document.createElement('tr');
           if (r._groupHeader) {
+            // gap before every group, including the first (separates it from the header bar)
+            const gap = document.createElement('tr');
+            gap.className = 'group-gap';
+            gap.innerHTML = '<td colspan="9"></td>';
+            tableBody.appendChild(gap);
+            collapsed = collapsedGroups.has(r.groupPath);
             tr.dataset.key = `g:${r.groupPath}`;
-            tr.innerHTML = `<td colspan="11" style="padding:0;">
-              <div class="group-header" onclick="this.classList.toggle('collapsed');toggleGroupRows(this)">
+            tr.className = 'group-row';
+            tr.innerHTML = `<td colspan="9">
+              <div class="group-header ${collapsed ? 'collapsed' : ''}" onclick="toggleGroup(this)">
                 <span class="group-chevron">\u25BC</span>
-                <span class="group-name">${r.groupPath}</span>
+                <span class="group-name trunc" title="${esc(r.groupPath)}">${esc(r.groupPath.startsWith('/') ? tildify(r.groupPath) : r.groupPath)}</span>
                 <span class="group-count">${r.count}</span>
+                <span class="group-usage">${r.cpu.toFixed(1)}% CPU \u00B7 ${formatMem(r.memMB)}</span>
+                <button class="group-kill" onclick="event.stopPropagation();killGroup(this)" title="Kill all ${r.count} in this group">\u2715</button>
               </div></td>`;
           } else {
+            if (collapsed) tr.style.display = 'none';
             const key = rowKey(r);
             tr.dataset.key = key;
             if (r.favorite) tr.classList.add('is-favorite');
@@ -488,7 +777,11 @@
       const existingRows = tableBody.querySelectorAll('tr[data-key]');
       let idx = 0;
       rows.forEach(r => {
-        if (r._groupHeader) { idx++; return; }
+        if (r._groupHeader) {
+          const usage = existingRows[idx++]?.querySelector('.group-usage');
+          if (usage) usage.textContent = `${r.cpu.toFixed(1)}% CPU · ${formatMem(r.memMB)}`;
+          return;
+        }
         const key = rowKey(r);
         const fp = portFingerprint(r);
         const tr = existingRows[idx];
@@ -504,14 +797,61 @@
       });
     }
 
-    function toggleGroupRows(headerEl) {
+    function toggleGroup(headerEl) {
       const tr = headerEl.closest('tr');
-      const collapsed = headerEl.classList.contains('collapsed');
+      const group = tr.dataset.key.slice(2);
+      const collapsed = headerEl.classList.toggle('collapsed');
+      if (collapsed) collapsedGroups.add(group); else collapsedGroups.delete(group);
+      saveView();
       let next = tr.nextElementSibling;
-      while (next && !next.querySelector('.group-header')) {
+      while (next && !next.classList.contains('group-gap') && !next.querySelector('.group-header')) {
         next.style.display = collapsed ? 'none' : '';
         next = next.nextElementSibling;
       }
+    }
+
+    // ── Short-lived listeners ────────────────────────────────────────
+    // Test scripts and agent probes bind a port for a second or two and exit.
+    // A row only shows once its pid:port survived 2 polls (~3-6s); the rest
+    // are counted in the "short-lived" pill instead of flickering in the table.
+    const rowStreak = {};
+    let firstLoad = true;
+    const transientLog = []; // most recent first
+
+    function stableOnly(ports) {
+      const live = new Set();
+      const stable = [];
+      ports.forEach(p => {
+        const k = rowKey(p);
+        live.add(k);
+        rowStreak[k] = (rowStreak[k] || 0) + 1;
+        if (firstLoad || rowStreak[k] >= 2) { rowStreak[k] = Math.max(rowStreak[k], 2); stable.push(p); }
+      });
+      for (const k of Object.keys(rowStreak)) {
+        if (live.has(k)) continue;
+        if (rowStreak[k] < 2) {
+          const p = lastSeenRow[k];
+          if (p) transientLog.unshift({ ...p, at: Date.now() });
+        }
+        delete rowStreak[k]; delete lastSeenRow[k];
+      }
+      ports.forEach(p => { lastSeenRow[rowKey(p)] = p; });
+      firstLoad = false;
+      transientLog.splice(50);
+      updateTransient();
+      return stable;
+    }
+    const lastSeenRow = {};
+
+    function updateTransient() {
+      const btn = $('transientBtn');
+      const recent = transientLog.filter(t => Date.now() - t.at < 10 * 60 * 1000);
+      btn.style.display = recent.length ? '' : 'none';
+      btn.textContent = `${recent.length} short-lived`;
+      const lines = recent.slice(0, 12).map(t =>
+        `:${t.port}  ${t.procName || t.command}  pid ${t.pid}${t.launcher ? '  via ' + t.launcher.name : ''}  ${timeAgo(t.at)}`);
+      btn.dataset.tip = `Listeners that lived under a few seconds (last 10 min), hidden from the table:\n${lines.join('\n')}`
+        + (recent.length > 12 ? `\n+${recent.length - 12} more` : '');
     }
 
     // ── Load ports ───────────────────────────────────────────────────
@@ -519,7 +859,9 @@
       if (isAnyMenuOpen()) return;
 
       previousPorts = [...allPorts];
-      allPorts = data.ports || [];
+      allPorts = stableOnly(data.ports || []);
+      markDuplicates();
+      announceDuplicates();
 
       countEl.textContent = allPorts.length;
 
@@ -528,6 +870,8 @@
 
       updateFilters();
       updateRuntimePills();
+      updateOrphans();
+      updateIdle();
       renderTable();
       loadHealth();
     }
@@ -540,6 +884,7 @@
         // After first successful load, seed the notified set and enable notifications
         if (!notifyReady) {
           notifiedPorts = new Set(allPorts.map(p => p.port));
+          allPorts.forEach(p => { seenStreak[p.port] = STABLE_POLLS; lastInfo[p.port] = p; });
           notifyReady = true;
         }
       } catch (err) {
@@ -550,15 +895,21 @@
     function connectWebSocket() {
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
       ws = new WebSocket(`${proto}//${location.host}`);
+      ws.onopen = () => { $('offlineBadge').style.display = 'none'; };
 
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
           if (data.type === 'ports') handlePortsData(data, true);
+          if (data.type === 'reaped') {
+            const ports = data.reaped.map(r => ':' + r.port).join(', ');
+            notify('Idle servers stopped', `Auto-killed ${data.reaped.length}: ${ports}`);
+          }
         } catch {}
       };
 
       ws.onclose = () => {
+        $('offlineBadge').style.display = '';
         // Reconnect after 2s
         setTimeout(connectWebSocket, 2000);
       };
@@ -577,6 +928,12 @@
       $('groupingDepth').value = String(currentSettings.groupingDepth ?? 1);
       $('showHistoryToggle').checked = currentSettings.showHistory !== false;
       $('showExportToggle').checked = currentSettings.showExport || false;
+      $('idleAfterHours').value = String(currentSettings.idleAfterHours ?? 24);
+      $('autoKillIdle').checked = !!currentSettings.autoKillIdle;
+      editors = await fetch('/api/editors').then(r => r.json()).catch(() => []);
+      $('editorSelect').innerHTML = editors.length
+        ? editors.map(e => `<option ${e === editorName() ? 'selected' : ''}>${esc(e)}</option>`).join('')
+        : '<option value="">None installed</option>';
 
       const container = $('runtimeToggles');
       container.innerHTML = '';
@@ -586,7 +943,7 @@
         div.className = 'runtime-toggle';
         div.innerHTML = `
           <div class="runtime-toggle-left">
-            <span class="runtime-icon" style="background:${rt.color}">${rt.icon}</span>
+            ${runtimeIconHTML(key, rt.color, rt.icon, 18)}
             <div class="runtime-toggle-info">
               <h4>${rt.name}</h4>
               <p>${rt.commands.join(', ') || 'unrecognized processes'}</p>
@@ -605,7 +962,16 @@
 
     function closeSettings() { $('settingsModal').style.display = 'none'; }
 
-    async function saveSettings() {
+    // "Saved · Notifications on", "Saved · Python off", "Saved · Grouping depth 2"
+    function describeChange(el) {
+      const row = el?.closest('.settings-row, .runtime-toggle');
+      const name = row?.querySelector('h4, label')?.textContent.trim();
+      if (!name) return '';
+      if (el.type === 'checkbox') return `${name} ${el.checked ? 'on' : 'off'}`;
+      return `${name}: ${el.options?.[el.selectedIndex]?.text || el.value}`;
+    }
+
+    async function saveSettings(what) {
       const runtimes = {};
       $('runtimeToggles').querySelectorAll('input[data-runtime]').forEach(i => {
         runtimes[i.dataset.runtime] = { enabled: i.checked };
@@ -624,28 +990,38 @@
         groupingDepth: newDepth,
         showHistory: $('showHistoryToggle').checked,
         showExport: $('showExportToggle').checked,
+        idleAfterHours: parseInt($('idleAfterHours').value),
+        autoKillIdle: $('autoKillIdle').checked,
+        editor: $('editorSelect').value,
       };
 
-      await fetch('/api/settings', {
+      const ok = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-      });
+      }).then(r => r.ok).catch(() => false);
+      if (!ok) return showToast('Could not save settings', 'warn', 'settings');
 
       currentSettings = { ...currentSettings, ...body };
       updateExportVisibility(body.showExport);
-      closeSettings();
-      showToast('Settings saved');
+      lastFilteredKeys = ''; // grouping depth may have changed
+      const label = typeof what === 'string' ? what : describeChange(what?.target);
+      showToast(label ? `Saved \u00B7 ${label}` : 'Settings saved', 'success', 'settings');
       loadPorts(true);
     }
 
     // ── Group toggle ─────────────────────────────────────────────────
-    $('groupToggle').addEventListener('click', () => {
-      groupByProject = !groupByProject;
-      $('groupToggle').style.background = groupByProject ? 'rgba(96,165,250,0.2)' : '';
-      $('groupToggle').style.borderColor = groupByProject ? 'rgba(96,165,250,0.5)' : '';
-      renderTable();
-    });
+    const GROUP_MODES = ['none', 'project', 'session'];
+    function setGroupBy(mode, render = true) {
+      groupBy = mode;
+      $('groupSeg').querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.g === mode));
+      document.querySelector('.scroll').classList.toggle('grouped', mode !== 'none');
+      saveView();
+      lastFilteredKeys = '';
+      if (render) renderTable();
+    }
+    $('groupSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setGroupBy(b.dataset.g); });
+    setGroupBy(GROUP_MODES.includes(groupBy) ? groupBy : 'none', false);
 
     // ── Event listeners ──────────────────────────────────────────────
     function updateClearBtn() {
@@ -654,6 +1030,19 @@
     updateClearBtn();
 
     searchInput.addEventListener('input', () => { renderTable(); updateClearBtn(); });
+    $('idleBtn').addEventListener('click', () => {
+      const idle = allPorts.filter(p => p.idle);
+      killPids(idle.map(p => p.pid), `Kill ${idle.length} idle server${idle.length > 1 ? 's' : ''}?`);
+    });
+    $('orphanBtn').addEventListener('click', () => {
+      const orphans = allPorts.filter(p => p.orphan);
+      killPids(orphans.map(p => p.pid), `Kill ${orphans.length} orphaned process${orphans.length > 1 ? 'es' : ''}?`);
+    });
+    $('killFilteredBtn').addEventListener('click', () => {
+      const ports = getFilteredAndSortedPorts();
+      const what = searchInput.value ? `matching "${searchInput.value}"` : 'matching the filter';
+      killPids(ports.map(p => p.pid), `Kill all ${ports.length} processes ${what}?`);
+    });
     runtimeFilter.addEventListener('change', () => { renderTable(); updateClearBtn(); });
     clearBtn.addEventListener('click', () => {
       searchInput.value = '';
@@ -664,8 +1053,15 @@
 
 $('settingsBtn').addEventListener('click', openSettings);
     $('modalClose').addEventListener('click', closeSettings);
-    $('settingsCancel').addEventListener('click', closeSettings);
-    $('settingsSave').addEventListener('click', saveSettings);
+    // Auto-save: every toggle/select change persists immediately
+    $('settingsModal').addEventListener('change', saveSettings);
+    // Esc always closes settings, whatever has focus inside it
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && $('settingsModal').style.display !== 'none' && $('confirmModal').style.display === 'none') {
+        e.stopImmediatePropagation();
+        closeSettings();
+      }
+    }, true);
     $('modalOverlay').addEventListener('click', (e) => { if (e.target === $('modalOverlay')) closeSettings(); });
 
     $('runtimeSectionToggle').addEventListener('click', () => {
@@ -677,16 +1073,18 @@ $('settingsBtn').addEventListener('click', openSettings);
     });
 
     $('clearHistory').addEventListener('click', async () => {
-      if (!confirm('Clear all port history?')) return;
+      if (!await confirmDialog('Clear all port history?', '', 'Clear')) return;
       await fetch('/api/history', { method: 'DELETE' });
       showToast('History cleared');
     });
 
     $('enableAll').addEventListener('click', () => {
       $('runtimeToggles').querySelectorAll('input[data-runtime]').forEach(i => i.checked = true);
+      saveSettings('All runtimes on');
     });
     $('disableAll').addEventListener('click', () => {
       $('runtimeToggles').querySelectorAll('input[data-runtime]').forEach(i => i.checked = false);
+      saveSettings('All runtimes off');
     });
 
     // Sortable columns
@@ -697,6 +1095,7 @@ $('settingsBtn').addEventListener('click', openSettings);
         else { sortColumn = col; sortDirection = 'asc'; }
         document.querySelectorAll('th.sortable').forEach(h => h.classList.remove('sorted', 'asc', 'desc'));
         th.classList.add('sorted', sortDirection);
+        saveView();
         renderTable();
       });
     });
@@ -711,11 +1110,12 @@ $('settingsBtn').addEventListener('click', openSettings);
       switch (e.key) {
         case '/': e.preventDefault(); searchInput.focus(); break;
         case 's': openSettings(); break;
-        case 'g': $('groupToggle').click(); break;
+        case 'g': setGroupBy(GROUP_MODES[(GROUP_MODES.indexOf(groupBy) + 1) % GROUP_MODES.length]); break;
         case 'h': window.location.href = '/history'; break;
         case 'e': $('exportBtn').click(); break;
         case 't': $('themeToggle').click(); break;
-        case 'Escape': closeSettings(); $('exportMenu').classList.remove('open'); break;
+        case '?': $('helpModal').style.display = 'flex'; break;
+        case 'Escape': closeSettings(); $('helpModal').style.display = 'none'; $('exportMenu').classList.remove('open'); break;
       }
     });
 
@@ -724,6 +1124,7 @@ $('settingsBtn').addEventListener('click', openSettings);
       const [rtRes, stRes] = await Promise.all([fetch('/api/runtimes'), fetch('/api/settings')]);
       runtimeDefs = await rtRes.json();
       currentSettings = await stRes.json();
+      fetch('/api/editors').then(r => r.json()).then(list => { editors = list; lastFilteredKeys = ''; }).catch(() => {});
 
       setTheme(currentSettings.theme || 'dark');
       groupingDepth = currentSettings.groupingDepth ?? 1;

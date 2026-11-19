@@ -31,6 +31,10 @@ Everything else lives in each row's menu: hover a row and click `⋯`.
 
 <p align="center"><img src="docs/menu.png" alt="Row menu: open in editor, open branch on GitHub, logs, copy, restart, kill" /></p>
 
+Click a server's `tmux` badge and its session opens right here, splits and windows included.
+
+<p align="center"><img src="docs/tmux.png" alt="A tmux session with a split pane, open inside DevDock" /></p>
+
 ## Install
 
 1. Download the `.dmg` from the [latest release](https://github.com/Osama-Yusuf/devdock/releases/latest) and drag DevDock to Applications.

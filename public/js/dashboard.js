@@ -138,7 +138,7 @@
       if ((currentSettings.tmuxOpen || 'devdock') === 'terminal') return attachTmuxTerminal(target);
       if (!ws || ws.readyState !== 1) return showToast('Not connected', 'warn');
       closeTmux();
-      $('tmuxTitle').textContent = `tmux \u00B7 ${target}`;
+      $('tmuxTitle').textContent = `tmux \u00B7 ${target.split(':')[0]}`;
       $('tmuxTerm').innerHTML = '';
       $('tmuxModal').style.display = 'flex';
       term = new Terminal({

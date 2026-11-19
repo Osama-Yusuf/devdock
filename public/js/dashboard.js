@@ -392,6 +392,26 @@
     // ── Filter & sort ────────────────────────────────────────────────
     const NUMERIC_COLUMNS = new Set(['port', 'pid', 'cpu', 'memMB', 'startedAt']);
 
+    // Pattern chips (DevDockPatterns in js/selection.js): one folder's servers, one agent's,
+    // orphans, idle ones, everything in one tmux session
+    const SERVER_PATTERNS = [
+      p => hasProject(p) && { id: `dir:${p.scriptPath}`, label: p.scriptPath.replace(/\/$/, '').split('/').pop(), title: `Servers from ${tildify(p.scriptPath)}` },
+      p => p.launcher?.name && { id: `by:${p.launcher.name}`, label: p.launcher.name, title: `Started by ${p.launcher.name}` },
+      p => p.tmux?.target && { id: `tmux:${p.tmux.target.split(':')[0]}`, label: `tmux ${p.tmux.target.split(':')[0]}`, title: `In tmux session ${p.tmux.target.split(':')[0]}` },
+      p => p.orphan && { id: 'orphan', label: 'orphaned', title: 'Servers whose terminal or agent session is gone' },
+      p => p.idle && { id: 'idle', label: 'idle', title: 'Servers with no CPU activity' },
+    ];
+    let patternSig = '';
+    function renderServerPatterns() {
+      const found = DevDockPatterns.find('servers', allPorts, rowKey, SERVER_PATTERNS);
+      const html = DevDockPatterns.html('servers', found);
+      if (html === patternSig) return;
+      patternSig = html;
+      const box = $('serverPatterns');
+      box.style.display = found.length ? '' : 'none';
+      box.firstElementChild.innerHTML = html;
+    }
+
     function getFilteredAndSortedPorts() {
       const term = searchInput.value.toLowerCase();
       const rtFilter = runtimeFilter.value;
@@ -410,6 +430,7 @@
         const matchesRuntime = rtFilter === 'all' || p.runtime === rtFilter;
         return matchesSearch && matchesRuntime;
       });
+      filtered = DevDockPatterns.filter('servers', filtered, rowKey);
 
       // Favorites first, then sort
       filtered.sort((a, b) => {
@@ -705,9 +726,10 @@
     let lastFilteredKeys = '';
 
     function renderTable() {
+      renderServerPatterns();
       const filtered = getFilteredAndSortedPorts();
 
-      const filtering = searchInput.value || runtimeFilter.value !== 'all';
+      const filtering = searchInput.value || runtimeFilter.value !== 'all' || DevDockPatterns.on('servers');
       const killBtn = $('killFilteredBtn');
       killBtn.style.display = filtering && filtered.length ? '' : 'none';
       killBtn.textContent = `\u2715 Kill ${filtered.length} matching`;
@@ -1123,6 +1145,7 @@
     }
     // Selection (js/selection.js) asks each tab what a row is and what it can do to many
     DevDockViews.servers = {
+      render: renderTable,
       pick(key) {
         const p = allPorts.find(x => rowKey(x) === key);
         return p && { kind: 'server', name: `:${p.port} ${p.procName || p.runtimeName}`, ref: String(p.pid), cwd: hasProject(p) ? p.scriptPath : '', raw: p, facts: {

@@ -64,30 +64,32 @@
     ? `<div class="scroll"><table class="${cls}"><thead><tr>${head}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`
     : `<div class="empty-view">${none}</div>`;
 
-  // ── patterns: groups worth acting on together, found instead of hand-picked ──
-  // 19 copies of one image, a compose project, a busy k8s namespace. One click filters
-  // to the group and selects it. Not persisted: the groups change as containers come and go.
-  let pattern = null;
+  // ── patterns (DevDockPatterns in js/selection.js) ─────────────────
+  // 19 copies of one image, a compose project, a busy k8s namespace, many tags of one repo
   const imageName = img => img.replace(/^.*\//, '').replace(/:latest$/, '');
-  function patternsOf(d) {
-    const groups = {};
-    const add = (id, label, title, c) => { (groups[id] ||= { id, label, title, keys: [] }).keys.push(c.id); };
-    for (const c of d.containers.filter(c => !c.k8s?.sandbox)) {
-      if (c.k8s) add(`ns:${c.k8s.namespace}`, c.k8s.namespace, `Kubernetes namespace ${c.k8s.namespace}`, c);
-      else add(`img:${c.image}`, imageName(c.image), `Containers from ${c.image}`, c);
-      if (c.project) add(`proj:${c.project}`, c.project, `Compose project ${c.project}`, c);
-    }
-    // a group is a pattern once it's 3+ (a compose project counts from 2)
-    return Object.values(groups).filter(g => g.keys.length >= (g.id.startsWith('proj:') ? 2 : 3))
-      .sort((a, b) => b.keys.length - a.keys.length).slice(0, 4);
-  }
+  const proj = x => x.project && { id: `proj:${x.project}`, label: x.project, title: `Compose project ${x.project}` };
+  const PATTERNS = {
+    containers: [
+      c => c.k8s ? { id: `ns:${c.k8s.namespace}`, label: c.k8s.namespace, title: `Kubernetes namespace ${c.k8s.namespace}`, min: 3 }
+        : { id: `img:${c.image}`, label: imageName(c.image), title: `Containers from ${c.image}`, min: 3 },
+      proj,
+    ],
+    images: [
+      i => i.tags.length && { id: `repo:${i.tags[0].replace(/:[^:/]*$/, '')}`, label: imageName(i.tags[0].replace(/:[^:/]*$/, '')), title: `Tags of ${i.tags[0].replace(/:[^:/]*$/, '')}`, min: 3 },
+      i => !i.containers && i.size > 1e9 && { id: 'big', label: 'unused over 1 GB', title: 'Unused images over 1 GB' },
+    ],
+    volumes: [
+      proj,
+      v => v.anonymous && !v.containers && { id: 'anon', label: 'unused anonymous', title: 'Unused anonymous volumes', min: 3 },
+    ],
+  };
+  const KEY = { containers: c => `c:${c.id}`, images: i => `i:${i.id}`, volumes: v => `v:${v.name}` };
 
   // ── rows per sub-tab ───────────────────────────────────────────────
   const LISTS = {
     // a pod's pause container only holds its network; it's noise next to the real ones
     containers: (d, f, q) => d.containers
       .filter(c => !c.k8s?.sandbox)
-      .filter(c => !pattern || pattern.keys.includes(c.id))
       .filter(c => f === 'all' || (f === 'k8s' ? c.k8s : f === 'running' ? !stopped(c) : stopped(c)))
       .filter(c => hit(q, c.name, c.image, c.project, c.state, c.ports.join(' '), c.k8s ? `k8s kubernetes ${c.k8s.pod} ${c.k8s.namespace}` : ''))
       .sort((a, b) => stopped(a) - stopped(b) || (b.lastUsed || 0) - (a.lastUsed || 0)),
@@ -181,10 +183,11 @@
       build: bytes(d.buildCache.size),
     };
     const ctx = CLEANUPS[CONTEXT[tab]], ctxTotal = total(ctx.kinds, r);
-    const patterns = tab === 'containers' ? patternsOf(d) : [];
-    if (pattern) pattern = patterns.find(p => p.id === pattern.id) || null; // the group went away
-    const list = LISTS[tab]?.(d, f, q);
     const all = { containers: d.containers.filter(c => !c.k8s?.sandbox), images: d.images, volumes: d.volumes }[tab];
+    const scope = `containers:${tab}`;
+    const patterns = PATTERNS[tab] ? DevDockPatterns.find(scope, all, KEY[tab], PATTERNS[tab]) : [];
+    const list = LISTS[tab] && DevDockPatterns.filter(scope, LISTS[tab](d, f, q), KEY[tab]);
+    const pattern = DevDockPatterns.on(scope);
     if (list) setViewResult(list.length, all.length);
     // Searching: act on the matches you could remove anyway, like Servers' "Kill N matching"
     const matching = q && list ? list.filter(REMOVABLE[tab]) : null;
@@ -195,7 +198,7 @@
         <button role="tab" aria-selected="${k === tab}" onclick="DevDockViews.containers.setTab('${k}')" aria-label="${t.label}" title="${t.label} \u00B7 ${meta[k]}  \u2325${i + 1}">${svg(t.icon, 16)}</button>`).join('')}
         </div>
         ${filters.length ? `<div class="seg">${filters.map(([k, label]) => `<button class="${k === f ? 'active' : ''}" onclick="DevDockViews.containers.setFilter('${k}')">${label}</button>`).join('')}</div>` : ''}
-        ${patterns.length ? `<div class="patterns">${patterns.map(p => `<button class="pattern ${pattern?.id === p.id ? 'active' : ''}" data-p="${esc(p.id)}" onclick="DevDockViews.containers.setPattern(this.dataset.p)" title="${esc(p.title)}${pattern?.id === p.id ? '. Click to show all' : '. Click to filter and select them'}">${esc(p.label)}<span>${p.keys.length}</span></button>`).join('')}</div>` : ''}
+        ${patterns.length ? `<div class="patterns">${DevDockPatterns.html(scope, patterns)}</div>` : ''}
         ${list && !q && (f !== 'all' || pattern) ? `<span class="subbar-count">${list.length} of ${all.length}</span>` : ''}
         ${matching ? `<button class="kill-all-btn subbar-action" ${matching.length ? '' : 'disabled'} onclick="DevDockViews.containers.removeMatching()" title="Only items nothing uses">
           ${ICON.trash}${matching.length ? `Remove ${matching.length} matching` : 'Nothing matching to remove'}</button>` : `<button class="${ctx.danger ? 'orphan-btn' : 'kill-all-btn'} subbar-action" ${ctxTotal.count ? '' : 'disabled'} onclick="DevDockViews.containers.prune(${CONTEXT[tab]})" title="Same as: ${ctx.cli}">
@@ -338,13 +341,5 @@
     render, act, prune, toggleCleanup, removeMatching, pick, bulk,
     setTab(t) { state.tab = t; save(); render(); },
     setFilter(f) { state.filter[state.tab] = f; save(); render(); },
-    setPattern(id) {
-      const was = pattern?.id;
-      pattern = was === id ? null : patternsOf(DevDock.sourceData.containers).find(p => p.id === id) || null;
-      render();
-      const sel = window.DevDockSelection;
-      if (pattern) sel?.set(LISTS.containers(DevDock.sourceData.containers, state.filter.containers || 'all', searchInput.value.trim().toLowerCase()).map(c => `c:${c.id}`));
-      else if (was) sel?.clear();
-    },
   };
 })();

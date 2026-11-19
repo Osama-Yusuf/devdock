@@ -1348,3 +1348,4 @@
     .pattern:hover { color: var(--text); border-style: solid; }
     .pattern.active { color: var(--accent); border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
     .pattern.active span { background: var(--accent); color: #fff; }
+    section[data-view="servers"] > .subbar, section[data-view="sessions"] > .subbar { margin-bottom: 10px; }

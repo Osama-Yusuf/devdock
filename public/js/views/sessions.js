@@ -53,11 +53,22 @@
     </tr>`;
   }
 
+  // Pattern chips (DevDockPatterns in js/selection.js): gv-b1, gv-b3, gv-b5 are one
+  // family; so are sessions in one folder, ones running the same agent, idle ones
+  const base = p => p.replace(/\/$/, '').split('/').pop() || p;
+  const PATTERNS = [
+    s => { const fam = s.name.replace(/[-_.]?([0-9a-f]{6,}|\d+)$/i, ''); return fam && fam !== s.name && { id: `name:${fam}`, label: `${fam}\u2026`, title: `Sessions named ${fam}\u2026` }; },
+    s => s.cwd && { id: `cwd:${s.cwd}`, label: base(s.cwd), title: `Sessions in ${s.cwd}` },
+    s => s.agents[0] && { id: `agent:${s.agents[0]}`, label: s.agents[0], title: `Sessions running ${s.agents[0]}` },
+    s => s.idle && { id: 'idle', label: 'idle', title: 'Idle sessions' },
+  ];
+
   function render() {
     const d = data();
     byKey = Object.fromEntries(d.sessions.map(s => [s.key, s]));
     const q = searchInput.value.trim().toLowerCase();
-    const list = d.sessions.filter(s => matches(s, q)).sort(order);
+    const patterns = DevDockPatterns.find('sessions', d.sessions, s => s.key, PATTERNS);
+    const list = DevDockPatterns.filter('sessions', d.sessions.filter(s => matches(s, q)), s => s.key).sort(order);
     const idle = d.sessions.filter(s => s.idle && s.canKill);
 
     document.getElementById('viewStats').innerHTML = `
@@ -73,13 +84,14 @@
 
     const missing = d.muxes.filter(m => !m.available).map(m => m.label);
     const errors = d.muxes.filter(m => m.error).map(m => `${m.label}: ${m.error}`);
-    view.innerHTML = list.length ? `
+    const chips = patterns.length ? `<div class="subbar"><div class="patterns">${DevDockPatterns.html('sessions', patterns)}</div></div>` : '';
+    view.innerHTML = chips + (list.length ? `
       <div class="scroll"><table class="sessions-table">
         <thead><tr><th>Kind</th><th>Session</th><th>Folder</th><th>Ports</th><th class="col-user">Windows</th><th class="col-user">Active</th><th class="col-user">Created</th><th></th></tr></thead>
         <tbody>${list.map(rowHTML).join('')}</tbody>
       </table></div>
       <div class="view-foot">${errors.map(esc).join('<br>')}${missing.length ? `Not installed: ${esc(missing.join(', '))}` : ''}</div>`
-      : `<div class="empty-view">${q ? 'No sessions match.' : DevDock.sourceData.sessions ? 'No multiplexer sessions running.' : 'Looking for sessions…'}</div>`;
+      : `<div class="empty-view">${q ? 'No sessions match.' : DevDock.sourceData.sessions ? 'No multiplexer sessions running.' : 'Looking for sessions…'}</div>`);
   }
 
   async function kill(key) {

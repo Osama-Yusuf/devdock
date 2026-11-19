@@ -302,4 +302,39 @@
   function glyph(id) { return `<span class="agent-glyph g-${id}">${{ claude: '✻', codex: '◎', opencode: '⌬' }[id] || '✦'}</span>`; }
   window.DevDockGlyph = glyph;
   window.DevDockSelection = { clear, items, set, get size() { return sel.size; } };
+
+  // ── Pattern chips: groups worth acting on together ───────────────
+  // A view lists rules; each rule maps an item to a group ({ id, label, title, min }) or
+  // nothing. Groups big enough become chips. A click filters the view to the group and
+  // selects it; another click shows everything again. Per view, not saved.
+  const active = {}; // view -> group
+  window.DevDockPatterns = {
+    find(scope, items, keyOf, rules) {
+      const g = {};
+      for (const it of items) for (const rule of rules) {
+        const m = rule(it);
+        if (m) (g[m.id] ||= { ...m, keys: [] }).keys.push(keyOf(it));
+      }
+      // a group of everything filters nothing
+      const found = Object.values(g).filter(x => x.keys.length >= (x.min || 2) && x.keys.length < items.length)
+        .sort((a, b) => b.keys.length - a.keys.length).slice(0, 4);
+      if (active[scope]) active[scope] = found.find(x => x.id === active[scope].id) || null; // keys stay current
+      return found;
+    },
+    filter(scope, list, keyOf) { const a = active[scope]; return a ? list.filter(it => a.keys.includes(keyOf(it))) : list; },
+    on: scope => !!active[scope],
+    html(scope, groups) {
+      return groups.map(p => {
+        const on = active[scope]?.id === p.id;
+        return `<button class="pattern ${on ? 'active' : ''}" data-scope="${esc(scope)}" data-p="${esc(p.id)}" onclick="DevDockPatterns.toggle(this.dataset.scope, this.dataset.p)" title="${esc(p.title)}. ${on ? 'Click to show all' : 'Click to filter and select them'}">${esc(p.label)}<span>${p.keys.length}</span></button>`;
+      }).join('');
+    },
+    toggle(scope, id) {
+      const was = active[scope];
+      active[scope] = was?.id === id ? null : { id, keys: [] };
+      DevDockViews[scope.split(':')[0]].render(); // find() fills in the keys
+      if (active[scope]) set(rows().map(r => r.dataset.key));
+      else if (was) clear();
+    },
+  };
 })();

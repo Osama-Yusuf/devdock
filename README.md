@@ -10,23 +10,9 @@
   <a href="https://github.com/Osama-Yusuf/devdock/releases/latest"><b>Download for macOS</b></a>
 </p>
 
----
-
-Forgotten servers pile up: an old branch still on :3000, a database from last week, something holding the port you need. DevDock lists every listening port with the project and branch behind it, so you can tell what is safe to kill.
-
-Built lean: no frontend framework, under 1% CPU at idle, and the dashboard updates within a second of a port going up or down.
-
-## Why
-
 <p align="center"><img src="docs/dashboard.png" alt="DevDock dashboard" /></p>
 
-**"Port 3000 is already in use."** Instead of `lsof -i :3000` and a `ps` hunt, find the port and see the project, branch and how long it's been up. Kill it from the same row.
-
-**The server you forgot.** A terminal closed days ago and `uvicorn` is still holding :8000. DevDock tags it `orphan` and `idle 3d`, and can stop idle servers for you.
-
-**Two of the same app.** When a coding agent can't tell your dev server is already up, it starts another one on the next free port. DevDock marks both copies `also on :3001` and shows which session started each, so you can stop a whole session's servers in one click.
-
-<p align="center"><img src="docs/sessions.png" alt="Servers grouped by the session that started them" /></p>
+Built lean: no frontend framework, under 1% CPU at idle, and changes show up within a second.
 
 ## Features
 
@@ -51,6 +37,22 @@ Built lean: no frontend framework, under 1% CPU at idle, and the dashboard updat
    Or open it, then allow it under System Settings → Privacy & Security → Open Anyway.
 
 Requires macOS on Apple Silicon.
+
+## Why
+
+1. **"Port 3000 is already in use."**
+   - **Before:** `lsof -i :3000`, then `ps` to work out which project that PID belongs to, then `kill`.
+   - **With DevDock:** search `3000`, see the project, branch and uptime, kill it from the row.
+
+2. **The server you forgot.** A terminal closed days ago, and `uvicorn` is still holding :8000.
+   - **Before:** you find out when something else can't start, or from the fan.
+   - **With DevDock:** it's tagged `orphan` and `idle 3d`. Stop it, or let DevDock stop idle servers for you.
+
+3. **Two copies of the same app.** A coding agent doesn't see your dev server is up and starts another one on the next free port.
+   - **Before:** two servers on the same code, and you're testing the stale one.
+   - **With DevDock:** both are marked `also on :3001`, grouped by the session that started them. Stop a whole session in one click.
+
+<p align="center"><img src="docs/sessions.png" alt="Servers grouped by the session that started them" /></p>
 
 ## Development
 

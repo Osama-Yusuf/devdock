@@ -229,20 +229,6 @@ function appFromPath(p) {
   return m ? m[1] : null;
 }
 
-function getProcTable() {
-  return new Promise(resolve => {
-    exec('ps -axo pid=,ppid=,time=,comm=', { maxBuffer: 8 * 1024 * 1024 }, (err, out) => {
-      const procs = {};
-      (out || '').split('\n').forEach(line => {
-        const m = line.match(/^\s*(\d+)\s+(\d+)\s+([\d:.]+)\s+(.*)$/);
-        // time is [[hh:]mm:]ss.cc cumulative CPU
-        if (m) procs[m[1]] = { ppid: m[2], cpuSec: m[3].split(':').reduce((a, v) => a * 60 + parseFloat(v), 0), comm: m[4].trim() };
-      });
-      resolve(procs);
-    });
-  });
-}
-
 // Nearest ancestor that is a known CLI agent or a macOS app
 function findLauncher(pid, procs) {
   let cur = procs[pid]?.ppid;
@@ -314,163 +300,279 @@ function trackActivity(pid, cpuSec, startedAt) {
 }
 
 // ── Port detection ───────────────────────────────────────────────────
-function getAllPorts() {
-  return new Promise((resolve) => {
-    const cmd = 'lsof -iTCP -sTCP:LISTEN -P -n';
-
-    exec(cmd, async (err, stdout) => {
-      if (err || !stdout.trim()) return resolve([]);
-
-      // Batch fetch memory from top (matches Activity Monitor)
-      // and CPU from ps (top -l 1 always shows 0% CPU, needs 2 samples)
-      const [procs, memMap, cpuMap] = await Promise.all([
-        getProcTable(),
-        new Promise(resolve2 => {
-          exec('top -l 1 -stats pid,mem', (err2, out2) => {
-            const map = {};
-            if (err2 || !out2) return resolve2(map);
-            out2.trim().split('\n').slice(12).forEach(line => {
-              const parts = line.trim().split(/\s+/);
-              if (parts.length >= 2 && /^\d+$/.test(parts[0])) {
-                const memStr = parts[1];
-                let memMB = 0;
-                const match = memStr.match(/^([\d.]+)([KMG]?)$/i);
-                if (match) {
-                  const val = parseFloat(match[1]);
-                  const unit = (match[2] || '').toUpperCase();
-                  if (unit === 'K') memMB = val / 1024;
-                  else if (unit === 'G') memMB = val * 1024;
-                  else memMB = val;
-                }
-                map[parts[0]] = Math.round(memMB * 10) / 10;
-              }
-            });
-            resolve2(map);
-          });
-        }),
-        new Promise(resolve2 => {
-          // lstart is fixed-format in the C locale, e.g. "Thu Nov 19 07:10:16 2026"
-          exec('LC_ALL=C ps -eo pid=,%cpu=,lstart=', (err2, out2) => {
-            const map = {};
-            if (err2 || !out2) return resolve2(map);
-            out2.trim().split('\n').forEach(line => {
-              const parts = line.trim().split(/\s+/);
-              if (parts.length >= 2) {
-                const started = Date.parse(parts.slice(2).join(' '));
-                map[parts[0]] = { cpu: parseFloat(parts[1]) || 0, startedAt: started || null };
-              }
-            });
-            resolve2(map);
-          });
-        }),
-      ]);
-      const usageMap = {};
-      for (const pid of new Set([...Object.keys(memMap), ...Object.keys(cpuMap)])) {
-        usageMap[pid] = { cpu: cpuMap[pid]?.cpu || 0, startedAt: cpuMap[pid]?.startedAt || null, memMB: memMap[pid] || 0 };
-      }
-
-      const lines = stdout.trim().split('\n');
-      const settings = loadSettings();
-      const results = [];
-      const seen = new Set();
-
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-
-        const parts = line.split(/\s+/);
-        const command = parts[0];
-        const pid = parts[1];
-        const user = parts[2];
-
-        const runtime = identifyRuntime(command);
-
-        if (settings.runtimes[runtime] && !settings.runtimes[runtime].enabled) continue;
-        if (runtime === 'other' && !settings.showOtherProcesses) continue;
-
-        const addr = parts.find(p => p.includes(':')) || '';
-        let port = null;
-        if (addr) {
-          const lastColon = addr.lastIndexOf(':');
-          if (lastColon !== -1) {
-            const candidate = addr.slice(lastColon + 1);
-            if (/^\d+$/.test(candidate)) {
-              port = parseInt(candidate, 10);
-            }
-          }
-        }
-
-        const dedupeKey = `${pid}:${port}`;
-        if (seen.has(dedupeKey)) continue;
-        seen.add(dedupeKey);
-
-        // cwd = project dir; first txt entry = the executable itself
-        const { cwdPath, exePath } = await new Promise(resolve2 => {
-          exec(`lsof -p ${pid} -a -d cwd,txt -Fn`, (err2, out2) => {
-            const found = { cwdPath: null, exePath: null };
-            let fd = null;
-            (out2 || '').split('\n').forEach(l => {
-              if (l.startsWith('f')) fd = l.slice(1);
-              else if (l.startsWith('n/')) {
-                if (fd === 'cwd' && !found.cwdPath) found.cwdPath = l.slice(1);
-                if (fd === 'txt' && !found.exePath) found.exePath = l.slice(1);
-              }
-            });
-            resolve2(found);
-          });
-        });
-        const version = await getVersion(runtime, exePath);
-
-        const usage = usageMap[pid] || { cpu: 0, memMB: 0 };
-        const proc = procs[pid] || {};
-        const launcher = findLauncher(pid, procs);
-        if (launcher?.kind === 'agent') launcher.cwd = await agentCwd(launcher.pid);
-        const lastActive = proc.cpuSec != null ? trackActivity(pid, proc.cpuSec, usage.startedAt) : null;
-        const hasProject = !!cwdPath && cwdPath !== '/';
-        const selfApp = appFromPath(proc.comm) || appFromPath(exePath);
-        const runtimeInfo = RUNTIMES[runtime];
-        const isFavorite = settings.favorites.includes(port);
-
-        results.push({
-          command,
-          pid,
-          user,
-          port,
-          runtime,
-          runtimeName: runtimeInfo.name,
-          runtimeColor: runtimeInfo.color,
-          runtimeIcon: runtimeInfo.icon,
-          scriptPath: cwdPath,
-          favorite: isFavorite,
-          cpu: usage.cpu,
-          memMB: usage.memMB,
-          startedAt: usage.startedAt,
-          exePath,
-          version,
-          procName: proc.comm ? path.basename(proc.comm) : command,
-          launcher,
-          // app that owns a process with no project dir (oMLX, Raycast, ...)
-          appName: hasProject ? null : (launcher?.kind === 'app' ? launcher.name : selfApp),
-          // parent exited: typically a dev server left behind by a closed terminal/agent session
-          orphan: proc.ppid === '1' && hasProject && !selfApp,
-          branch: hasProject ? gitBranch(cwdPath) : null,
-          ppid: proc.ppid || null,
-          lastActive,
-          // only project servers can be idle; apps (oMLX, Raycast) manage themselves
-          idle: hasProject && !selfApp && settings.idleAfterHours > 0 && lastActive != null
-            && Date.now() - lastActive >= settings.idleAfterHours * 3600 * 1000,
-        });
-      }
-
-      // forget pids that are gone
-      const live = new Set(results.map(r => r.pid));
-      for (const pid of activity.keys()) if (!live.has(pid)) activity.delete(pid);
-      for (const pid of agentCwdCache.keys()) if (!procs[pid]) agentCwdCache.delete(pid);
-
-      resolve(results);
-    });
-  });
+// Everything here is fast (<100ms each) except `top`, which samples for
+// ~2s; memory is refreshed from it in the background instead.
+const SPLIT = '__DEVDOCK_SPLIT__';
+function sh(cmd) {
+  return new Promise(resolve => exec(cmd, { maxBuffer: 8 * 1024 * 1024 }, (err, out) => resolve(out || '')));
 }
+
+// Activity Monitor's "Memory" column comes from top; refreshed every 5s.
+// New pids fall back to RSS from ps until the next top sample lands.
+let topMem = {};
+async function refreshMemory() {
+  const out = await sh('top -l 1 -stats pid,mem');
+  const map = {};
+  out.trim().split('\n').slice(12).forEach(line => {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 2 || !/^\d+$/.test(parts[0])) return;
+    const m = parts[1].match(/^([\d.]+)([KMG]?)/i);
+    if (!m) return;
+    const val = parseFloat(m[1]);
+    const unit = (m[2] || '').toUpperCase();
+    map[parts[0]] = Math.round((unit === 'K' ? val / 1024 : unit === 'G' ? val * 1024 : val) * 10) / 10;
+  });
+  topMem = map;
+}
+
+// Per-pid facts that don't change while the process lives: cwd, binary, version.
+// ponytail: cwd is assumed fixed for a pid's life; a process that chdir()s keeps its first cwd.
+const metaCache = new Map();
+
+async function loadMeta(pids, runtimeOf) {
+  const fresh = pids.filter(p => !metaCache.has(p));
+  if (!fresh.length) return;
+  // one lsof call for all new pids instead of one per pid
+  const out = await sh(`lsof -a -p ${fresh.join(',')} -d cwd,txt -Fpfn`);
+  const found = {};
+  let pid = null, fd = null;
+  out.split('\n').forEach(l => {
+    if (l.startsWith('p')) { pid = l.slice(1); found[pid] = { cwdPath: null, exePath: null }; }
+    else if (l.startsWith('f')) fd = l.slice(1);
+    else if (l.startsWith('n/') && pid) {
+      if (fd === 'cwd' && !found[pid].cwdPath) found[pid].cwdPath = l.slice(1);
+      if (fd === 'txt' && !found[pid].exePath) found[pid].exePath = l.slice(1);
+    }
+  });
+  await Promise.all(fresh.map(async p => {
+    const m = found[p] || { cwdPath: null, exePath: null };
+    m.version = await getVersion(runtimeOf[p], m.exePath);
+    metaCache.set(p, m);
+  }));
+}
+
+async function getAllPorts() {
+  // One spawn for everything: on some Macs each spawn costs ~80ms and blocks the event loop.
+  // lstart is fixed-format in the C locale ("Thu Nov 19 07:10:16 2026"), comm comes last (may contain spaces).
+  const out = await sh(`lsof -iTCP -sTCP:LISTEN -P -n; echo ${SPLIT}; LC_ALL=C ps -axo pid=,ppid=,%cpu=,rss=,time=,lstart=,comm=`);
+  const [lsofOut, psOut = ''] = out.split(SPLIT + '\n');
+
+  const procs = {}; // pid -> { ppid, comm, cpuSec, cpu, rssMB, startedAt }
+  psOut.split('\n').forEach(line => {
+    const m = line.match(/^\s*(\d+)\s+(\d+)\s+([\d.]+)\s+(\d+)\s+([\d:.]+)\s+(\w{3}\s+\w{3}\s+\d+\s+[\d:]+\s+\d{4})\s+(.*)$/);
+    if (!m) return;
+    procs[m[1]] = {
+      ppid: m[2],
+      cpu: parseFloat(m[3]) || 0,
+      rssMB: (parseInt(m[4]) || 0) / 1024,
+      // time is [[hh:]mm:]ss.cc cumulative CPU
+      cpuSec: m[5].split(':').reduce((a, v) => a * 60 + parseFloat(v), 0),
+      startedAt: Date.parse(m[6]) || null,
+      comm: m[7].trim(),
+    };
+  });
+
+  const settings = loadSettings();
+  const entries = [];
+  const seenKeys = new Set();
+  lsofOut.trim().split('\n').slice(1).forEach(line => {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 3) return;
+    const [command, pid, user] = parts;
+    const runtime = identifyRuntime(command);
+    if (settings.runtimes[runtime] && !settings.runtimes[runtime].enabled) return;
+    if (runtime === 'other' && !settings.showOtherProcesses) return;
+
+    const addr = parts.find(p => p.includes(':')) || '';
+    const candidate = addr.slice(addr.lastIndexOf(':') + 1);
+    const port = /^\d+$/.test(candidate) ? parseInt(candidate, 10) : null;
+
+    const key = `${pid}:${port}`;
+    if (seenKeys.has(key)) return;
+    seenKeys.add(key);
+    entries.push({ command, pid, user, port, runtime });
+  });
+
+  const runtimeOf = Object.fromEntries(entries.map(e => [e.pid, e.runtime]));
+  await loadMeta([...new Set(entries.map(e => e.pid))], runtimeOf);
+
+  const results = await Promise.all(entries.map(async ({ command, pid, user, port, runtime }) => {
+    const { cwdPath, exePath, version } = metaCache.get(pid) || {};
+    const proc = procs[pid] || {};
+    const u = { cpu: proc.cpu || 0, rssMB: proc.rssMB || 0, startedAt: proc.startedAt || null };
+    const launcher = findLauncher(pid, procs);
+    if (launcher?.kind === 'agent') launcher.cwd = await agentCwd(launcher.pid);
+    const lastActive = proc.cpuSec != null ? trackActivity(pid, proc.cpuSec, u.startedAt) : null;
+    const hasProject = !!cwdPath && cwdPath !== '/';
+    const selfApp = appFromPath(proc.comm) || appFromPath(exePath);
+    const rt = RUNTIMES[runtime];
+    return {
+      command, pid, user, port, runtime,
+      runtimeName: rt.name, runtimeColor: rt.color, runtimeIcon: rt.icon,
+      scriptPath: cwdPath || null,
+      favorite: settings.favorites.includes(port),
+      cpu: u.cpu,
+      memMB: topMem[pid] ?? Math.round(u.rssMB * 10) / 10,
+      startedAt: u.startedAt,
+      exePath: exePath || null,
+      version: version || null,
+      procName: proc.comm ? path.basename(proc.comm) : command,
+      launcher,
+      // app that owns a process with no project dir (oMLX, Raycast, ...)
+      appName: hasProject ? null : (launcher?.kind === 'app' ? launcher.name : selfApp),
+      // parent exited: typically a dev server left behind by a closed terminal/agent session
+      orphan: proc.ppid === '1' && hasProject && !selfApp,
+      branch: hasProject ? gitBranch(cwdPath) : null,
+      ppid: proc.ppid || null,
+      lastActive,
+      // only project servers can be idle; apps (oMLX, Raycast) manage themselves
+      idle: hasProject && !selfApp && settings.idleAfterHours > 0 && lastActive != null
+        && Date.now() - lastActive >= settings.idleAfterHours * 3600 * 1000,
+    };
+  }));
+
+  // forget pids that are gone
+  for (const pid of activity.keys()) if (!procs[pid]) activity.delete(pid);
+  for (const pid of agentCwdCache.keys()) if (!procs[pid]) agentCwdCache.delete(pid);
+  for (const pid of metaCache.keys()) if (!procs[pid]) metaCache.delete(pid);
+
+  return results;
+}
+
+// ── Scanner: one loop, every client reads its snapshot ───────────────
+// Up:   a listener must be seen in 2 scans (>=1s apart) before it is shown.
+// Down: hidden at once if its process is gone; if the process is alive but
+//       stopped listening, only after 2 misses in a row.
+const SCAN_MS = 1000;
+const tracked = new Map(); // "pid:port" -> { streak, missing, entry }
+const transient = [];      // listeners that never lasted 2 scans (agent probes, tests)
+let snapshot = null;
+let firstScan = true;
+let scanning = null;
+let rescanQueued = false;
+
+function pidAlive(pid) {
+  try { process.kill(+pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+}
+
+function scan() {
+  if (scanning) { rescanQueued = true; return scanning; }
+  scanning = (async () => {
+    const results = await getAllPorts();
+    const now = Date.now();
+    const live = new Set();
+    for (const p of results) {
+      const k = `${p.pid}:${p.port}`;
+      live.add(k);
+      const t = tracked.get(k) || { streak: firstScan ? 1 : 0 }; // already up when DevDock started
+      t.streak++; t.missing = 0; t.entry = p;
+      tracked.set(k, t);
+    }
+    for (const [k, t] of tracked) {
+      if (live.has(k)) continue;
+      t.missing++;
+      const confirmed = t.streak >= 2;
+      if (!confirmed || !pidAlive(t.entry.pid) || t.missing >= 2) {
+        if (!confirmed) transient.unshift({ ...t.entry, at: now });
+        tracked.delete(k);
+      }
+    }
+    firstScan = false;
+    transient.splice(50);
+    for (const p of [...tracked.values()].map(t => t.entry)) if (!(p.port in health)) probeHealth(p.port);
+
+    const ports = [...tracked.values()].filter(t => t.streak >= 2)
+      .map(t => ({ ...t.entry, health: health[t.entry.port] || 'checking' }));
+    snapshot = { timestamp: new Date(now).toISOString(), ports };
+    recordHistory(ports, now);
+    broadcast();
+  })().catch(err => console.error('Scan error:', err)).finally(() => {
+    scanning = null;
+    if (rescanQueued) { rescanQueued = false; scan(); }
+  });
+  return scanning;
+}
+
+
+// History lives in the settings file; write it when the set of running
+// ports changes, and otherwise at most every 30s to refresh lastSeen.
+let lastHistoryKeys = '';
+let lastHistoryWrite = 0;
+function recordHistory(ports, now) {
+  const keys = ports.map(p => `${p.port}:${p.scriptPath}`).sort().join(',');
+  if (keys === lastHistoryKeys && now - lastHistoryWrite < 30000) return;
+  lastHistoryKeys = keys; lastHistoryWrite = now;
+  const settings = loadSettings();
+  const seenAt = new Date(now).toISOString();
+  const map = {};
+  (settings.history || []).forEach(h => { map[`${h.port}:${h.scriptPath}`] = h; });
+  ports.forEach(p => {
+    map[`${p.port}:${p.scriptPath}`] = {
+      port: p.port, command: p.command, user: p.user, runtime: p.runtime,
+      runtimeName: p.runtimeName, runtimeColor: p.runtimeColor,
+      runtimeIcon: p.runtimeIcon, scriptPath: p.scriptPath, lastSeen: seenAt,
+    };
+  });
+  settings.history = Object.values(map).sort((a, b) => b.lastSeen.localeCompare(a.lastSeen)).slice(0, 50);
+  saveSettings(settings);
+}
+
+function payload() {
+  const settings = loadSettings();
+  const ports = snapshot?.ports || [];
+  const runningKeys = new Set(ports.map(p => `${p.port}:${p.scriptPath}`));
+  const history = settings.showHistory !== false
+    ? (settings.history || [])
+        .filter(h => !runningKeys.has(`${h.port}:${h.scriptPath}`))
+        .map(h => ({
+          ...h, stopped: true,
+          pathExists: h.scriptPath ? fs.existsSync(h.scriptPath) : false,
+          favorite: settings.favorites.includes(h.port),
+        }))
+    : [];
+  const cutoff = Date.now() - 10 * 60 * 1000;
+  return {
+    timestamp: snapshot?.timestamp || new Date().toISOString(),
+    count: ports.length,
+    ports,
+    history,
+    transient: transient.filter(t => t.at > cutoff),
+  };
+}
+
+// Only push when something visible changed (cpu/mem included, timestamp not)
+let lastSent = '';
+function broadcast() {
+  if (!wss.clients.size) { lastSent = ''; return; }
+  const body = payload();
+  const sig = JSON.stringify([body.ports, body.history.length, body.transient.length]);
+  if (sig === lastSent) return;
+  lastSent = sig;
+  const msg = JSON.stringify({ type: 'ports', ...body });
+  wss.clients.forEach(c => { if (c.readyState === 1) c.send(msg); });
+}
+
+// New clients get the current state right away instead of waiting for a change
+wss.on('connection', (ws) => {
+  if (snapshot) ws.send(JSON.stringify({ type: 'ports', ...payload() }));
+});
+
+// ── Health check ─────────────────────────────────────────────────────
+// Probed in the background: new ports right away, the rest every 10s.
+const health = {};
+const probing = new Set();
+async function probeHealth(port) {
+  if (!port || probing.has(port)) return;
+  probing.add(port);
+  const status = await checkPortHealth(port);
+  probing.delete(port);
+  if (health[port] !== status) { health[port] = status; scan(); }
+}
+setInterval(() => {
+  const live = new Set((snapshot?.ports || []).map(p => p.port));
+  for (const port of Object.keys(health)) if (!live.has(+port)) delete health[port];
+  live.forEach(probeHealth);
+}, 10000);
 
 // ── Health check ─────────────────────────────────────────────────────
 function checkPortHealth(port) {
@@ -495,59 +597,12 @@ function checkPortHealth(port) {
 // ── API routes ───────────────────────────────────────────────────────
 
 app.get('/api/ports', async (req, res) => {
-  try {
-    const ports = await getAllPorts();
-    const settings = loadSettings();
-
-    // Update history with currently running ports
-    const now = new Date().toISOString();
-    const historyMap = {};
-    (settings.history || []).forEach(h => { historyMap[`${h.port}:${h.scriptPath}`] = h; });
-
-    ports.forEach(p => {
-      const key = `${p.port}:${p.scriptPath}`;
-      historyMap[key] = {
-        port: p.port,
-        command: p.command,
-        user: p.user,
-        runtime: p.runtime,
-        runtimeName: p.runtimeName,
-        runtimeColor: p.runtimeColor,
-        runtimeIcon: p.runtimeIcon,
-        scriptPath: p.scriptPath,
-        lastSeen: now,
-      };
-    });
-
-    // Keep last 50 history entries, sorted by lastSeen
-    settings.history = Object.values(historyMap)
-      .sort((a, b) => b.lastSeen.localeCompare(a.lastSeen))
-      .slice(0, 50);
-    saveSettings(settings);
-
-    // Build history list: entries not currently running
-    const runningKeys = new Set(ports.map(p => `${p.port}:${p.scriptPath}`));
-    const history = settings.showHistory !== false
-      ? settings.history
-          .filter(h => !runningKeys.has(`${h.port}:${h.scriptPath}`))
-          .map(h => ({
-            ...h,
-            stopped: true,
-            pathExists: h.scriptPath ? fs.existsSync(h.scriptPath) : false,
-            favorite: settings.favorites.includes(h.port),
-          }))
-      : [];
-
-    res.json({
-      timestamp: now,
-      count: ports.length,
-      ports,
-      history,
-    });
-  } catch (error) {
-    res.status(500).json({ error: String(error) });
-  }
+  if (!snapshot) await scan();
+  res.json(payload());
 });
+
+// Cheap readiness check for the Electron shell
+app.get('/api/ping', (req, res) => res.json({ ok: true }));
 
 app.get('/api/health/:port', async (req, res) => {
   const port = parseInt(req.params.port);
@@ -556,22 +611,7 @@ app.get('/api/health/:port', async (req, res) => {
   res.json({ port, status });
 });
 
-app.get('/api/health', async (req, res) => {
-  try {
-    const ports = await getAllPorts();
-    const checks = await Promise.all(
-      ports.filter(p => p.port).map(async (p) => ({
-        port: p.port,
-        status: await checkPortHealth(p.port),
-      }))
-    );
-    const healthMap = {};
-    checks.forEach(c => { healthMap[c.port] = c.status; });
-    res.json(healthMap);
-  } catch (error) {
-    res.status(500).json({ error: String(error) });
-  }
-});
+app.get('/api/health', (req, res) => res.json(health));
 
 app.post('/api/kill/:pid', (req, res) => {
   const pid = req.params.pid;
@@ -589,6 +629,7 @@ app.post('/api/kill/:pid', (req, res) => {
       });
     }
     res.json({ success: true, pid, message: `Process ${pid} killed` });
+    setTimeout(scan, 150);
   });
 });
 
@@ -724,6 +765,7 @@ app.put('/api/settings', (req, res) => {
   }
   saveSettings(updated);
   res.json(updated);
+  scan();
 });
 
 app.post('/api/favorites/:port', (req, res) => {
@@ -780,64 +822,12 @@ app.get('/api/runtimes', (req, res) => {
   res.json(runtimes);
 });
 
-// ── WebSocket broadcast ──────────────────────────────────────────────
-async function broadcastPorts() {
-  if (wss.clients.size === 0) return;
-
-  try {
-    const ports = await getAllPorts();
-    const settings = loadSettings();
-    const now = new Date().toISOString();
-
-    // Update history
-    const historyMap = {};
-    (settings.history || []).forEach(h => { historyMap[`${h.port}:${h.scriptPath}`] = h; });
-    ports.forEach(p => {
-      historyMap[`${p.port}:${p.scriptPath}`] = {
-        port: p.port, command: p.command, user: p.user, runtime: p.runtime,
-        runtimeName: p.runtimeName, runtimeColor: p.runtimeColor,
-        runtimeIcon: p.runtimeIcon, scriptPath: p.scriptPath, lastSeen: now,
-      };
-    });
-    settings.history = Object.values(historyMap)
-      .sort((a, b) => b.lastSeen.localeCompare(a.lastSeen)).slice(0, 50);
-    saveSettings(settings);
-
-    const runningKeys = new Set(ports.map(p => `${p.port}:${p.scriptPath}`));
-    const history = settings.showHistory !== false
-      ? settings.history
-          .filter(h => !runningKeys.has(`${h.port}:${h.scriptPath}`))
-          .map(h => ({
-            ...h, stopped: true,
-            pathExists: h.scriptPath ? fs.existsSync(h.scriptPath) : false,
-            favorite: settings.favorites.includes(h.port),
-          }))
-      : [];
-
-    const payload = JSON.stringify({
-      type: 'ports',
-      timestamp: now,
-      count: ports.length,
-      ports,
-      history,
-    });
-
-    wss.clients.forEach(client => {
-      if (client.readyState === 1) client.send(payload);
-    });
-  } catch (err) {
-    console.error('Broadcast error:', err);
-  }
-}
-
-setInterval(broadcastPorts, 3000);
-
 // Opt-in idle reaper. Never touches favorites, apps, or processes without a project dir.
 setInterval(async () => {
   const settings = loadSettings();
   if (!settings.autoKillIdle || !(settings.idleAfterHours > 0)) return;
   const reaped = [];
-  for (const p of await getAllPorts()) {
+  for (const p of snapshot?.ports || []) {
     if (!p.idle || p.favorite || +p.pid === process.pid || +p.pid === process.ppid) continue;
     try { process.kill(+p.pid, 'SIGTERM'); reaped.push({ port: p.port, pid: p.pid, path: p.scriptPath }); } catch {}
   }
@@ -846,6 +836,18 @@ setInterval(async () => {
   const payload = JSON.stringify({ type: 'reaped', reaped });
   wss.clients.forEach(c => { if (c.readyState === 1) c.send(payload); });
 }, 60 * 1000);
+
+// Start scanning before the first request so the first page load is instant
+refreshMemory().then(() => scan()); // first snapshot gets real memory, later ones refresh in place
+(async function loop() {
+  await scan();
+  setTimeout(loop, SCAN_MS);
+})();
+(async function memLoop() {
+  await new Promise(r => setTimeout(r, 5000));
+  await refreshMemory();
+  memLoop();
+})();
 
 server.listen(PORT, () => {
   console.log(`\n  DevDock is running at http://localhost:${PORT}\n`);

@@ -1,4 +1,5 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage } = require('electron');
+app.setName('DevDock'); // menu bar reads this, not the bundle name
 const path = require('path');
 const { spawn } = require('child_process');
 
@@ -56,11 +57,7 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  mainWindow.webContents.on('did-finish-load', () => {
-    setTimeout(() => {
-      if (mainWindow && !mainWindow.isVisible()) mainWindow.show();
-    }, 300);
-  });
+  mainWindow.once('ready-to-show', () => mainWindow?.show());
 
   mainWindow.on('close', (e) => {
     if (!app.isQuitting) {
@@ -114,6 +111,56 @@ function updateTrayMenu(count) {
   tray.setToolTip(`DevDock — ${count} listener${count !== 1 ? 's' : ''}`);
 }
 
+// ── Menu bar (standard macOS layout and shortcuts) ──────────────────
+function command(cmd) {
+  if (!mainWindow) return createWindow();
+  app.dock?.show(); mainWindow.show(); mainWindow.focus();
+  mainWindow.webContents.executeJavaScript(`window.devdockCommand?.(${JSON.stringify(cmd)})`).catch(() => {});
+}
+
+function buildAppMenu() {
+  const item = (label, accelerator, cmd) => ({ label, accelerator, click: () => command(cmd) });
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { role: 'appMenu', submenu: [
+      { role: 'about' },
+      { type: 'separator' },
+      item('Settings…', 'Cmd+,', 'settings'),
+      { type: 'separator' },
+      { role: 'services' },
+      { type: 'separator' },
+      { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
+      { type: 'separator' },
+      { label: 'Quit DevDock', accelerator: 'Cmd+Q', click: () => { app.isQuitting = true; app.quit(); } },
+    ] },
+    { label: 'File', submenu: [
+      item('Export…', 'Shift+Cmd+E', 'export'),
+      { type: 'separator' },
+      { role: 'close' },
+    ] },
+    { role: 'editMenu' },
+    { label: 'View', submenu: [
+      item('Find', 'Cmd+F', 'find'),
+      { type: 'separator' },
+      item('Flat', 'Cmd+1', 'view-none'),
+      item('By Project', 'Cmd+2', 'view-project'),
+      item('By Agent Session', 'Cmd+3', 'view-session'),
+      { type: 'separator' },
+      item('Toggle Appearance', 'Shift+Cmd+L', 'theme'),
+      { type: 'separator' },
+      { role: 'reload' },
+      { role: 'toggleDevTools' },
+      { type: 'separator' },
+      { role: 'togglefullscreen' },
+    ] },
+    { label: 'Go', submenu: [
+      item('Dashboard', 'Cmd+[', 'back'),
+      item('History', 'Cmd+Y', 'history'),
+    ] },
+    { role: 'windowMenu' },
+    { role: 'help', submenu: [item('Keyboard Shortcuts   ?', undefined, 'help')] },
+  ]));
+}
+
 // ── App lifecycle ────────────────────────────────────────────────────
 
 app.on('second-instance', () => {
@@ -126,19 +173,20 @@ app.on('second-instance', () => {
 
 app.whenReady().then(() => {
   startServer();
+  buildAppMenu();
 
   let started = false;
   const check = setInterval(async () => {
     if (started) return;
     try {
-      const res = await fetch(`http://localhost:${PORT}/api/ports`);
+      const res = await fetch(`http://127.0.0.1:${PORT}/api/ping`);
       if (res.ok) {
         started = true;
         clearInterval(check);
-        setTimeout(() => { createWindow(); createTray(); }, 500);
+        createWindow(); createTray();
       }
     } catch {}
-  }, 500);
+  }, 100);
 });
 
 app.on('window-all-closed', () => {

@@ -186,54 +186,28 @@
       showToast(isFav ? `Port ${port} unpinned` : `Port ${port} pinned`);
     }
 
-    // ── Health checks ────────────────────────────────────────────────
-    async function loadHealth() {
-      try {
-        const res = await fetch('/api/health');
-        healthMap = await res.json();
-        // Update dots in DOM without full re-render
-        document.querySelectorAll('.health-dot[data-port]').forEach(dot => {
-          const port = dot.dataset.port;
-          const status = healthMap[port] || 'unknown';
-          dot.className = `health-dot ${status}`;
-          dot.title = status;
-        });
-      } catch { /* silent */ }
-    }
-
     // ── Notifications ────────────────────────────────────────────────
-    // A port must be seen (or missing) for STABLE_POLLS polls in a row before we
-    // notify. Scripts that restart a listener every second would otherwise spam up/down.
-    const STABLE_POLLS = 3; // ~9s at the server's 3s broadcast interval
+    // The server only lists a port after it survived 2 scans and drops it after
+    // 2 misses (or at once if the process died), so changes here are real.
     let notifiedPorts = new Set();  // ports we've announced as up
-    let notifyReady = false;        // skip until first stable load
-    const seenStreak = {}, missStreak = {}, lastInfo = {};
+    let notifyReady = false;        // skip until first load
+    const lastInfo = {};
 
     function checkNotifications() {
       if (!notifyReady) return;
-
       const currSet = new Set(allPorts.map(p => p.port));
       allPorts.forEach(p => { lastInfo[p.port] = p; });
-
       for (const port of currSet) {
-        delete missStreak[port];
-        seenStreak[port] = (seenStreak[port] || 0) + 1;
-        if (seenStreak[port] >= STABLE_POLLS && !notifiedPorts.has(port)) {
-          notifiedPorts.add(port);
-          const p = lastInfo[port];
-          if (currentSettings.notifications) notify(`Port ${port} is up`, `${p.runtimeName} process started (${p.command})`);
-        }
+        if (notifiedPorts.has(port)) continue;
+        notifiedPorts.add(port);
+        const p = lastInfo[port];
+        if (currentSettings.notifications) notify(`Port ${port} is up`, `${p.runtimeName} process started (${p.command})`);
       }
-
-      for (const port of Object.keys(seenStreak).map(Number)) {
+      for (const port of [...notifiedPorts]) {
         if (currSet.has(port)) continue;
-        missStreak[port] = (missStreak[port] || 0) + 1;
-        if (missStreak[port] < STABLE_POLLS) continue;
-        delete seenStreak[port]; delete missStreak[port];
-        if (notifiedPorts.delete(port) && currentSettings.notifications) {
-          const prev = lastInfo[port];
-          notify(`Port ${port} is down`, prev ? `${prev.runtimeName} process stopped` : 'Process stopped');
-        }
+        notifiedPorts.delete(port);
+        const prev = lastInfo[port];
+        if (currentSettings.notifications) notify(`Port ${port} is down`, prev ? `${prev.runtimeName} process stopped` : 'Process stopped');
         delete lastInfo[port];
       }
     }
@@ -638,7 +612,7 @@
 
     // Fingerprint a port entry for change detection
     function portFingerprint(p) {
-      return `${p.pid}|${p.port}|${p.user}|${p.command}|${p.runtime}|${p.scriptPath}|${p.favorite}|${(p.cpu||0).toFixed(1)}|${p.memMB||0}|${p.startedAt && timeAgo(p.startedAt)}|${p.version}|${p.branch}|${p.orphan}|${p.appName}|${p.procName}|${p.idle}|${(p.dupOf || []).map(d => d.port)}`;
+      return `${p.pid}|${p.port}|${p.user}|${p.command}|${p.runtime}|${p.scriptPath}|${p.favorite}|${(p.cpu||0).toFixed(1)}|${p.memMB||0}|${p.startedAt && timeAgo(p.startedAt)}|${p.version}|${p.branch}|${p.orphan}|${p.appName}|${p.procName}|${p.idle}|${(p.dupOf || []).map(d => d.port)}|${p.health}`;
     }
 
     let lastFingerprints = {};
@@ -785,41 +759,12 @@
     }
 
     // ── Short-lived listeners ────────────────────────────────────────
-    // Test scripts and agent probes bind a port for a second or two and exit.
-    // A row only shows once its pid:port survived 2 polls (~3-6s); the rest
-    // are counted in the "short-lived" pill instead of flickering in the table.
-    const rowStreak = {};
-    let firstLoad = true;
-    const transientLog = []; // most recent first
-
-    function stableOnly(ports) {
-      const live = new Set();
-      const stable = [];
-      ports.forEach(p => {
-        const k = rowKey(p);
-        live.add(k);
-        rowStreak[k] = (rowStreak[k] || 0) + 1;
-        if (firstLoad || rowStreak[k] >= 2) { rowStreak[k] = Math.max(rowStreak[k], 2); stable.push(p); }
-      });
-      for (const k of Object.keys(rowStreak)) {
-        if (live.has(k)) continue;
-        if (rowStreak[k] < 2) {
-          const p = lastSeenRow[k];
-          if (p) transientLog.unshift({ ...p, at: Date.now() });
-        }
-        delete rowStreak[k]; delete lastSeenRow[k];
-      }
-      ports.forEach(p => { lastSeenRow[rowKey(p)] = p; });
-      firstLoad = false;
-      transientLog.splice(50);
-      updateTransient();
-      return stable;
-    }
-    const lastSeenRow = {};
+    // The server hides listeners that didn't survive 2 scans and reports them here.
+    let transientLog = [];
 
     function updateTransient() {
       const btn = $('transientBtn');
-      const recent = transientLog.filter(t => Date.now() - t.at < 10 * 60 * 1000);
+      const recent = transientLog;
       btn.style.display = recent.length ? '' : 'none';
       btn.textContent = `${recent.length} short-lived`;
       const lines = recent.slice(0, 12).map(t =>
@@ -833,7 +778,10 @@
       if (isAnyMenuOpen()) return;
 
       previousPorts = [...allPorts];
-      allPorts = stableOnly(data.ports || []);
+      allPorts = data.ports || [];
+      healthMap = Object.fromEntries(allPorts.map(p => [p.port, p.health]));
+      transientLog = data.transient || [];
+      updateTransient();
       markDuplicates();
       announceDuplicates();
 
@@ -847,7 +795,6 @@
       updateOrphans();
       updateIdle();
       renderTable();
-      loadHealth();
     }
 
     async function loadPorts(force) {
@@ -858,7 +805,7 @@
         // After first successful load, seed the notified set and enable notifications
         if (!notifyReady) {
           notifiedPorts = new Set(allPorts.map(p => p.port));
-          allPorts.forEach(p => { seenStreak[p.port] = STABLE_POLLS; lastInfo[p.port] = p; });
+          allPorts.forEach(p => { lastInfo[p.port] = p; });
           notifyReady = true;
         }
       } catch (err) {
@@ -915,12 +862,12 @@
         const enabled = currentSettings.runtimes?.[key]?.enabled ?? true;
         const div = document.createElement('div');
         div.className = 'runtime-toggle';
+        div.title = `Matches: ${rt.commands.join(', ') || 'unrecognized processes'}`;
         div.innerHTML = `
           <div class="runtime-toggle-left">
             ${runtimeIconHTML(key, rt.color, rt.icon, 18)}
             <div class="runtime-toggle-info">
               <h4>${rt.name}</h4>
-              <p>${rt.commands.join(', ') || 'unrecognized processes'}</p>
             </div>
           </div>
           <label class="toggle">
@@ -1038,12 +985,29 @@ $('settingsBtn').addEventListener('click', openSettings);
     }, true);
     $('modalOverlay').addEventListener('click', (e) => { if (e.target === $('modalOverlay')) closeSettings(); });
 
-    $('runtimeSectionToggle').addEventListener('click', () => {
-      const body = $('runtimeSectionBody');
-      const chevron = $('runtimeSectionToggle').querySelector('.section-chevron');
-      const isOpen = body.style.display !== 'none';
-      body.style.display = isOpen ? 'none' : 'block';
-      chevron.classList.toggle('open', !isOpen);
+    // ── Settings panes: one section at a time, last one remembered ────
+    const PANE_KEY = 'devdock:settings-pane';
+    function showPane(name) {
+      const btns = [...$('settingsNav').querySelectorAll('button[data-pane]')];
+      if (!btns.some(b => b.dataset.pane === name)) name = btns[0].dataset.pane;
+      btns.forEach(b => b.classList.toggle('active', b.dataset.pane === name));
+      document.querySelectorAll('.settings-pane').forEach(p => p.classList.toggle('active', p.dataset.pane === name));
+      try { localStorage.setItem(PANE_KEY, name); } catch {}
+    }
+    $('settingsNav').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-pane]');
+      if (b) showPane(b.dataset.pane);
+    });
+    let initialPane = 'general';
+    try { initialPane = localStorage.getItem(PANE_KEY) || 'general'; } catch {}
+    showPane(initialPane);
+    document.addEventListener('keydown', (e) => {
+      if ($('settingsModal').style.display === 'none' || !['ArrowUp', 'ArrowDown'].includes(e.key)) return;
+      if (['SELECT', 'INPUT'].includes(e.target.tagName) && e.target.type !== 'checkbox') return;
+      e.preventDefault();
+      const btns = [...$('settingsNav').querySelectorAll('button[data-pane]')];
+      const i = btns.findIndex(b => b.classList.contains('active'));
+      showPane(btns[(i + (e.key === 'ArrowDown' ? 1 : btns.length - 1)) % btns.length].dataset.pane);
     });
 
     $('clearHistory').addEventListener('click', async () => {
@@ -1082,16 +1046,24 @@ $('settingsBtn').addEventListener('click', openSettings);
         return;
       }
       switch (e.key) {
-        case '/': e.preventDefault(); searchInput.focus(); break;
-        case 's': openSettings(); break;
-        case 'g': setGroupBy(GROUP_MODES[(GROUP_MODES.indexOf(groupBy) + 1) % GROUP_MODES.length]); break;
-        case 'h': window.location.href = '/history'; break;
-        case 'e': $('exportBtn').click(); break;
-        case 't': $('themeToggle').click(); break;
-        case '?': $('helpModal').style.display = 'flex'; break;
+        case '?': if (!e.metaKey && !e.ctrlKey) window.devdockCommand('help'); break; // like GitHub, Gmail
         case 'Escape': closeSettings(); $('helpModal').style.display = 'none'; $('exportMenu').classList.remove('open'); break;
       }
     });
+
+    // Menu bar and ⌘ shortcuts (see shortcuts.js)
+    window.devdockCommand = (cmd) => {
+      switch (cmd) {
+        case 'settings': openSettings(); break;
+        case 'find': searchInput.focus(); searchInput.select(); break;
+        case 'view-none': case 'view-project': case 'view-session': setGroupBy(cmd.slice(5)); break;
+        case 'history': window.location.href = '/history'; break;
+        case 'export': if ($('exportBtn').offsetParent) $('exportBtn').click(); else showToast('Turn on the export button in Settings', 'info'); break;
+        case 'theme': $('themeToggle').click(); break;
+        case 'help': $('helpModal').style.display = 'flex'; break;
+      }
+    };
+    if (location.hash === '#settings') { history.replaceState(null, '', '/'); openSettings(); }
 
     // ── Init ─────────────────────────────────────────────────────────
     (async function init() {

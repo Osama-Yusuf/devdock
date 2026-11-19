@@ -71,7 +71,7 @@
           </button>
 
           <!-- Settings -->
-          <button class="btn-icon" id="settingsBtn" title="Settings (S)" style="color:#c4b5fd;border-color:rgba(139,92,246,0.4);">
+          <button class="btn-icon" id="settingsBtn" title="Settings (⌘,)" style="color:#c4b5fd;border-color:rgba(139,92,246,0.4);">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           </button>
         </div>
@@ -84,9 +84,9 @@
           <span class="search-icon">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </span>
-          <input type="text" class="search-input" id="searchInput" placeholder="Search ports, PIDs, processes, paths... ( / )" />
+          <input type="text" class="search-input" id="searchInput" placeholder="Search ports, PIDs, processes, paths…  ⌘F" />
         </div>
-        <div class="seg" id="groupSeg" title="Group rows (G)">
+        <div class="seg" id="groupSeg" title="Group rows (⌘1 ⌘2 ⌘3)">
           <button data-g="none">Flat</button>
           <button data-g="project">Project</button>
           <button data-g="session">Agent session</button>
@@ -151,12 +151,12 @@
         <button class="modal-close" id="helpClose" title="Close (Esc)">&times;</button>
       </div>
       <div class="help-grid">
-        <kbd>/</kbd><span>Search</span>
-        <kbd>G</kbd><span>Cycle view: Flat, Project, Agent session</span>
-        <kbd>S</kbd><span>Settings</span>
-        <kbd>H</kbd><span>History</span>
-        <kbd>T</kbd><span>Toggle theme</span>
-        <kbd>E</kbd><span>Export (when enabled)</span>
+        <kbd>&#8984;F</kbd><span>Find</span>
+        <kbd>&#8984;1 &#8984;2 &#8984;3</kbd><span>Flat, Project, Agent session</span>
+        <kbd>&#8984;,</kbd><span>Settings</span>
+        <kbd>&#8984;Y</kbd><span>History</span>
+        <kbd>&#8679;&#8984;L</kbd><span>Light / dark</span>
+        <kbd>&#8679;&#8984;E</kbd><span>Export (when enabled)</span>
         <kbd>?</kbd><span>This panel</span>
         <kbd>Esc</kbd><span>Close any panel</span>
       </div>
@@ -171,97 +171,114 @@
 
   <div id="settingsModal" style="display:none;">
     <div class="modal-overlay" id="modalOverlay">
-      <div class="modal">
-        <div class="modal-header">
-          <div class="modal-title">Settings</div>
+      <div class="modal settings-modal">
+        <nav class="settings-nav" id="settingsNav">
+          <div class="settings-nav-title">Settings</div>
+            <button data-pane="general"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span>General</span></button>
+            <button data-pane="detection"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><span>Detection</span></button>
+            <button data-pane="grouping"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Grouping</span></button>
+            <button data-pane="idle"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg><span>Idle servers</span></button>
+            <button data-pane="editor"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><span>Editor</span></button>
+            <button data-pane="history"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><polyline points="3 3 3 8 8 8"/></svg><span>History</span></button>
+          <div class="settings-nav-hint">Changes save automatically<br><kbd>&uarr;</kbd><kbd>&darr;</kbd> switch &nbsp;<kbd>Esc</kbd> close</div>
+        </nav>
+        <div class="settings-body">
           <button class="modal-close" id="modalClose" title="Close (Esc)">&times;</button>
-        </div>
 
-        <div class="settings-section">
-          <div class="section-title section-collapsible" id="runtimeSectionToggle" style="cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none;">
-            <span class="section-chevron" style="font-size:0.65rem;color:var(--text-dim);transition:transform 0.2s;display:inline-block;">&#9654;</span>
-            Runtime Detection
-          </div>
-          <div class="section-desc">Toggle which process types to monitor. Disable runtimes you don't use to reduce noise.</div>
-          <div id="runtimeSectionBody" style="display:none;">
-            <div class="bulk-actions">
-              <button class="bulk-btn" id="enableAll">Enable All</button>
-              <button class="bulk-btn" id="disableAll">Disable All</button>
+          <section class="settings-pane" data-pane="general">
+            <h3 class="pane-title">General</h3>
+            <div class="settings-list">
+              <div class="settings-row">
+                <div><label>Desktop notifications</label><div class="sub">Notify when a port comes up or goes down</div></div>
+                <label class="toggle"><input type="checkbox" id="notificationsToggle" /><span class="toggle-slider"></span></label>
+              </div>
+              <div class="settings-row">
+                <div><label>Export button</label><div class="sub">Export the table to Markdown, JSON or CSV</div></div>
+                <label class="toggle"><input type="checkbox" id="showExportToggle" /><span class="toggle-slider"></span></label>
+              </div>
             </div>
-            <div id="runtimeToggles"></div>
-          </div>
-        </div>
+          </section>
 
-        <div class="settings-section">
-          <div class="section-title">Grouping</div>
-          <div class="section-desc">Configure how processes are grouped when using the Group view.</div>
-          <div class="settings-row">
-            <div><label>Grouping depth</label><div class="sub">How many path segments to trim. 1 = parent dir (e.g. /repos/myapp), 2 = grandparent.</div></div>
-            <select class="refresh-select" id="groupingDepth">
-              <option value="1">1 (parent)</option>
-              <option value="2">2 (grandparent)</option>
-              <option value="3">3</option>
-              <option value="0">0 (exact path)</option>
-            </select>
-          </div>
-        </div>
+          <section class="settings-pane" data-pane="detection">
+            <h3 class="pane-title">Detection</h3>
+            <p class="pane-desc">Which processes show up. Turn off runtimes you don't use to cut noise.</p>
+            <div class="settings-list">
+              <div class="settings-row">
+                <div><label>Unrecognized processes</label><div class="sub">Show listeners that match no known runtime</div></div>
+                <label class="toggle"><input type="checkbox" id="showOther" /><span class="toggle-slider"></span></label>
+              </div>
+            </div>
+            <div class="pane-subhead">
+              <span>Runtimes</span>
+              <span class="bulk-actions"><button class="bulk-btn" id="enableAll">All on</button><button class="bulk-btn" id="disableAll">All off</button></span>
+            </div>
+            <div id="runtimeToggles" class="runtime-grid"></div>
+          </section>
 
-        <div class="settings-section">
-          <div class="section-title">Idle servers</div>
-          <div class="section-desc">A server is idle when it hasn't used real CPU for this long.</div>
-          <div class="settings-row">
-            <div><label>Flag idle after</label><div class="sub">Shows an "idle" badge and a kill-all pill</div></div>
-            <select class="refresh-select" id="idleAfterHours">
-              <option value="0">Never</option>
-              <option value="1">1 hour</option>
-              <option value="6">6 hours</option>
-              <option value="24">1 day</option>
-              <option value="72">3 days</option>
-              <option value="168">1 week</option>
-            </select>
-          </div>
-          <div class="settings-row">
-            <div><label>Auto-kill idle servers</label><div class="sub">Checks every minute. Skips pinned ports and apps.</div></div>
-            <label class="toggle"><input type="checkbox" id="autoKillIdle" /><span class="toggle-slider"></span></label>
-          </div>
-        </div>
+          <section class="settings-pane" data-pane="grouping">
+            <h3 class="pane-title">Grouping</h3>
+            <p class="pane-desc">How the Project view groups servers.</p>
+            <div class="settings-list">
+              <div class="settings-row">
+                <div><label>Group by</label><div class="sub">Folders trimmed from each server's path. For ~/repos/app/web, 1 groups under ~/repos/app.</div></div>
+                <select class="refresh-select" id="groupingDepth">
+                  <option value="0">Its own folder</option>
+                  <option value="1">Parent folder</option>
+                  <option value="2">Grandparent</option>
+                  <option value="3">3 levels up</option>
+                </select>
+              </div>
+            </div>
+          </section>
 
-        <div class="settings-section">
-          <div class="section-title">Editor</div>
-          <div class="settings-row">
-            <div><label>Open projects in</label><div class="sub">Used by "Open in editor" in the row menu</div></div>
-            <select class="refresh-select" id="editorSelect"></select>
-          </div>
-        </div>
+          <section class="settings-pane" data-pane="idle">
+            <h3 class="pane-title">Idle servers</h3>
+            <p class="pane-desc">A server is idle when it hasn't used real CPU for this long.</p>
+            <div class="settings-list">
+              <div class="settings-row">
+                <div><label>Flag idle after</label><div class="sub">Shows an idle badge and a kill-all pill</div></div>
+                <select class="refresh-select" id="idleAfterHours">
+                  <option value="0">Never</option>
+                  <option value="1">1 hour</option>
+                  <option value="6">6 hours</option>
+                  <option value="24">1 day</option>
+                  <option value="72">3 days</option>
+                  <option value="168">1 week</option>
+                </select>
+              </div>
+              <div class="settings-row">
+                <div><label>Auto-kill idle servers</label><div class="sub">Checks every minute. Skips pinned ports and apps.</div></div>
+                <label class="toggle"><input type="checkbox" id="autoKillIdle" /><span class="toggle-slider"></span></label>
+              </div>
+            </div>
+          </section>
 
-        <div class="settings-section">
-          <div class="section-title">History</div>
-          <div class="settings-row">
-            <div><label>Remember stopped processes</label><div class="sub">Keep a record of previously discovered ports</div></div>
-            <label class="toggle"><input type="checkbox" id="showHistoryToggle" /><span class="toggle-slider"></span></label>
-          </div>
-          <div class="settings-row">
-            <div><label>Clear all history</label><div class="sub">Remove all stored port records</div></div>
-            <button class="bulk-btn" id="clearHistory" style="color:#fca5a5;border-color:rgba(239,68,68,0.4);">Clear</button>
-          </div>
-        </div>
+          <section class="settings-pane" data-pane="editor">
+            <h3 class="pane-title">Editor</h3>
+            <div class="settings-list">
+              <div class="settings-row">
+                <div><label>Open projects in</label><div class="sub">Used by "Open in editor" in the row menu</div></div>
+                <select class="refresh-select" id="editorSelect"></select>
+              </div>
+            </div>
+          </section>
 
-        <div class="settings-section">
-          <div class="section-title">General</div>
-          <div class="settings-row">
-            <div><label>Show unrecognized processes</label><div class="sub">Display processes that don't match any known runtime</div></div>
-            <label class="toggle"><input type="checkbox" id="showOther" /><span class="toggle-slider"></span></label>
-          </div>
-          <div class="settings-row">
-            <div><label>Desktop notifications</label><div class="sub">Notify when ports come up or go down</div></div>
-            <label class="toggle"><input type="checkbox" id="notificationsToggle" /><span class="toggle-slider"></span></label>
-          </div>
-          <div class="settings-row">
-            <div><label>Show export button</label><div class="sub">Enable export to Markdown, JSON, CSV</div></div>
-            <label class="toggle"><input type="checkbox" id="showExportToggle" /><span class="toggle-slider"></span></label>
-          </div>
+          <section class="settings-pane" data-pane="history">
+            <h3 class="pane-title">History</h3>
+            <div class="settings-list">
+              <div class="settings-row">
+                <div><label>Remember stopped servers</label><div class="sub">Keep a record of ports seen before, with restart</div></div>
+                <label class="toggle"><input type="checkbox" id="showHistoryToggle" /><span class="toggle-slider"></span></label>
+              </div>
+            </div>
+            <div class="settings-list danger-zone">
+              <div class="settings-row">
+                <div><label>Clear history</label><div class="sub">Forget every stopped port. Running ones stay.</div></div>
+                <button class="bulk-btn danger" id="clearHistory">Clear</button>
+              </div>
+            </div>
+          </section>
         </div>
-
       </div>
     </div>
   </div>
@@ -269,6 +286,7 @@
   <script src="/js/runtime-icons.js"></script>
   <script src="/js/tooltip.js"></script>
   <script src="/js/confirm.js"></script>
+  <script src="/js/shortcuts.js"></script>
   <script src="/js/dashboard.js"></script>
 </body>
 </html>

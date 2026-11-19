@@ -297,12 +297,24 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   switch (e.key) {
-    case '/': e.preventDefault(); $('searchInput').focus(); break;
-    case 'd': window.location.href = '/'; break;
-    case 'g': groupBy = groupBy === 'project' ? 'none' : 'project'; syncSegs(); saveView(); renderTable(); break;
-    case 'Escape': closeMenus(); clearFilters(); break;
+    case 'Escape': {
+      // menu open -> close it; filters on -> clear them; otherwise leave History
+      if (floatingMenu.classList.contains('open')) closeMenus();
+      else if ($('searchInput').value || $('runtimeFilter').value !== 'all' || statusFilter !== 'all') clearFilters();
+      else window.location.href = '/';
+      break;
+    }
   }
 });
+
+window.devdockCommand = (cmd) => {
+  switch (cmd) {
+    case 'find': $('searchInput').focus(); $('searchInput').select(); break;
+    case 'back': window.location.href = '/'; break;
+    case 'settings': window.location.href = '/#settings'; break;
+    case 'view-none': case 'view-project': groupBy = cmd.slice(5); syncSegs(); saveView(); renderTable(); break;
+  }
+};
 
 (async function init() {
   try {

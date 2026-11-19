@@ -249,18 +249,39 @@ function findLauncher(pid, procs) {
   return null;
 }
 
+// .git dir for the repo containing dir (worktrees: .git is a file pointing at the real gitdir)
+function findGitDir(dir) {
+  for (let d = dir; d && d !== '/'; d = path.dirname(d)) {
+    const dotGit = path.join(d, '.git');
+    if (!fs.existsSync(dotGit)) continue;
+    return fs.statSync(dotGit).isFile()
+      ? path.resolve(d, fs.readFileSync(dotGit, 'utf-8').replace(/^gitdir:\s*/, '').trim())
+      : dotGit;
+  }
+  return null;
+}
+
 function gitBranch(dir) {
   try {
-    for (let d = dir; d && d !== '/'; d = path.dirname(d)) {
-      const dotGit = path.join(d, '.git');
-      if (!fs.existsSync(dotGit)) continue;
-      // worktrees: .git is a file pointing at the real gitdir
-      const gitDir = fs.statSync(dotGit).isFile()
-        ? path.resolve(d, fs.readFileSync(dotGit, 'utf-8').replace(/^gitdir:\s*/, '').trim())
-        : dotGit;
-      const head = fs.readFileSync(path.join(gitDir, 'HEAD'), 'utf-8').trim();
-      return head.startsWith('ref: refs/heads/') ? head.slice(16) : head.slice(0, 7);
-    }
+    const gitDir = findGitDir(dir);
+    if (!gitDir) return null;
+    const head = fs.readFileSync(path.join(gitDir, 'HEAD'), 'utf-8').trim();
+    return head.startsWith('ref: refs/heads/') ? head.slice(16) : head.slice(0, 7);
+  } catch {}
+  return null;
+}
+
+// https://github.com/owner/repo for the origin remote, or null if it isn't on GitHub
+function githubUrl(dir) {
+  try {
+    let gitDir = findGitDir(dir);
+    if (!gitDir) return null;
+    const common = path.join(gitDir, 'commondir'); // worktrees keep config in the main repo
+    if (fs.existsSync(common)) gitDir = path.resolve(gitDir, fs.readFileSync(common, 'utf-8').trim());
+    const config = fs.readFileSync(path.join(gitDir, 'config'), 'utf-8');
+    const url = config.match(/\[remote "origin"\][^[]*?url\s*=\s*(\S+)/)?.[1];
+    const m = url?.match(/github\.com[:/]([^/]+)\/(.+?)(?:\.git)?\/?$/);
+    return m ? `https://github.com/${m[1]}/${m[2]}` : null;
   } catch {}
   return null;
 }
@@ -431,6 +452,7 @@ async function getAllPorts() {
       // parent exited: typically a dev server left behind by a closed terminal/agent session
       orphan: proc.ppid === '1' && hasProject && !selfApp,
       branch: hasProject ? gitBranch(cwdPath) : null,
+      github: hasProject ? githubUrl(cwdPath) : null,
       ppid: proc.ppid || null,
       lastActive,
       // only project servers can be idle; apps (oMLX, Raycast) manage themselves
@@ -743,7 +765,7 @@ function installedEditors() {
   return EDITORS.filter(e => dirs.some(d => fs.existsSync(path.join(d, `${e}.app`))));
 }
 
-app.get('/api/editors', (req, res) => res.json(installedEditors()));
+app.get('/api/editors', (req, res) => res.json(DEMO ? ['Visual Studio Code', 'Cursor'] : installedEditors()));
 
 app.post('/api/open-editor', (req, res) => {
   const dir = req.body.path;

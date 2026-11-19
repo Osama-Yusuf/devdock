@@ -42,7 +42,7 @@ function demoPorts(RUNTIMES) {
       favorite: !!s.favorite, cpu: s.cpu, memMB: s.memMB,
       startedAt: now - s.up, exePath: null, version: s.version, procName: s.procName,
       launcher: s.launcher || null, appName: s.appName || null, orphan: !!s.orphan,
-      branch: s.branch || null, ppid: String(s.ppid),
+      branch: s.branch || null, github: s.path?.startsWith('code/storefront') ? 'https://github.com/acme/storefront' : null, ppid: String(s.ppid),
       lastActive: now - (s.idleFor || 0), idle: !!s.idleFor,
       _health: s.health,
     };

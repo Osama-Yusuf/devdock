@@ -22,9 +22,13 @@
 - 🧹 **Clean up fast:** kill one server, a whole group, or every search match.
 - 👻 **Catch leftovers:** idle, orphaned and duplicate servers get flagged. Idle ones can auto-stop.
 - 🎯 **No noise:** short-lived test listeners stay hidden, and alerts fire only on real changes.
-- 🛠️ **Jump in:** logs, editor and terminal from the row menu.
+- 🛠️ **Jump in:** open in your editor, open the branch on GitHub, tail logs.
 - 🕘 **History:** restart servers you stopped earlier.
 - ⌨️ **Feels native:** menu bar count, launch at login, Mac shortcuts.
+
+Everything else lives in each row's menu: hover a row and click `⋯`.
+
+<p align="center"><img src="docs/menu.png" alt="Row menu: open in editor, open branch on GitHub, logs, copy, restart, kill" /></p>
 
 ## Install
 

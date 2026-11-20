@@ -2,7 +2,7 @@
   "name": "devdock-desktop",
   "version": "1.1.2",
   "license": "MIT",
-  "description": "DevDock Desktop — Monitor, manage, and control all dev processes listening on TCP ports",
+  "description": "Everything running. One dock. Servers, sessions, containers, apps and agents on your Mac.",
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",

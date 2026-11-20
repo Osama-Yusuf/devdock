@@ -4,7 +4,7 @@
 
 <h1 align="center">DevDock</h1>
 
-<p align="center">Every dev server on your Mac, what started it, and one click to stop it.</p>
+<p align="center"><b>Everything running. One dock.</b><br />Servers, sessions, containers, apps and agents. See who started what and who's waiting on you, then jump in or shut it down.</p>
 
 <p align="center">
   <a href="https://github.com/Osama-Yusuf/devdock/releases/latest"><b>Download for macOS</b></a>
@@ -25,7 +25,7 @@
 - 🛠️ **Jump in:** open in your editor, open the branch on GitHub, tail logs.
 - 🪟 **tmux aware:** see which pane runs each server and work in it without leaving DevDock.
 - 🕘 **History:** restart servers you stopped earlier.
-- ⌨️ **Feels native:** menu bar count, launch at login, Mac shortcuts.
+- ⌨️ **Feels native:** menu bar count, launch at login, Mac shortcuts with on-screen hints.
 
 Everything else lives in each row's menu: hover a row and click `⋯`.
 
@@ -34,6 +34,37 @@ Everything else lives in each row's menu: hover a row and click `⋯`.
 Click a server's `tmux` badge and its session opens right here, splits and windows included.
 
 <p align="center"><img src="docs/tmux.png" alt="A tmux session with a split pane, open inside DevDock" /></p>
+
+## Tabs
+
+| Tab | What it shows |
+|---|---|
+| **Servers** `⌘1` | Every listening port: flat, by project, or by the agent session that started it. |
+| **Sessions** `⌘2` | tmux and Herdr sessions with their folders, branches and ports. Open, rename or kill them, and see which Claude Code ones are working, waiting on you, or idle. |
+| **Containers** `⌘3` | Docker containers, images, volumes and build cache, with one-click cleanup. |
+| **Apps** `⌘4` | Running Mac apps, menu bar apps and background agents, with every PID they own. Quit, force quit, or kill a single process. |
+| **Agents** `⌘5` | Every coding agent running (Claude Code, Codex, OpenCode): what it's doing, where it lives, what it started. Click one to jump to its tmux pane, Herdr terminal or Ghostty tab. |
+
+DevDock reads Claude Code's own status, so it doesn't guess whether a session is working, waiting on a permission prompt, or done. Codex and OpenCode don't report this, so they show no state.
+
+## Shortcuts
+
+Hold `⌘`, `⌥` or `⌃` and every button you can reach shows the key to press next.
+
+| Keys | Does |
+|---|---|
+| `⌘1` – `⌘5` | Switch tab |
+| `⌥1` – `⌥9` | Switch inside a tab: grouping, multiplexer, container type, app kind, agent state |
+| `⌃1` – `⌃9` | Turn a discovered pattern on or off |
+| `⌘F` | Search |
+| `⇧⌘G` | Next server grouping |
+| `⌘⇧↵` | Terminal fills the window |
+| `⌘.` | Close the terminal |
+| `⌘,` `⌘Y` | Settings, history |
+| `⇧⌘L` `⇧⌘E` | Light/dark, export |
+| `?` | All shortcuts and tips |
+
+Drag across rows to select them. `⇧` or `⌘` while dragging adds or removes rows.
 
 ## Install
 

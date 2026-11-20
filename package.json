@@ -5,6 +5,7 @@
   "description": "Everything running. One dock. Servers, sessions, containers, apps and agents on your Mac.",
   "main": "electron/main.js",
   "scripts": {
+    "test": "node --test test/",
     "start": "electron .",
     "dev": "NODE_ENV=development electron .",
     "build": "electron-builder",

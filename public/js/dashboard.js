@@ -580,7 +580,7 @@
     // A Claude Code session's state (server.js claudeState): working, needs you, or idle.
     // compact: just the icon, the words go in the tooltip (Sessions); otherwise icon and words
     const STATE_ICON = window.STATE_ICON = {
-      working: '<span class="ast-spin"></span>',
+      working: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>',
       'needs-you': '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1.2 5h2.4l-.4 7h-1.6zm1.2 8.6a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8z"/></svg>',
       idle: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/></svg>',
     };
@@ -1109,13 +1109,14 @@
     // ── Tabs: Servers (this file), Sessions and Containers (js/views/) ──
     // A view registers window.DevDockViews[id] = { render() } and reads
     // DevDock.sourceData[id], filled from the server's "source" messages.
-    const TABS = ['servers', 'sessions', 'containers', 'apps', 'coding'];
+    const TABS = ['servers', 'sessions', 'containers', 'apps', 'coding', 'home'];
     const SEARCH_HINTS = {
       servers: 'Search ports, PIDs, processes, paths\u2026',
       sessions: 'Search sessions, folders, branches, agents\u2026',
       containers: 'Search containers, images, volumes\u2026',
       apps: 'Search apps, bundle IDs, processes, PIDs\u2026',
       coding: 'Search agents, folders, branches, sessions\u2026',
+      home: 'Search what needs attention\u2026',
     };
     window.DevDockViews = {};
     window.DevDock = { sourceData: {}, tab: 'servers' };
@@ -1287,7 +1288,7 @@ $('settingsBtn').addEventListener('click', openSettings);
       switch (cmd) {
         case 'settings': openSettings(); break;
         case 'find': searchInput.focus(); searchInput.select(); break;
-        case 'tab-servers': case 'tab-sessions': case 'tab-containers': case 'tab-apps': case 'tab-coding': setTab(cmd.slice(4)); break;
+        case 'tab-servers': case 'tab-sessions': case 'tab-containers': case 'tab-apps': case 'tab-coding': case 'tab-home': setTab(cmd.slice(4)); break;
         case 'group-menu': setTab('servers'); setGroupBy(GROUP_MODES[(GROUP_MODES.indexOf(groupBy) + 1) % GROUP_MODES.length]); break;
         case 'history': window.location.href = '/history'; break;
         case 'export': if ($('exportBtn').offsetParent) $('exportBtn').click(); else showToast('Turn on the export button in Settings', 'info'); break;

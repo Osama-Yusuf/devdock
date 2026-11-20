@@ -157,4 +157,38 @@ function demoContainers() {
   };
 }
 
-module.exports = { demoPorts, demoTransient, demoSessions, demoAgents, demoApps, demoContainers };
+// Home: what the rules in sources/home.js find after a while of watching
+function demoHome() {
+  const srv = (pid, name, ports, path, branch, runtime = 'node', runtimeColor = '#22c55e') =>
+    ({ kind: 'server', pid: String(pid), name, ports, cwd: `${HOME}/code/${path}`, branch, runtime, runtimeColor });
+  const agent = (pid, name, agentName, path, branch, where) =>
+    ({ kind: 'agent', pid: String(pid), name, agent: agentName, cwd: `${HOME}/code/${path}`, branch, where, ports: [] });
+  const wave = (n, base, amp, drift = 0) => Array.from({ length: n }, (_, i) => Math.round(base + drift * i + amp * Math.sin(i * 1.7) * (i % 3 ? 1 : -0.6)));
+  return {
+    items: [
+      { id: 'cpu:p41388', type: 'cpu', severity: 'critical', subject: srv(41388, 'next-server', [3000], 'storefront/apps/web', 'feat/checkout'),
+        since: at(7 * min), value: 246, spark: [4, 6, 3, 5, 38, 120, 210, 232, 251, 240, 244, 255, 238, 249, 252, 241, 236, 250, 248, 243, 251, 239, 246, 247] },
+      { id: 'mem:p41530', type: 'mem', severity: 'critical', subject: srv(41530, 'storybook', [6006], 'storefront/packages/ui', 'feat/checkout'),
+        since: at(14 * min), value: 1840, from: 1120, rate: 51, spark: wave(24, 1120, 18, 31) },
+      { id: 'crash:storefront-worker', type: 'crash', severity: 'critical',
+        subject: { kind: 'container', id: 'f00d'.padEnd(64, '0'), name: 'storefront-worker-1', image: 'storefront-worker:dev', status: 'Restarting (5) 12 seconds ago' },
+        since: at(4 * min), value: 5 },
+      { id: 'needs:44710', type: 'needs-you', severity: 'needs-you', since: at(4 * min),
+        subject: agent(44710, 'payments', 'Claude Code', 'storefront', 'feat/payments', { mux: 'herdr', id: 't3', name: 'storefront / payments' }) },
+      { id: 'done:39920', type: 'finished', severity: 'done', since: at(6 * min),
+        subject: agent(39920, 'tokens', 'Claude Code', 'design-system', 'chore/tokens', { mux: 'herdr', id: 't6', name: 'design-system / tokens' }) },
+      { id: 'forgotten:22981,23117', type: 'forgotten', severity: 'tidy', value: 216, subjects: [
+        { ...srv(23117, 'uvicorn', [8000], 'billing', 'feat/invoices', 'python', '#3b82f6'), memMB: 96, idleSince: at(3 * day) },
+        { ...agent(22981, 'billing', 'OpenCode', 'billing', 'feat/invoices', { detached: true }), memMB: 120, idleSince: at(3 * day) },
+      ] },
+      { id: 'dup:41388,52477', type: 'duplicate', severity: 'tidy', name: 'web', cwd: `${HOME}/code/storefront/apps/web`, subjects: [
+        srv(41388, 'next-server', [3000], 'storefront/apps/web', 'feat/checkout'), srv(52477, 'next-server', [3001], 'storefront/apps/web', 'feat/checkout'),
+      ] },
+    ],
+    vitals: { servers: 7, agents: 8, working: 2, needsYou: 1, cpu: 318, mem: 5940, cores: 12, totalMem: 36864,
+      cpuSpark: [40, 42, 38, 51, 60, 140, 230, 262, 281, 300, 296, 310, 305, 298, 312, 320, 309, 315, 322, 311, 318, 314, 320, 318],
+      memSpark: wave(24, 5100, 40, 36) },
+  };
+}
+
+module.exports = { demoPorts, demoTransient, demoSessions, demoAgents, demoApps, demoContainers, demoHome };

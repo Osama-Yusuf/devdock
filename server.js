@@ -855,7 +855,7 @@ const sourceCtx = {
   binDirs: BIN_DIRS,
   source: id => sources[id],
 };
-const sources = Object.fromEntries(['sessions', 'containers', 'apps', 'coding', 'agents']
+const sources = Object.fromEntries(['sessions', 'containers', 'apps', 'coding', 'agents', 'home']
   .map(id => [id, require(`./sources/${id}`)(sourceCtx)]));
 const sourceState = {}; // id -> { msg, sig }
 

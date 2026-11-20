@@ -216,6 +216,7 @@ module.exports = function containers(ctx) {
     id: 'containers',
     intervalMs: 5000,
     scan,
+    last: () => last,
     snapshot,
     actions: {
       start: async ({ id }) => (await call('POST', `/containers/${await notK8s(id)}/start`), {}),

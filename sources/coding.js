@@ -95,6 +95,7 @@ module.exports = function coding(ctx) {
     id: 'coding',
     intervalMs: 2000,
     scan,
+    last: () => last,
     actions: {
       // not in a multiplexer: bring its terminal app to the front (the page attaches to panes itself)
       async focus({ pid }) {

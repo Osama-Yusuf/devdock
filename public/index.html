@@ -29,6 +29,7 @@
             <button role="tab" data-kbd="⌘3" data-tab="containers" aria-label="Containers" title="Containers  ⌘3"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><polyline points="3 8 12 13 21 8"/><line x1="12" y1="13" x2="12" y2="21"/></svg></button>
             <button role="tab" data-kbd="⌘4" data-tab="apps" aria-label="Apps" title="Apps  ⌘4"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button>
             <button role="tab" data-kbd="⌘5" data-tab="coding" aria-label="Agents" title="Coding agents  ⌘5"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg></button>
+            <button role="tab" data-kbd="⌘6" data-tab="home" aria-label="Home" title="Home  ⌘6"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/></svg></button>
           </nav>
           <div class="stats-left" data-view="servers">
             <div class="stat">
@@ -145,6 +146,7 @@
       <section data-view="containers" id="containersView" hidden></section>
       <section data-view="apps" id="appsView" hidden></section>
       <section data-view="coding" id="codingView" hidden></section>
+      <section data-view="home" id="homeView" hidden></section>
 
       <div class="tips-hint">Press <kbd>?</kbd> for shortcuts and tips</div>
     </div>
@@ -185,7 +187,7 @@
       </div>
       <div class="help-grid">
         <kbd>&#8984;F</kbd><span>Find</span>
-        <kbd>&#8984;1 &ndash; &#8984;5</kbd><span>Servers, Sessions, Containers, Apps, Agents</span>
+        <kbd>&#8984;1 &ndash; &#8984;6</kbd><span>Servers, Sessions, Containers, Apps, Agents, Home</span>
         <kbd>&#8997;1 &ndash; &#8997;9</kbd><span>Switch within a tab: grouping, multiplexer, Containers/Images, app kind, agent state</span>
         <kbd>&#8963;1 &ndash; &#8963;9</kbd><span>Turn a discovered pattern on or off</span>
         <kbd>Hold &#8984; &#8997; &#8963;</kbd><span>Show the shortcut on each button</span>
@@ -364,6 +366,7 @@
   <script src="/js/views/containers.js"></script>
   <script src="/js/views/apps.js"></script>
   <script src="/js/views/coding.js"></script>
+  <script src="/js/views/home.js"></script>
   <script src="/js/suggest.js"></script>
   <script src="/js/selection.js"></script>
   <script src="/js/keys.js"></script>

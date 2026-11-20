@@ -44,8 +44,11 @@ Click a server's `tmux` badge and its session opens right here, splits and windo
 | **Containers** `⌘3` | Docker containers, images, volumes and build cache, with one-click cleanup. |
 | **Apps** `⌘4` | Running Mac apps, menu bar apps and background agents, with every PID they own. Quit, force quit, or kill a single process. |
 | **Agents** `⌘5` | Every coding agent running (Claude Code, Codex, OpenCode): what it's doing, where it lives, what it started. Click one to jump to its tmux pane, Herdr terminal or Ghostty tab. |
+| **Home** `⌘6` | Only what needs you: runaway CPU, memory leaks, crash loops, agents waiting or just finished, forgotten and duplicate servers. Each with its fix, nothing else. |
 
 DevDock reads Claude Code's own status, so it doesn't guess whether a session is working, waiting on a permission prompt, or done. Codex and OpenCode don't report this, so they show no state.
+
+<p align="center"><img src="docs/home.png" alt="Home: runaway CPU, a memory leak, a crash loop, an agent waiting, and things to tidy up" /></p>
 
 <p align="center"><img src="docs/agents.png" alt="Agents: every coding agent, its state, folder and where it runs" /></p>
 
@@ -61,7 +64,7 @@ Hold `⌘`, `⌥` or `⌃` and every button you can reach shows the key to press
 
 | Keys | Does |
 |---|---|
-| `⌘1` – `⌘5` | Switch tab |
+| `⌘1` – `⌘6` | Switch tab |
 | `⌥1` – `⌥9` | Switch inside a tab: grouping, multiplexer, container type, app kind, agent state |
 | `⌃1` – `⌃9` | Turn a discovered pattern on or off |
 | `⌘F` | Search |

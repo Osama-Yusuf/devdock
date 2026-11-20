@@ -88,7 +88,7 @@ function createTray() {
 
   setInterval(async () => {
     try {
-      const res = await fetch(`http://localhost:${PORT}/api/ports`);
+      const res = await fetch(`http://127.0.0.1:${PORT}/api/ports`);
       const data = await res.json();
       updateTrayMenu(data.count || 0);
     } catch {}

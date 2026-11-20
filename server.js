@@ -9,8 +9,13 @@ const app = express();
 const PORT = +process.env.PORT || 4003;
 const DEMO = process.env.DEVDOCK_DEMO === '1'; // seeded data for screenshots, see demo.js
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+// Only this Mac, only DevDock's own page: the Host check stops DNS rebinding, the Origin
+// check stops other websites (a form POST or a WebSocket needs no CORS approval)
+const OWN = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`]);
+const isOwn = req => OWN.has(req.headers.host) && (!req.headers.origin || OWN.has(req.headers.origin.replace(/^http:\/\//, '')));
+const wss = new WebSocketServer({ server, verifyClient: ({ req }) => isOwn(req) });
 
+app.use((req, res, next) => isOwn(req) ? next() : res.status(403).end());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 // demo pids are made up and may match real processes: never act on them
@@ -784,8 +789,8 @@ app.post('/api/start-server', (req, res) => {
       else if (pkg.scripts && pkg.scripts.start) cmd = 'npm start';
     } catch {}
   }
-  // Open a new terminal and run the command
-  exec(`open -a Terminal "${dir}" && sleep 0.5 && osascript -e 'tell application "Terminal" to do script "cd \\"${dir}\\" && ${cmd}" in front window'`, (err) => {
+  // Open a new terminal and run the command; the path goes in as an argument, never as script text
+  execFile('osascript', ['-e', 'on run argv', '-e', 'tell application "Terminal"', '-e', 'activate', '-e', 'do script (item 1 of argv)', '-e', 'end tell', '-e', 'end run', `cd ${shq(dir)} && ${cmd}`], (err) => {
     if (err) {
       return res.status(500).json({ error: 'Failed to start server' });
     }
@@ -803,7 +808,7 @@ app.post('/api/open-terminal', (req, res) => {
     return res.status(404).json({ error: 'Directory not found' });
   }
   // macOS: open Terminal.app at the given directory
-  exec(`open -a Terminal "${dir}"`, (err) => {
+  execFile('open', ['-a', 'Terminal', dir], (err) => {
     if (err) {
       return res.status(500).json({ error: 'Failed to open terminal' });
     }
@@ -1103,6 +1108,6 @@ refreshMemory().then(() => scan()); // first snapshot gets real memory, later on
   memLoop();
 })();
 
-server.listen(PORT, () => {
+server.listen(PORT, '127.0.0.1', () => {
   console.log(`\n  DevDock is running at http://localhost:${PORT}\n`);
 });

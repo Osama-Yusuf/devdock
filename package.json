@@ -1,6 +1,6 @@
 {
   "name": "devdock-desktop",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "license": "MIT",
   "description": "Everything running. One dock. Servers, sessions, containers, apps and agents on your Mac.",
   "main": "electron/main.js",
@@ -20,25 +20,44 @@
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "assets/icon.icns",
-      "target": ["dmg", "zip"]
+      "target": [
+        "dmg",
+        "zip"
+      ]
     },
     "dmg": {
       "title": "DevDock",
       "icon": "assets/icon.icns",
       "iconSize": 100,
       "contents": [
-        { "x": 180, "y": 170 },
-        { "x": 480, "y": 170, "type": "link", "path": "/Applications" }
+        {
+          "x": 180,
+          "y": 170
+        },
+        {
+          "x": 480,
+          "y": 170,
+          "type": "link",
+          "path": "/Applications"
+        }
       ],
-      "window": { "width": 660, "height": 400 }
+      "window": {
+        "width": 660,
+        "height": 400
+      }
     },
     "win": {
       "icon": "assets/icon.ico",
-      "target": ["nsis"]
+      "target": [
+        "nsis"
+      ]
     },
     "linux": {
       "icon": "assets/icon.png",
-      "target": ["AppImage", "deb"]
+      "target": [
+        "AppImage",
+        "deb"
+      ]
     },
     "asar": true,
     "asarUnpack": [

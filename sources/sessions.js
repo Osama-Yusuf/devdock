@@ -20,7 +20,7 @@ module.exports = function sessions(ctx) {
   let last = []; // sessions from the latest scan; actions only accept these
 
   async function scan() {
-    if (ctx.DEMO) return { sessions: [], muxes: [] };
+    if (ctx.DEMO) return require('../demo').demoSessions();
     const results = await Promise.all(adapters.map(async a => {
       if (!a.bin()) return { mux: a.mux, available: false, sessions: [] };
       try { return { mux: a.mux, available: true, sessions: await a.list() }; }

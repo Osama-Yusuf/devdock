@@ -19,7 +19,7 @@ module.exports = function coding(ctx) {
   }
 
   async function scan() {
-    if (ctx.DEMO) return { agents: [] };
+    if (ctx.DEMO) return require('../demo').demoAgents();
     const procs = ctx.procs();
     const kids = childrenOf(procs);
     const isAgent = pid => procs[pid] && !procs[pid].comm.includes('.app/') && !/ bg-/.test(procs[pid].comm) && ctx.agentOf(procs[pid].comm);

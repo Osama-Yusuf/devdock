@@ -94,7 +94,7 @@ module.exports = function containers(ctx) {
   }
 
   async function scan() {
-    if (ctx.DEMO) return { available: false, reason: 'Containers are hidden in demo mode' };
+    if (ctx.DEMO) return require('../demo').demoContainers();
     if (!await connect()) return { available: false, reason: "Docker isn't running" };
     const df = await api('GET', '/system/df');
     if (df.status !== 200) { socketPath = null; return { available: false, reason: df.body?.message || "Docker isn't answering" }; }

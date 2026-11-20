@@ -47,6 +47,14 @@ Click a server's `tmux` badge and its session opens right here, splits and windo
 
 DevDock reads Claude Code's own status, so it doesn't guess whether a session is working, waiting on a permission prompt, or done. Codex and OpenCode don't report this, so they show no state.
 
+<p align="center"><img src="docs/agents.png" alt="Agents: every coding agent, its state, folder and where it runs" /></p>
+
+<p align="center"><img src="docs/sessions.png" alt="Sessions: tmux and Herdr sessions with Claude Code state icons" /></p>
+
+<p align="center"><img src="docs/apps.png" alt="Apps: running Mac apps, menu bar apps and their processes" /></p>
+
+<p align="center"><img src="docs/containers.png" alt="Containers: Docker containers, images, volumes and cleanup" /></p>
+
 ## Shortcuts
 
 Hold `⌘`, `⌥` or `⌃` and every button you can reach shows the key to press next.

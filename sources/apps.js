@@ -64,7 +64,10 @@ module.exports = function apps(ctx) {
   }
 
   async function scan() {
-    if (ctx.DEMO) return { apps: [] };
+    if (ctx.DEMO) { // real bundles, so the icons are real
+      last = await Promise.all(require('../demo').demoApps().apps.map(async a => ({ ...a, hasIcon: !!(await bundleInfo(a.path)).icon })));
+      return { apps: last };
+    }
     const r = await ctx.run('lsappinfo', ['list']);
     const procs = ctx.procs();
     const ports = ctx.ports();

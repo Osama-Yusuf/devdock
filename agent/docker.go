@@ -27,6 +27,8 @@ type Container struct {
 	Status  string  `json:"status"`
 	Created int64   `json:"created"`
 	Project string  `json:"project,omitempty"`
+	Service string  `json:"service,omitempty"`
+	Dir     string  `json:"dir,omitempty"` // where `docker compose up` ran, for updating the stack over SSH
 	CPU     float64 `json:"cpu"` // % of one core
 	Mem     uint64  `json:"mem"`
 	Limit   uint64  `json:"limit"`
@@ -128,7 +130,8 @@ func (d *Docker) Containers() ([]Container, error) {
 		if len(c.Names) > 0 {
 			name = strings.TrimPrefix(c.Names[0], "/")
 		}
-		out[i] = Container{ID: c.Id, Name: name, Image: c.Image, State: c.State, Status: c.Status, Created: c.Created, Project: c.Labels["com.docker.compose.project"]}
+		out[i] = Container{ID: c.Id, Name: name, Image: c.Image, State: c.State, Status: c.Status, Created: c.Created,
+			Project: c.Labels["com.docker.compose.project"], Service: c.Labels["com.docker.compose.service"], Dir: c.Labels["com.docker.compose.project.working_dir"]}
 		if c.State != "running" || c.Labels["io.kubernetes.docker.type"] == "podsandbox" {
 			continue
 		}

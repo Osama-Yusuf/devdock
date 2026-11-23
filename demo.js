@@ -132,6 +132,8 @@ function demoContainers() {
   const c = (id, name, image, state, status, project, ports, size, up, volumes = []) => ({
     id: id.padEnd(64, '0'), name, image, imageId: `sha256:${image}`, state, status, createdAt: at(up), lastUsed: state === 'running' ? Date.now() : at(up / 2),
     size, project, k8s: null, ports, volumes,
+    service: project ? name.slice(project.length + 1).replace(/-\d+$/, '') : null,
+    composeDir: project ? `${HOME}/code/${project}` : null, composeFiles: project ? [`${HOME}/code/${project}/compose.yaml`] : [],
   });
   const containers = [
     c('a1f3', 'storefront-db-1', 'postgres:16', 'running', 'Up 5 days', 'storefront', [5432], 63 * MB, 5 * day, ['storefront_pgdata']),
@@ -225,7 +227,7 @@ function demoMachines() {
       containers: [['book-api', 'bookshop/api:2.4', 'book', 12.4, .6], ['book-web', 'bookshop/web:2.4', 'book', 3.2, .2], ['book-worker', 'bookshop/api:2.4', 'book', 4.1, .3],
         ['book-search', 'opensearch:2.11', 'book', 6.8, 1.4], ['book-cron', 'bookshop/api:2.4', 'book', 0, 0, 'exited'], ['redis', 'redis:7', '', .8, .05],
         ['nginx', 'nginx:1.27', '', .4, .03], ['metrics', 'prom/node-exporter:1.8', '', .2, .02], ['old-backup', 'restic/restic:0.16', '', 0, 0, 'exited']]
-        .map(([name, image, project, cpu, g, state = 'running'], i) => ({ id: `c${i}a1b2c3d4e5f6`, name, image, project, state, status: state === 'running' ? 'Up 21 days' : 'Exited (0) 3 hours ago', cpu, mem: g * G, rx: cpu * 9e3, tx: cpu * 4e3 })),
+        .map(([name, image, project, cpu, g, state = 'running'], i) => ({ id: `c${i}a1b2c3d4e5f6`, name, image, project, service: project ? name.replace(`${project}-`, '') : '', dir: project ? `/srv/${project}` : '', state, status: state === 'running' ? 'Up 21 days' : 'Exited (0) 3 hours ago', cpu, mem: g * G, rx: cpu * 9e3, tx: cpu * 4e3 })),
       ...extra },
   });
   return { masterFp: 'demo', machines: [
@@ -240,7 +242,7 @@ function demoMachines() {
       items: [{ id: 'nas:disk:/', type: 'disk', severity: 'warning', subject: { mount: '/' }, value: 91, free: 18 * G }] },
     m('c3d4e5f6a1b2', 'Edge', '⚡', '#f472b6', 'edge.tail3f2a.ts.net', 'Alpine Linux v3.20', 'alpine', 2, 2, 17, 54, 23),
     { id: 'd4e5f6a1b2c3', name: 'gpu-box', emoji: '', color: '#a78bfa', host: 'gpu-box.local', port: 7337, scope, networks: 'private', addedAt: now - 6e4,
-      status: 'pending', note: 'Waiting for the agent…', command: 'curl -fsSL https://github.com/Osama-Yusuf/devdock/releases/latest/download/install-agent.sh | sudo sh -s -- --master 7773af89… --token … --scope system,processes,ports' },
+      status: 'pending', note: 'Waiting for the agent…', command: 't=k3x9Qe7LmPz2Vb; d=$(mktemp -d); { curl -fsSLo "$d/i.sh" https://github.com/Osama-Yusuf/devdock/releases/download/v1.4.0/install-agent.sh || wget -qO "$d/i.sh" https://github.com/Osama-Yusuf/devdock/releases/download/v1.4.0/install-agent.sh; } 2>/dev/null; if (sha256sum "$d/i.sh" 2>/dev/null || shasum -a 256 "$d/i.sh") | grep -q "^9f2c4e1ab07d33a1 "; then printf "%s\\n" "$t" | sudo sh "$d/i.sh" --master 7773af89e1c0 --scope system,processes,ports --port 7337; else echo "That installer is not the one this DevDock ships: not running it."; fi; rm -rf "$d"' },
   ] };
 }
 

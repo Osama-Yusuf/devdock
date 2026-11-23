@@ -144,6 +144,31 @@ func (a *Agent) do(action, target string) error {
 			return fmt.Errorf("bad container id")
 		}
 		return a.collect.docker.post("/containers/" + target + "/" + action[len("container-"):])
+	case "stack-stop", "stack-start", "stack-restart":
+		// every container of one compose project, by its label; what compose itself would touch
+		if !a.cfg.Scope.Containers {
+			return fmt.Errorf("containers aren't shared on this machine")
+		}
+		if !containerRe.MatchString(target) {
+			return fmt.Errorf("bad stack name")
+		}
+		list, err := a.collect.docker.Containers()
+		if err != nil {
+			return err
+		}
+		n := 0
+		for _, c := range list {
+			if c.Project == target {
+				if err := a.collect.docker.post("/containers/" + c.ID + "/" + action[len("stack-"):]); err != nil {
+					return fmt.Errorf("%s: %v", c.Name, err)
+				}
+				n++
+			}
+		}
+		if n == 0 {
+			return fmt.Errorf("no stack called %s", target)
+		}
+		return nil
 	}
 	return fmt.Errorf("unknown action %q", action)
 }

@@ -9,12 +9,13 @@
     "start": "electron .",
     "dev": "NODE_ENV=development electron .",
     "build": "electron-builder",
-    "build:mac": "npm run build:key && npm run build:info && electron-builder --mac",
+    "build:mac": "npm run build:key && npm run build:info && npm run build:pickers && electron-builder --mac",
     "build:info": "node -e \"const x=c=>require('child_process').execSync(c).toString().trim();require('fs').writeFileSync('build.json',JSON.stringify({version:require('./package.json').version,build:x('git rev-list --count HEAD')+' ('+x('git rev-parse --short HEAD')+')'}))\"",
     "build:win": "electron-builder --win",
     "build:linux": "electron-builder --linux",
-    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true",
-    "build:key": "swiftc -O native/devdock-key.swift -o native/devdock-key"
+    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true && npm run build:pickers",
+    "build:key": "swiftc -O native/devdock-key.swift -o native/devdock-key",
+    "build:pickers": "node scripts/build-pickers.js"
   },
   "build": {
     "appId": "com.devdock.desktop",
@@ -26,7 +27,13 @@
       "target": [
         "dmg",
         "zip"
-      ]
+      ],
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "DevDock connects to the machines you add, on your network, to show their stats and open SSH sessions.",
+        "NSBonjourServices": [
+          "_ssh._tcp"
+        ]
+      }
     },
     "dmg": {
       "title": "DevDock",
@@ -87,7 +94,8 @@
       "node_modules/**/*",
       "native/devdock-key",
       "agent/install-agent.sh"
-    ]
+    ],
+    "afterSign": "electron/sign.js"
   },
   "dependencies": {
     "express": "^4.19.0",
@@ -96,6 +104,8 @@
   },
   "devDependencies": {
     "electron": "^33.0.0",
-    "electron-builder": "^25.0.0"
+    "electron-builder": "^25.0.0",
+    "simple-icons": "16.38.1",
+    "unicode-emoji-json": "0.9.0"
   }
 }

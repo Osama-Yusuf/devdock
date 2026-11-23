@@ -11,11 +11,18 @@
     broom: svg('<path d="M19 3 9.5 12.5"/><path d="M9.5 12.5 4 18l2 2 5.5-5.5"/><path d="M7.5 14.5 3 21"/><path d="m14 8 2 2"/>', 15),
     copy: svg('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'),
     chevron: svg('<polyline points="6 9 12 15 18 9"/>', 12),
+    restart: svg('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><polyline points="21 3 21 8 16 8"/>'),
+    update: svg('<path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/>'),
+    file: svg('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>'),
+    list: svg('<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>'),
+    term: svg('<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>'),
+    down: svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
   };
 
   // Sub-tabs and their filters; the choice survives refresh (per-window, so localStorage)
   const TABS = {
     containers: { label: 'Containers', icon: '<rect x="2" y="7" width="20" height="13" rx="2"/><path d="M6 7V4h12v3"/><line x1="7" y1="11" x2="7" y2="16"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="17" y1="11" x2="17" y2="16"/>', filters: [['all', 'All'], ['running', 'Running'], ['stopped', 'Stopped'], ['k8s', 'Kubernetes']] },
+    stacks: { label: 'Stacks', icon: '<rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/>', filters: [['all', 'All'], ['running', 'Running'], ['stopped', 'Stopped']] },
     images: { label: 'Images', icon: '<path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/>', filters: [['all', 'All'], ['used', 'In use'], ['unused', 'Unused'], ['dangling', 'Dangling']] },
     volumes: { label: 'Volumes', icon: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/>', filters: [['all', 'All'], ['used', 'In use'], ['unused', 'Unused']] },
     build: { label: 'Build cache', icon: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z"/>', filters: [] },
@@ -35,7 +42,7 @@
     { kinds: ['volumes'], label: 'Unused volumes', cli: 'docker volume prune -a', danger: true },
   ];
   // The one purge that fits the sub-tab you're looking at
-  const CONTEXT = { containers: 0, images: 2, volumes: 5, build: 3 };
+  const CONTEXT = { containers: 0, stacks: 0, images: 2, volumes: 5, build: 3 };
 
   // CPU, memory and network of a running container, each with its last 15 minutes
   const usageCells = c => {
@@ -67,6 +74,8 @@
     items = items.filter(Boolean).join('');
     return items ? `<button class="actions-trigger" onclick="event.stopPropagation();toggleActionsMenu('${id}',this)">⋯</button><div class="actions-menu" id="menu-${id}">${items}</div>` : '';
   }
+  const stackItem = (op, name, icon, text, cls = '') =>
+    `<button class="${cls}" onclick="DevDockViews.containers.stack('${op}', this.dataset.v)" data-v="${esc(name)}">${icon}${text}</button>`;
   const item = (action, value, icon, text, cls = '') =>
     `<button class="${cls}" onclick="DevDockViews.containers.act('${action}', this.dataset.v)" data-v="${esc(value)}">${icon}${text}</button>`;
   const table = (cls, head, rows, none) => rows.length
@@ -92,7 +101,7 @@
       v => v.anonymous && !v.containers && { id: 'anon', label: 'unused anonymous', title: 'Unused anonymous volumes', min: 3 },
     ],
   };
-  const KEY = { containers: c => `c:${c.id}`, images: i => `i:${i.id}`, volumes: v => `v:${v.name}` };
+  const KEY = { stacks: s => `s:${s.name}`, containers: c => `c:${c.id}`, images: i => `i:${i.id}`, volumes: v => `v:${v.name}` };
 
   // ── rows per sub-tab ───────────────────────────────────────────────
   const LISTS = {
@@ -102,6 +111,9 @@
       .filter(c => f === 'all' || (f === 'k8s' ? c.k8s : f === 'running' ? !stopped(c) : stopped(c)))
       .filter(c => hit(q, c.name, c.image, c.project, c.state, c.ports.join(' '), c.k8s ? `k8s kubernetes ${c.k8s.pod} ${c.k8s.namespace}` : ''))
       .sort((a, b) => stopped(a) - stopped(b) || (b.lastUsed || 0) - (a.lastUsed || 0)),
+    stacks: (d, f, q) => (d.stacks || [])
+      .filter(s => f === 'all' || (f === 'running' ? s.running : !s.running))
+      .filter(s => hit(q, s.name, s.dir, s.services.map(x => `${x.name} ${x.image}`).join(' '), s.ports.join(' '))),
     images: (d, f, q) => d.images
       .filter(i => f === 'all' || (f === 'used' ? i.containers : f === 'unused' ? !i.containers : !i.containers && !i.tags.length))
       .filter(i => hit(q, i.tags.join(' '), short(i.id)))
@@ -127,8 +139,29 @@
           // Kubernetes owns its containers: hand over the kubectl command instead
           c.k8s ? k8sCtx && `<button onclick="copyText(this.dataset.cmd, 'kubectl command')" data-cmd="${esc(`kubectl --context ${k8sCtx} -n ${c.k8s.namespace} logs ${c.k8s.pod} -c ${c.k8s.container}`)}">${ICON.copy}Copy kubectl logs command</button>`
             : stopped(c) ? item('start', c.id, ICON.play, 'Start') : item('stop', c.id, ICON.stop, 'Stop'),
+          !stopped(c) && (!c.k8s || k8sCtx) && `<button onclick="DevDockViews.containers.shell(this.dataset.v)" data-v="${esc(c.id)}">${ICON.term}Open a shell</button>`,
           !c.k8s && stopped(c) && `<div class="actions-divider"></div>${item('removeContainer', c.id, ICON.trash, 'Remove', 'danger')}`,
         ])}</td></tr>`), 'No containers here.'),
+    // A compose project: its services at a glance, and the stack-wide actions
+    stacks: list => table('ctr-table stk-table', '<th>Stack</th><th>Services</th><th>Ports</th><th>CPU</th><th>Memory</th><th class="col-user">Last ran</th><th></th>',
+      list.map((s, i) => `<tr data-key="s:${esc(s.name)}">
+        <td class="col-name"><div class="stk-name"><b class="trunc">${esc(s.name)}</b>${s.dir ? `<span class="code trunc dim" title="${esc(s.dir)}">${esc(tildify(s.dir))}</span>` : ''}</div></td>
+        <td><div class="stk-svcs">${s.services.map(x => `<span class="stk-svc ${x.state === 'running' ? 'on' : x.state === 'restarting' ? 'bad' : ''}" title="${esc(x.name)} · ${esc(x.image)}\n${esc(x.status)}"><i></i>${esc(x.name)}</span>`).join('')}</div>
+          <span class="stk-count">${s.running}/${s.total} running</span></td>
+        <td>${s.ports.map(p => `<a href="http://localhost:${p}" target="_blank" class="code port-link">${p}</a>`).join(' ') || '<span class="code">—</span>'}</td>
+        <td class="code">${s.running ? `${s.cpu < 10 ? s.cpu.toFixed(1) : Math.round(s.cpu)}%` : '—'}</td>
+        <td class="code">${s.running ? formatMem(s.mem) : '—'}</td>
+        <td class="col-user">${when(s.running > 0, s.lastUsed)}</td>
+        <td class="actions-cell" style="text-align:right;">${menu(`stk-${i}`, [
+          s.running < s.total && stackItem('start', s.name, ICON.play, s.running ? 'Start the rest' : 'Start'),
+          s.running && stackItem('restart', s.name, ICON.restart, 'Restart'),
+          s.running && stackItem('stop', s.name, ICON.stop, 'Stop'),
+          `<div class="actions-divider"></div>`,
+          s.filesFound.length ? stackItem('update', s.name, ICON.update, 'Update: pull and recreate') : `<button onclick="DevDockViews.containers.locate(this.dataset.v)" data-v="${esc(s.name)}" title="It was started from ${esc(s.files[0] || 'a file that is gone')}">${ICON.file}Locate compose file…</button>`,
+          s.filesFound.length && `<button onclick="DevDockViews.containers.openCompose(this.dataset.v)" data-v="${esc(s.name)}">${ICON.file}Open compose file in ${esc(editorName())}</button>`,
+          stackItem('show', s.name, ICON.list, 'Show its containers'),
+          `<div class="actions-divider"></div>${stackItem('down', s.name, ICON.down, 'Take down', 'danger')}`,
+        ])}</td></tr>`), 'No Docker Compose stacks here. Containers started with <span class="code">docker compose up</span> show up as one stack.'),
     images: list => table('img-table', '<th>Tag</th><th>Used by</th><th class="col-user">Last used</th><th class="col-user">Created</th><th class="col-user">Size</th><th></th>',
       list.map((im, i) => `<tr data-key="i:${esc(im.id)}">
         <td class="col-name"><span class="path-cell"><span class="trunc" title="${esc(im.id)}">${esc(im.tags[0] || `<none> ${short(im.id)}`)}</span>${im.tags.length > 1 ? `<span class="chip" title="${esc(im.tags.join('\n'))}">+${im.tags.length - 1}</span>` : ''}${!im.tags.length ? '<span class="chip" title="Untagged, usually left over from an old build">dangling</span>' : ''}</span></td>
@@ -188,12 +221,13 @@
     const q = searchInput.value.trim().toLowerCase();
     const meta = {
       containers: `${d.containers.length} · ${bytes(d.containers.reduce((n, c) => n + c.size, 0))}`,
+      stacks: `${(d.stacks || []).length} · ${(d.stacks || []).filter(s => s.running).length} running`,
       images: `${d.images.length} · ${bytes(d.images.reduce((n, i) => n + i.size, 0))}`,
       volumes: `${d.volumes.length} · ${bytes(d.volumes.reduce((n, v) => n + Math.max(0, v.size), 0))}`,
       build: bytes(d.buildCache.size),
     };
     const ctx = CLEANUPS[CONTEXT[tab]], ctxTotal = total(ctx.kinds, r);
-    const all = { containers: d.containers.filter(c => !c.k8s?.sandbox), images: d.images, volumes: d.volumes }[tab];
+    const all = { containers: d.containers.filter(c => !c.k8s?.sandbox), stacks: d.stacks || [], images: d.images, volumes: d.volumes }[tab];
     const scope = `containers:${tab}`;
     const patterns = PATTERNS[tab] ? DevDockPatterns.find(scope, all, KEY[tab], PATTERNS[tab]) : [];
     const list = LISTS[tab] && DevDockPatterns.filter(scope, LISTS[tab](d, f, q), KEY[tab]);
@@ -222,6 +256,7 @@
 
   // What a single remove would accept: stopped plain containers, anything nothing uses
   const REMOVABLE = {
+    stacks: () => false, // a stack goes down from its own menu, with its own warning
     containers: c => stopped(c) && !c.k8s,
     images: i => !i.containers,
     volumes: v => !v.containers,
@@ -286,6 +321,35 @@
     if (res) showToast(`Freed ${bytes(res.reclaimed)}`, 'success', 'prune');
   }
 
+  // Stack-wide actions. Update runs in DevDock's terminal so you see the pull happen.
+  async function stack(op, name) {
+    closeAllMenus();
+    if (op === 'show') { state.tab = 'containers'; save(); searchInput.value = name; searchInput.dispatchEvent(new Event('input')); return; }
+    if (op === 'update') return openSession({ kind: 'update', stack: name }, `Update ${name}: docker compose pull && up -d`, 'containers');
+    if (op === 'down' && !await confirmDialog(`Take down ${name}?`, 'Its containers and network are removed. Volumes and their data stay, and Update or docker compose up brings it back.\nSame as: docker compose down', 'Take down')) return;
+    showToast(`${{ start: 'Starting', stop: 'Stopping', restart: 'Restarting', down: 'Taking down' }[op]} ${name}…`, 'info', 'stack');
+    if (await sourceAction('containers', 'stack', { stack: name, op })) showToast(`${{ start: 'Started', stop: 'Stopped', restart: 'Restarted', down: 'Took down' }[op]} ${name}`, 'success', 'stack');
+  }
+  async function locate(name) {
+    closeAllMenus();
+    const r = await sourceAction('containers', 'locateCompose', { stack: name });
+    if (r?.file) showToast(`${name} updates from ${tildify(r.file)} now`, 'success');
+  }
+  function openCompose(name) {
+    closeAllMenus();
+    const s = DevDock.sourceData.containers?.stacks?.find(x => x.name === name);
+    if (s?.filesFound[0]) openEditor(s.filesFound[0]);
+  }
+  // A shell inside a running container, if its image ships one (distroless and scratch don't)
+  async function shell(id) {
+    closeAllMenus();
+    const c = DevDock.sourceData.containers?.containers.find(x => x.id === id);
+    const r = await sourceAction('containers', 'canShell', { id });
+    if (!r) return;
+    if (!r.ok) return showToast(`${c?.name || 'This container'} has no shell: its image ships without one`, 'warn');
+    openSession({ kind: 'shell', id }, `${c?.name || short(id)} · shell`, 'containers');
+  }
+
   function toggleCleanup(open = !cleanupOpen) { cleanupOpen = open; render(); }
   document.addEventListener('click', e => { if (cleanupOpen && !e.target.closest('.cleanup-wrapper')) toggleCleanup(false); });
   document.addEventListener('keydown', e => { if (cleanupOpen && e.key === 'Escape') toggleCleanup(false); });
@@ -343,7 +407,7 @@
   }
 
   DevDockViews.containers = {
-    render, act, prune, toggleCleanup, removeMatching, pick, bulk,
+    render, act, prune, toggleCleanup, removeMatching, pick, bulk, stack, openCompose, shell, locate,
     setTab(t) { state.tab = t; save(); render(); },
     setFilter(f) { state.filter[state.tab] = f; save(); render(); },
   };

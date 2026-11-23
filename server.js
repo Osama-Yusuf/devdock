@@ -924,7 +924,8 @@ app.post('/api/sources/:id/:action', async (req, res) => {
 
 // Same command a source would run inside DevDock, in a new Terminal window instead
 app.post('/api/sources/:id/open-in-terminal', async (req, res) => {
-  const spec = await sources[req.params.id]?.terminal?.(req.body || {});
+  let spec;
+  try { spec = await sources[req.params.id]?.terminal?.(req.body || {}); } catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
   if (!spec) return res.status(404).json({ error: 'Nothing to open' });
   const cmd = [spec.file, ...spec.args].map(shq).join(' ');
   execFile('osascript', ['-e', 'on run argv', '-e', 'tell application "Terminal"', '-e', 'activate', '-e', 'do script (item 1 of argv)', '-e', 'end tell', '-e', 'end run', cmd],
@@ -943,7 +944,9 @@ const NESTING_VARS = ['TMUX', 'TMUX_PANE', 'ZELLIJ', 'ZELLIJ_SESSION_NAME', 'STY
 async function openTerm(ws, m) {
   closeTerm(ws);
   const send = msg => ws.readyState === 1 && ws.send(JSON.stringify(msg));
-  const spec = !DEMO && await sources[m.source]?.terminal?.(m.params || {});
+  let spec;
+  try { spec = !DEMO && await sources[m.source]?.terminal?.(m.params || {}); }
+  catch (e) { return send({ type: 'term-exit', reason: e.message }); }
   if (!spec) return send({ type: 'term-exit', reason: 'This session is gone' });
   const env = { ...process.env, TERM: 'xterm-256color' };
   NESTING_VARS.forEach(k => delete env[k]); // DevDock started inside a multiplexer would refuse to nest
@@ -956,11 +959,15 @@ async function openTerm(ws, m) {
   // typed in, so it never shows in a command line; inputWhen waits until the far side is ready
   let input = spec.input;
   if (input && !spec.inputWhen) { term.write(input); input = null; }
+  let blocked = false;
   term.onData(data => {
+    // macOS's Local Network privacy shows up in ssh as this odd error
+    if (!blocked && /connect to host .* Undefined error: 0/.test(data)) { blocked = true; data += '\r\n\x1b[33mmacOS kept DevDock off your local network. Turn on DevDock in System Settings > Privacy & Security > Local Network, then try again.\x1b[0m\r\n'; }
     if (input && data.includes(spec.inputWhen)) { term.write(input); input = null; }
     send({ type: 'term-out', data });
   });
-  term.onExit(() => { if (ws._term === term) { ws._term = null; send({ type: 'term-exit', reason: 'Detached' }); } });
+  // a one-shot command (an install) or a failure keeps its output on screen; a detach just closes
+  term.onExit(({ exitCode }) => { if (ws._term === term) { ws._term = null; send({ type: 'term-exit', reason: spec.keep || exitCode ? 'Ended' : 'Detached', code: exitCode }); } });
   send({ type: 'term-start' });
 }
 function closeTerm(ws) { const t = ws._term; ws._term = null; t?.kill(); }

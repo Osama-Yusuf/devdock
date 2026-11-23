@@ -14,6 +14,10 @@ const fs = require('fs');
 const os = require('os');
 const http = require('http');
 
+const path = require('path');
+// Compose files you pointed DevDock at after a stack's folder moved: stack name -> file
+const LOCATED = path.join(process.env.DEVDOCK_DATA || path.join(os.homedir(), 'Library/Application Support/DevDock'), 'compose-files.json');
+const located = () => { try { return JSON.parse(fs.readFileSync(LOCATED, 'utf8')); } catch { return {}; } };
 const PINNED_API = 1.47; // stable /system/df shape; older daemons get their own version
 const SOCKETS = [
   '~/.orbstack/run/docker.sock', '~/.docker/run/docker.sock', '/var/run/docker.sock',
@@ -136,8 +140,29 @@ module.exports = function containers(ctx) {
     for (const id of usage.keys()) if (!live.has(id)) { usage.delete(id); raw.delete(id); }
   }
 
+  // Compose projects as stacks: their services, where the compose file lives, what they use
+  function stacksOf(containers) {
+    const by = new Map();
+    for (const c of containers) if (c.project && !c.k8s) (by.get(c.project) || by.set(c.project, []).get(c.project)).push(c);
+    return [...by].map(([name, list]) => {
+      const files = [...new Set(list.flatMap(c => c.composeFiles || []))];
+      const live = list.filter(c => c.state === 'running');
+      let dir = list.find(c => c.composeDir)?.composeDir || null, filesFound = files.filter(f => ctx.DEMO || fs.existsSync(f));
+      const moved = !filesFound.length && located()[name];
+      if (moved && fs.existsSync(moved)) { filesFound = [moved]; dir = path.dirname(moved); }
+      return {
+        name, dir, files, filesFound, located: !!moved,
+        services: list.map(c => ({ id: c.id, name: c.service || c.name, state: c.state, status: c.status, image: c.image })).sort((a, b) => a.name.localeCompare(b.name)),
+        running: live.length, total: list.length,
+        ports: [...new Set(list.flatMap(c => c.ports))].sort((a, b) => a - b),
+        cpu: live.reduce((n, c) => n + (c.stats?.cpu || 0), 0), mem: live.reduce((n, c) => n + (c.stats?.mem || 0), 0),
+        lastUsed: list.reduce((m, c) => Math.max(m, c.lastUsed || 0), 0) || null,
+      };
+    }).sort((a, b) => (b.running > 0) - (a.running > 0) || a.name.localeCompare(b.name));
+  }
+
   async function scan() {
-    if (ctx.DEMO) return require('../demo').demoContainers();
+    if (ctx.DEMO) { last = require('../demo').demoContainers(); last.stacks = stacksOf(last.containers); return last; }
     if (!await connect()) return { available: false, reason: "Docker isn't running" };
     const df = await api('GET', '/system/df');
     if (df.status !== 200) { socketPath = null; return { available: false, reason: df.body?.message || "Docker isn't answering" }; }
@@ -154,6 +179,9 @@ module.exports = function containers(ctx) {
       lastUsed: await lastRun(c),
       size: c.SizeRw || 0,
       project: c.Labels?.['com.docker.compose.project'] || null,
+      service: c.Labels?.['com.docker.compose.service'] || null,
+      composeDir: c.Labels?.['com.docker.compose.project.working_dir'] || null,
+      composeFiles: (c.Labels?.['com.docker.compose.project.config_files'] || '').split(',').filter(Boolean),
       k8s: k8sOf(c.Labels),
       ports: [...new Set((c.Ports || []).map(p => p.PublicPort).filter(Boolean))].sort((a, b) => a - b),
       volumes: (c.Mounts || []).filter(m => m.Type === 'volume').map(m => m.Name),
@@ -208,7 +236,7 @@ module.exports = function containers(ctx) {
       // kubectl context of the cluster these k8s containers belong to, so commands never hit
       // whatever context is current. ponytail: OrbStack and Docker Desktop only, by socket path.
       k8sContext: socketPath.includes('/.orbstack/') ? 'orbstack' : socketPath.includes('/.docker/') ? 'docker-desktop' : null,
-      containers, images, volumes, buildCache,
+      containers, images, volumes, buildCache, stacks: stacksOf(containers),
       reclaimable: {
         containers: { count: stopped.length, size: sum(stopped, c => c.size) },
         // ponytail: layers shared only between unused images are counted once per image
@@ -256,13 +284,94 @@ module.exports = function containers(ctx) {
     return `${state}${text ? `\nRecent logs:\n${text}` : ''}`;
   }
 
+  // `docker compose` for one stack. -p alone is enough to start, stop, restart or take down
+  // what's running; pulling and recreating needs the compose files it was started from.
+  const docker = () => ctx.findBin('docker') || (() => { throw Object.assign(new Error("The docker command isn't installed"), { status: 400 }); })();
+  async function stack(name) {
+    if (!last?.stacks?.some(s => s.name === name)) await scan();
+    const s = last?.stacks?.find(x => x.name === name);
+    if (!s) throw Object.assign(new Error('That stack is gone'), { status: 404 });
+    return s;
+  }
+  const compose = (s, withFiles) => ['-H', `unix://${socketPath}`, 'compose', '-p', s.name,
+    ...(withFiles ? ['--project-directory', s.dir, ...s.filesFound.flatMap(f => ['-f', f])] : [])];
+  // Kubernetes containers: kubectl exec, pinned to the cluster these came from, never the current context
+  const K8S_NAME = /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$/;
+  async function k8sExec(id, cmd, tty) {
+    await known('containers', 'id', id);
+    const c = last.containers.find(x => x.id === id), k = c.k8s;
+    if (!k || !last.k8sContext) throw Object.assign(new Error("Can't tell which cluster this container is in"), { status: 400 });
+    if (![k.pod, k.namespace, k.container].every(v => K8S_NAME.test(v || ''))) throw Object.assign(new Error('Unexpected pod name'), { status: 400 });
+    const kubectl = ctx.findBin('kubectl');
+    if (!kubectl) throw Object.assign(new Error("The kubectl command isn't installed"), { status: 400 });
+    return { file: kubectl, args: ['--context', last.k8sContext, '-n', k.namespace, 'exec', ...(tty ? ['-it'] : []), k.pod, '-c', k.container, '--', 'sh', '-c', cmd] };
+  }
+  const SHELL = 'command -v bash >/dev/null 2>&1 && exec bash || exec sh';
+
+  async function running(id) {
+    await notK8s(id);
+    const c = last.containers.find(x => x.id === id);
+    if (c.state !== 'running') throw Object.assign(new Error(`${c.name} isn't running`), { status: 400 });
+    return c;
+  }
+
+  // Commands that run inside DevDock's terminal, so you watch them happen
+  async function terminal(p) {
+    if (ctx.DEMO) return null;
+    if (p.kind === 'shell' && last?.containers?.find(x => x.id === p.id)?.k8s) return k8sExec(p.id, SHELL, true);
+    if (p.kind === 'shell') {
+      const c = await running(p.id);
+      // bash if the image has it, else sh; values ride as argv, never inside the script
+      return { file: docker(), args: ['-H', `unix://${socketPath}`, 'exec', '-it', c.id, 'sh', '-c', 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'] };
+    }
+    if (p.kind === 'update') {
+      const s = await stack(p.stack);
+      if (!s.filesFound.length) throw Object.assign(new Error(`Can't find ${s.name}'s compose file`), { status: 400 });
+      const args = compose(s, true);
+      return { file: '/bin/sh', cwd: s.dir, args: ['-c', '"$0" "$@" pull && "$0" "$@" up -d && echo && echo "Updated. Close with ⌘."', docker(), ...args] };
+    }
+    return null;
+  }
+
   return {
     id: 'containers',
+    terminal,
     intervalMs: 5000,
     scan,
     last: () => last,
     snapshot,
     actions: {
+      // compose up/down/start/stop for a whole stack; down keeps volumes
+      async stack({ stack: name, op }) {
+        if (!['start', 'stop', 'restart', 'down'].includes(op)) throw Object.assign(new Error('Unknown stack action'), { status: 400 });
+        if (ctx.DEMO) return {};
+        const s = await stack(name);
+        const r = await ctx.run(docker(), [...compose(s, false), op], { timeout: 180000 });
+        if (r.code) throw Object.assign(new Error((r.stderr || r.stdout).trim().split('\n').pop() || `docker compose ${op} failed`), { status: 500 });
+        return {};
+      },
+      // The stack's folder moved: pick its compose file in the Finder, remembered from then on
+      async locateCompose({ stack: name }) {
+        const s = await stack(name);
+        const r = await ctx.run('/usr/bin/osascript', ['-e', 'on run argv', '-e', 'POSIX path of (choose file with prompt ("Find the compose file for " & item 1 of argv))', '-e', 'end run', s.name], { timeout: 300000 });
+        const file = r.stdout.trim();
+        if (r.code || !file) return { cancelled: true };
+        if (!/\.ya?ml$/i.test(file)) throw Object.assign(new Error('Pick the compose .yaml or .yml file'), { status: 400 });
+        const all = located();
+        all[s.name] = file;
+        fs.mkdirSync(path.dirname(LOCATED), { recursive: true });
+        fs.writeFileSync(LOCATED, JSON.stringify(all, null, 2), { mode: 0o600 });
+        await scan();
+        return { file };
+      },
+      // can we open a shell? distroless and scratch images have none
+      async canShell({ id }) {
+        if (ctx.DEMO) return { ok: true };
+        if (last?.containers?.find(x => x.id === id)?.k8s) { const k = await k8sExec(id, 'exit 0', false); return { ok: (await ctx.run(k.file, k.args, { timeout: 10000 })).code === 0 }; }
+        const c = await running(id);
+        const r = await ctx.run(docker(), ['-H', `unix://${socketPath}`, 'exec', c.id, 'sh', '-c', 'exit 0'], { timeout: 8000 });
+        return { ok: r.code === 0 };
+      },
       start: async ({ id }) => (await call('POST', `/containers/${await notK8s(id)}/start`), {}),
       stop: async ({ id }) => (await call('POST', `/containers/${await notK8s(id)}/stop`, { timeout: 60000 }), {}),
       // no force: Docker refuses running containers and images or volumes still in use

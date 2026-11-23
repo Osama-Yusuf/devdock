@@ -175,6 +175,12 @@
       if (m.type === 'term-out') term.write(m.data);
       else if (m.type === 'term-exit') {
         if (m.reason === 'Detached') return closeTerm(); // detach key, like a real terminal
+        if (m.reason === 'Ended') { // keep what it printed, say how it ended
+          term.options.disableStdin = true;
+          term.write(m.code ? `\r\n\x1b[31m● Stopped with exit code ${m.code}.\x1b[0m The output above says why. Close when you're done.\r\n`
+            : '\r\n\x1b[32m● Done.\x1b[0m Close when you\'re ready.\r\n');
+          return;
+        }
         term.dispose(); term = null;
         $('termBox').innerHTML = `<div class="term-status">${esc(m.reason)}</div>`;
       }
@@ -307,37 +313,49 @@
     }
 
     // ── Export ────────────────────────────────────────────────────────
+    let exportOn = true;
     function updateExportVisibility(show) {
-      const wrapper = $('exportBtn')?.closest('.export-wrapper');
-      if (wrapper) wrapper.style.display = show ? '' : 'none';
+      exportOn = show !== false;
+      refreshExport();
     }
+    // What the current tab shows, as columns and rows. Servers knows its ports; a view can
+    // say its own (exportRows); otherwise the biggest table on screen, minus action columns.
+    function exportData() {
+      if (DevDock.tab === 'servers') {
+        return { name: 'servers', cols: ['Port', 'PID', 'User', 'Process', 'Runtime', 'Path'],
+          rows: getFilteredAndSortedPorts().map(p => [p.port || '', p.pid, p.user || '', p.command, p.runtimeName, p.scriptPath || '']) };
+      }
+      const own = DevDockViews[DevDock.tab]?.exportRows?.();
+      if (own) return { name: DevDock.tab, ...own };
+      const t = [...document.querySelectorAll(`#${DevDock.tab}View table`)].filter(t => t.offsetParent)
+        .sort((a, b) => b.tBodies[0]?.rows.length - a.tBodies[0]?.rows.length)[0];
+      if (!t) return { name: DevDock.tab, cols: [], rows: [] };
+      const head = [...t.tHead.rows[0].cells].map(c => c.textContent.trim());
+      const keep = head.map((h, i) => h ? i : -1).filter(i => i >= 0);
+      const text = c => c ? c.innerText.split('\n').map(x => x.trim()).filter(Boolean).join(' · ') : '';
+      return { name: DevDock.tab, cols: keep.map(i => head[i]),
+        rows: [...t.tBodies[0].rows].filter(r => r.offsetParent && r.cells.length >= keep.length).map(r => keep.map(i => text(r.cells[i]))) };
+    }
+    // Enabled only when there's something to export, like a toolbar item on the Mac
+    function refreshExport() {
+      const wrapper = $('exportBtn')?.closest('.export-wrapper');
+      if (!wrapper) return;
+      wrapper.style.display = exportOn ? '' : 'none';
+      const n = exportOn ? exportData().rows.length : 0;
+      $('exportBtn').disabled = !n;
+      $('exportBtn').title = n ? `Copy ${n} ${n === 1 ? 'row' : 'rows'} from this tab` : 'Nothing to export on this tab';
+      if (!n) $('exportMenu').classList.remove('open');
+    }
+    window.refreshExport = refreshExport;
 
     function exportAs(format) {
-      const data = getFilteredAndSortedPorts();
-      let output = '';
-
-      if (format === 'json') {
-        output = JSON.stringify(data.map(p => ({
-          port: p.port, pid: p.pid, user: p.user,
-          process: p.command, runtime: p.runtimeName, path: p.scriptPath,
-        })), null, 2);
-      } else if (format === 'markdown') {
-        output = '| Port | PID | User | Process | Runtime | Path |\n';
-        output += '|------|-----|------|---------|---------|------|\n';
-        data.forEach(p => {
-          output += `| ${p.port || '-'} | ${p.pid} | ${p.user || '-'} | ${p.command} | ${p.runtimeName} | ${p.scriptPath || '-'} |\n`;
-        });
-      } else if (format === 'csv') {
-        output = 'Port,PID,User,Process,Runtime,Path\n';
-        data.forEach(p => {
-          output += `${p.port || ''},${p.pid},${p.user || ''},${p.command},${p.runtimeName},"${p.scriptPath || ''}"\n`;
-        });
-      }
-
-      navigator.clipboard.writeText(output).then(() => {
-        showToast(`Copied as ${format.toUpperCase()}`);
-      });
-
+      const { name, cols, rows } = exportData();
+      const md = v => String(v).replace(/\|/g, '\\|');
+      const csv = v => /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
+      const output = format === 'json' ? JSON.stringify(rows.map(r => Object.fromEntries(cols.map((c, i) => [c, r[i]]))), null, 2)
+        : format === 'markdown' ? [`| ${cols.map(md).join(' | ')} |`, `|${cols.map(() => '---').join('|')}|`, ...rows.map(r => `| ${r.map(md).join(' | ')} |`)].join('\n') + '\n'
+        : [cols, ...rows].map(r => r.map(csv).join(',')).join('\n') + '\n';
+      navigator.clipboard.writeText(output).then(() => showToast(`Copied ${rows.length} ${name} ${rows.length === 1 ? 'row' : 'rows'} as ${format === 'markdown' ? 'Markdown' : format.toUpperCase()}`));
       $('exportMenu').classList.remove('open');
     }
 
@@ -772,6 +790,7 @@
     let lastFilteredKeys = '';
 
     function renderTable() {
+      queueMicrotask(refreshExport);
       renderServerPatterns();
       const filtered = getFilteredAndSortedPorts();
 
@@ -1149,6 +1168,7 @@
       resultInfo.textContent = '';
       if (next !== 'servers') renderActiveView(); else if (allPorts.length) { lastFilteredKeys = ''; renderTable(); }
       updateClearBtn();
+      refreshExport();
     }
     // Home's "Show in …": open the tab, find the row, scroll to it and light it up for a moment.
     // Views re-render on every refresh, so the highlight is re-applied until it fades.
@@ -1165,8 +1185,17 @@
         if (++n > 22) { clearInterval(t); document.querySelectorAll('tr.row-hit').forEach(r => r.classList.remove('row-hit')); }
       }, 150);
     };
-    function renderActiveView() {
+    // Views redraw on every data refresh. A redraw between mouse-down and mouse-up swaps the
+    // element under the pointer and the click is lost, so refreshes wait for the button to come up.
+    let pressing = false, held = false;
+    document.addEventListener('pointerdown', () => { pressing = true; }, true);
+    const release = () => { pressing = false; if (held) { held = false; setTimeout(renderActiveView); } };
+    document.addEventListener('pointerup', release, true);
+    document.addEventListener('pointercancel', release, true);
+    function renderActiveView(fromData) {
+      if (fromData && pressing) { held = true; return; }
       if (DevDock.tab !== 'servers') DevDockViews[DevDock.tab]?.render();
+      refreshExport();
     }
     // Views report what the search left, same wording as Servers
     function setViewResult(shown, total) {
@@ -1202,7 +1231,7 @@
     };
     function handleSourceData(m) {
       DevDock.sourceData[m.id] = m.data;
-      if (m.id === DevDock.tab) renderActiveView();
+      if (m.id === DevDock.tab) renderActiveView(true);
       document.dispatchEvent(new CustomEvent('devdock:source', { detail: m.id }));
     }
 

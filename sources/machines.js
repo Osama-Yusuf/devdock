@@ -12,6 +12,23 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const https = require('https');
+const tls = require('tls');
+
+// The agent's certificate is self-signed, and Electron's TLS won't take a self-signed leaf as its
+// own trust anchor (plain Node does). So trust is the exact pin: a socket is handed to HTTP only
+// after its certificate's fingerprint matches the one paired, before a single byte is sent.
+class PinnedAgent extends https.Agent {
+  constructor(fp, opts) { super(opts); this.fp = fp; }
+  createConnection(options, done) {
+    const s = tls.connect({ ...options, rejectUnauthorized: false });
+    s.once('secureConnect', () => {
+      const c = s.getPeerX509Certificate?.();
+      if (c && c.fingerprint256.replace(/:/g, '').toLowerCase() === this.fp) return done(null, s);
+      s.destroy(); done(new Error('This machine\'s key changed'));
+    });
+    s.once('error', e => done(e));
+  }
+}
 const crypto = require('crypto');
 
 const DATA = process.env.DEVDOCK_DATA || path.join(os.homedir(), 'Library/Application Support/DevDock');
@@ -32,7 +49,8 @@ const keyCode = fp => fp.slice(0, 16).toUpperCase().match(/.{4}/g).join(' ');
 // Touch ID key in the Secure Enclave (native/devdock-key.swift); signs every action
 const KEYTOOL = path.join(__dirname, '..', 'native', 'devdock-key');
 const ACTION_KEY = path.join(DATA, 'action-key.blob');
-const ACTIONS = { 'process-stop': 'Stop', 'process-kill': 'Force quit', 'container-stop': 'Stop', 'container-start': 'Start', 'container-restart': 'Restart' };
+const ACTIONS = { 'process-stop': 'Stop', 'process-kill': 'Force quit', 'container-stop': 'Stop', 'container-start': 'Start', 'container-restart': 'Restart',
+  'stack-stop': 'Stop', 'stack-start': 'Start', 'stack-restart': 'Restart' };
 
 function keytool(args, input) {
   return new Promise((resolve, reject) => {
@@ -69,7 +87,7 @@ function clean(b) {
     processes: L(b.processes, p => ({ pid: Math.trunc(N(p.pid)), name: T(p.name, 64), user: T(p.user, 32), cpu: N(p.cpu), mem: N(p.mem) })),
     ports: L(b.ports, p => ({ port: Math.trunc(N(p.port)), proto: T(p.proto, 8), pid: Math.trunc(N(p.pid)) || undefined, name: T(p.name, 64) }), 256),
     containers: L(b.containers, c => ({ id: T(c.id, 128), name: T(c.name, 128), image: T(c.image, 200), state: T(c.state, 16).replace(/[^a-z]/g, ''), status: T(c.status, 64),
-      created: N(c.created), project: T(c.project, 64), cpu: N(c.cpu), mem: N(c.mem), limit: N(c.limit), rx: N(c.rx), tx: N(c.tx) }), 256),
+      created: N(c.created), project: T(c.project, 64), service: T(c.service, 64), dir: T(c.dir, 256), cpu: N(c.cpu), mem: N(c.mem), limit: N(c.limit), rx: N(c.rx), tx: N(c.tx) }), 256),
     errors: (Array.isArray(b.errors) ? b.errors : []).slice(0, 16).map(e => T(e, 200)),
   }));
 }
@@ -95,6 +113,7 @@ module.exports = function machines(ctx) {
 
   const load = () => { try { return JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch { return []; } };
   function save(list) {
+    if (ctx.DEMO) return; // the demo never touches your real machines
     fs.mkdirSync(DATA, { recursive: true, mode: 0o700 });
     fs.writeFileSync(FILE + '.tmp', JSON.stringify(list, null, 2), { mode: 0o600 });
     fs.renameSync(FILE + '.tmp', FILE);
@@ -106,8 +125,7 @@ module.exports = function machines(ctx) {
     return new Promise((resolve, reject) => {
       const st = live.get(m.id) || {};
       if (!pairing && !st.agent) {
-        st.agent = new https.Agent({ keepAlive: true, maxSockets: 2, key: master.key, cert: master.cert, ca: m.agentCert,
-          rejectUnauthorized: true, checkServerIdentity: (_, c) => fpOf(c.raw) === m.agentFp ? undefined : new Error('This machine\'s key changed') });
+        st.agent = new PinnedAgent(m.agentFp, { keepAlive: true, maxSockets: 2, key: master.key, cert: master.cert });
         live.set(m.id, st);
       }
       const req = https.request({
@@ -243,7 +261,7 @@ module.exports = function machines(ctx) {
       const st = live.get(m.id) || { hist: [] };
       st.hist ||= [];
       live.set(m.id, st);
-      const base = () => ({ id: m.id, name: m.name, emoji: m.emoji, color: m.color, picture: m.picture || null, host: m.host, port: m.port,
+      const base = () => ({ id: m.id, name: m.name, emoji: m.emoji, icon: m.icon || null, color: m.color, picture: m.picture || null, host: m.host, port: m.port,
         ssh: m.ssh || '', scope: m.scope, networks: m.networks, addedAt: m.addedAt, pairedAt: m.pairedAt || null });
       if (!m.agentFp) {
         const p = await tryPair(m, list);
@@ -258,7 +276,8 @@ module.exports = function machines(ctx) {
         record(st, r.body, now);
         watchProcs(st, r.body, now);
       } catch (e) {
-        st.error = /certificate|key changed/i.test(e.message) ? 'This machine\'s key changed: it may have been reinstalled, or someone is impersonating it' : e.message;
+        st.error = /key changed/i.test(e.message) ? 'This machine\'s key changed: it may have been reinstalled, or someone is impersonating it' : e.message;
+        if (!/key changed/.test(st.error)) st.agent?.destroy?.(), st.agent = null; // a fresh connection next time
         if (/key changed/.test(st.error)) st.agent?.destroy?.(), st.agent = null;
       }
       // a different key on that address is never "online", however recent the last good answer
@@ -286,6 +305,12 @@ module.exports = function machines(ctx) {
 
   // What ssh connects to: the machine's address, or what you set ("me@box", an ~/.ssh/config alias)
   const sshTarget = m => m.ssh || m.host;
+  function dockerTerminal(m, kind, target) {
+    const s = live.get(m.id)?.snap;
+    if (!m.agentFp || !m.scope?.containers || !s?.containers) throw bad("This machine doesn't share its containers");
+    return { file: '/usr/bin/ssh', args: ['-t', '--', sshTarget(m), dockerCommand(s.containers, kind, target)] };
+  }
+
   const SSH = /^[a-zA-Z0-9_][a-zA-Z0-9_.@:-]{0,127}$/;
   const SESSION = /^[a-zA-Z0-9_][a-zA-Z0-9_.:-]{0,63}$/;
 
@@ -306,6 +331,31 @@ module.exports = function machines(ctx) {
     intervalMs: 3000,
     scan,
     actions: {
+      // Machines this Mac already knows: ~/.ssh/config hosts, OrbStack VMs, Tailscale peers.
+      // Hints for the add sheet, nothing is contacted.
+      async nearby() {
+        if (ctx.DEMO) return { found: [{ host: 'nas.local', name: 'nas', from: 'SSH config' }, { host: 'pi.tail1234.ts.net', name: 'pi', from: 'Tailscale' }, { host: 'dev.orb.local', name: 'dev', from: 'OrbStack' }] };
+        const found = [], add = (host, name, from) => { if (host && /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,252}$/.test(host) && !found.some(f => f.host === host)) found.push({ host, name: name || host.split('.')[0], from }); };
+        try {
+          let alias = null;
+          for (const line of fs.readFileSync(path.join(os.homedir(), '.ssh/config'), 'utf8').split('\n')) {
+            const [k, ...v] = line.trim().split(/\s+/), key = (k || '').toLowerCase();
+            if (key === 'host') alias = v.length === 1 && !/[*?!]/.test(v[0]) ? v[0] : null;
+            if (key === 'hostname' && alias) { add(v[0], alias, 'SSH config'); alias = null; }
+          }
+        } catch {}
+        const orb = ctx.findBin('orb');
+        if (orb) {
+          const r = await ctx.run(orb, ['list', '-f', 'json'], { timeout: 4000 });
+          try { for (const m of JSON.parse(r.stdout)) if (m.state === 'running') add(`${m.name}.orb.local`, m.name, 'OrbStack'); } catch {}
+        }
+        const ts = ctx.findBin('tailscale') || ['/Applications/Tailscale.app/Contents/MacOS/Tailscale'].find(p => fs.existsSync(p));
+        if (ts) {
+          const r = await ctx.run(ts, ['status', '--json'], { timeout: 4000 });
+          try { for (const p of Object.values(JSON.parse(r.stdout).Peer || {})) if (p.Online && !/^(macOS|iOS|android)$/i.test(p.OS)) add(p.DNSName.replace(/\.$/, ''), p.HostName, 'Tailscale'); } catch {}
+        }
+        return { found: found.slice(0, 12) };
+      },
       // Start adding a machine: a token and the install command that carries it
       async add({ host, port = 7337, name, scope = {}, networks = 'private' }) {
         await ensureMaster();
@@ -339,6 +389,7 @@ module.exports = function machines(ctx) {
         // the prompt describes what is actually signed: the caller's label never reaches it
         const s = live.get(m.id)?.snap, what = action.startsWith('process')
           ? `${s?.processes?.find(p => String(p.pid) === target)?.name || 'process'} (pid ${target})`
+          : action.startsWith('stack') ? `stack ${target}`
           : `container ${s?.containers?.find(c => c.id === target || c.name === target)?.name || target}`;
         req.sig = await keytool(['sign', ACTION_KEY, `${ACTIONS[action].toLowerCase()} ${what.replace(/[^\w .()/:@-]/g, '').slice(0, 80)} on ${m.name}`], text);
         const r = await call(m, 'POST', '/v1/action', req, { timeout: 35000 });
@@ -354,11 +405,24 @@ module.exports = function machines(ctx) {
         return { sessions: r.stdout.split('\n').map(l => l.split(' ')).filter(f => f.length >= 2 && (f[0] === 'tmux' || f[0] === 'zellij') && SESSION.test(f[1]))
           .map(([mux, name, windows, attached]) => ({ mux, name, windows: +windows || 1, attached: attached === '1' || +attached > 0 })) };
       },
-      async customize({ id, name, emoji, color, ssh }) {
+      // One look at a time: a brand icon, an emoji or a picture; choosing one drops the others
+      async customize({ id, name, emoji, icon, color, ssh }) {
+        if (ctx.DEMO) return {};
         const list = load();
         const m = find(list, id);
+        const plain = () => { fs.rmSync(path.join(PICS, `${id}.png`), { force: true }); m.picture = null; };
         if (name != null) m.name = String(name).trim().slice(0, 40) || m.name;
-        if (emoji != null) m.emoji = [...String(emoji)].slice(0, 2).join('');
+        if (emoji != null) {
+          m.emoji = [...new Intl.Segmenter().segment(String(emoji))][0]?.segment.slice(0, 16) || ''; // one emoji, ZWJ ones too
+          if (m.emoji) { m.icon = undefined; plain(); }
+        }
+        if (icon === null) m.icon = undefined;
+        else if (icon != null) {
+          const { slug, title, hex, path: d } = icon;
+          if (!/^[a-z0-9]{1,64}$/.test(slug) || !/^[0-9A-Fa-f]{6}$/.test(hex) || typeof d !== 'string' || d.length > 30000 || !/^[MmLlHhVvCcSsQqTtAaZz0-9.,\s-]+$/.test(d)) throw bad('That icon looks wrong');
+          m.icon = { slug, title: String(title || slug).slice(0, 64), hex, path: d };
+          m.emoji = ''; plain();
+        }
         if (color != null && /^#[0-9a-f]{6}$/i.test(color)) m.color = color;
         if (ssh != null) {
           if (ssh && !SSH.test(ssh)) throw bad('SSH target looks wrong: use host, user@host or an ~/.ssh/config name');
@@ -369,6 +433,7 @@ module.exports = function machines(ctx) {
       },
       // A small picture, already resized by the page; stored as a file, served by /api/machines/:id/picture
       async picture({ id, dataUrl }) {
+        if (ctx.DEMO) return {};
         const list = load();
         const m = find(list, id);
         if (dataUrl === null) { fs.rmSync(path.join(PICS, `${id}.png`), { force: true }); m.picture = null; save(list); return {}; }
@@ -377,6 +442,7 @@ module.exports = function machines(ctx) {
         fs.mkdirSync(PICS, { recursive: true, mode: 0o700 });
         fs.writeFileSync(path.join(PICS, `${id}.png`), Buffer.from(b64, 'base64'), { mode: 0o600 });
         m.picture = Date.now(); // also busts the page's cache
+        m.icon = undefined; m.emoji = '';
         save(list);
         return {};
       },
@@ -409,10 +475,11 @@ module.exports = function machines(ctx) {
     },
     // Terminals go through your own SSH, never the agent: it can't start a shell, so it can't
     // be turned into one. Pending machines: the install command. Paired: a shell, or attach.
-    terminal({ id, mux, session }) {
+    terminal({ id, mux, session, kind, target }) {
       const m = load().find(x => x.id === id);
       if (!m) return null;
-      if (!m.agentFp) return m.token && master ? { file: '/usr/bin/ssh', args: ['-t', '--', sshTarget(m), installCommand(m, true)], input: m.token + '\n', inputWhen: READY } : null;
+      if (kind) return dockerTerminal(m, kind, target);
+      if (!m.agentFp) return m.token && master ? { file: '/usr/bin/ssh', args: ['-t', '--', sshTarget(m), installCommand(m, true)], input: m.token + '\n', inputWhen: READY, keep: true } : null;
       if (!mux) return { file: '/usr/bin/ssh', args: ['-t', '--', sshTarget(m)] };
       if (!SESSION.test(session || '')) return null;
       const cmd = { tmux: `tmux attach -t '=${session}'`, zellij: `zellij attach '${session}'` }[mux];
@@ -422,4 +489,28 @@ module.exports = function machines(ctx) {
   };
 };
 
+// Docker over your SSH: a shell in a container, or `compose pull && up -d` for a stack.
+// Names and paths come from the agent's snapshot, so each is checked against a strict
+// pattern and single-quoted before it reaches the remote shell. Plain docker first,
+// sudo docker if this user can't reach the daemon (the prompt shows in the terminal).
+const sq = v => `'${v.replace(/'/g, `'\\''`)}'`;
+const DOCKER = 'D=docker; $D info >/dev/null 2>&1 || D="sudo docker"; if $D compose version >/dev/null 2>&1; then C="$D compose"; else C="${D%docker}docker-compose"; fi;';
+function dockerCommand(containers, kind, target) {
+  if (kind === 'container-shell') {
+    const c = containers.find(x => x.id === target);
+    if (!c || !/^[0-9a-f]{12,64}$/.test(c.id)) throw bad('That container is gone');
+    if (c.state !== 'running') throw bad(`${c.name} isn't running`);
+    return `${DOCKER} $D exec ${c.id} sh -c 'exit 0' >/dev/null 2>&1 || { echo "${c.id.slice(0, 12)} has no shell: its image ships without one."; exit 1; }; exec $D exec -it ${c.id} sh -c 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'`;
+  }
+  if (kind === 'stack-update') {
+    const c = containers.find(x => x.project === target && x.dir);
+    if (!c || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/.test(c.project)) throw bad('That stack is gone');
+    if (!/^\/[A-Za-z0-9_.\/@+ -]{0,255}$/.test(c.dir)) throw bad(`Can't update from ${c.dir}: unusual folder name`);
+    return `${DOCKER} cd ${sq(c.dir)} && $C -p ${sq(c.project)} pull && $C -p ${sq(c.project)} up -d && echo && echo "Updated ${c.project}."`;
+  }
+  throw bad('Unknown terminal');
+}
+
 module.exports.clean = clean;
+module.exports.dockerCommand = dockerCommand;
+module.exports.PinnedAgent = PinnedAgent;

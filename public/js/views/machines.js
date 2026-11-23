@@ -20,12 +20,21 @@
     finger: svg('<path d="M12 11v3a7 7 0 0 1-1.5 4.3"/><path d="M8.5 7.5A4.5 4.5 0 0 1 16.5 10v2.5a11 11 0 0 1-.8 4.1"/><path d="M5.5 9a7 7 0 0 1 13.4-1.5"/><path d="M8 12v1a10 10 0 0 1-1.4 5.2"/><path d="M19.8 13a15 15 0 0 1-.9 4.3"/>', 12),
     stop: svg('<rect x="6" y="6" width="12" height="12" rx="2"/>', 11),
     play: svg('<path d="M7 5v14l11-7z"/>', 11),
+    update: svg('<path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/>', 11),
+    edit: svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>', 11),
+    search: svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>', 14),
+    image: svg('<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>', 26),
     redo: svg('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>', 11),
     hand: svg('<path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.9-2.3l-3.6-3.6a2 2 0 0 1 2.8-2.8L7 15"/>', 13),
     back: svg('<path d="m15 18-6-6 6-6"/>', 16, 'stroke-width="2.4"'),
     close: svg('<path d="M18 6 6 18M6 6l12 12"/>', 11),
     trash: svg('<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>', 13),
-    server: svg('<rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/>', 28),
+    server: svg('<rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/>', 22),
+    monitor: svg('<rect x="2" y="3" width="20" height="13" rx="2"/><path d="M8 21h8M12 16v5"/>', 30),
+    laptop: svg('<rect x="4" y="4" width="16" height="11" rx="1.5"/><path d="M2 19h20"/>', 22),
+    box: svg('<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>', 18),
+    pulse: svg('<path d="M3 12h4l3-8 4 16 3-8h4"/>', 18),
+    sliders: svg('<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>', 18),
   };
   const COLORS = ['#60a5fa', '#a78bfa', '#34d399', '#f472b6', '#fbbf24', '#22d3ee', '#fb7185', '#94a3b8'];
   const SCOPES = [
@@ -48,8 +57,12 @@
   const rate = n => { const u = ['B', 'KB', 'MB', 'GB']; let i = 0; while (n >= 1000 && i < 3) { n /= 1000; i++; } return `${n < 10 && i ? n.toFixed(1) : Math.round(n)} ${u[i]}/s`; };
   const dur = s => { const m = Math.floor(s / 60); return m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`; };
 
+  // A Simple Icons logo in its brand colour; near-black brands use the text colour so they show on dark
+  const lum = hex => { const [r, g, b] = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16) / 255); return .2126 * r + .7152 * g + .0722 * b; };
+  const brand = (hex, d, px) => `<svg viewBox="0 0 24 24" width="${px}" height="${px}" aria-hidden="true"><path fill="${lum(hex) < .22 || lum(hex) > .92 ? 'var(--text)' : '#' + hex}" d="${d}"/></svg>`;
   function avatar(m, size = 40) {
     const inner = m.picture ? `<img src="/api/machines/${m.id}/picture?v=${m.picture}" alt="">`
+      : m.icon ? brand(m.icon.hex, m.icon.path, size * .52)
       : m.emoji ? `<span class="memoji">${esc(m.emoji)}</span>` : ICON.server.replace(/width="28" height="28"/, `width="${size * .5}" height="${size * .5}"`);
     return `<span class="mavatar" style="--mc:${m.color};width:${size}px;height:${size}px">${inner}</span>`;
   }
@@ -130,17 +143,26 @@
 
   function emptyHTML() {
     return `<section class="mhero">
-      <div class="mhero-art">${ICON.server}</div>
-      <h2>Bring your servers into DevDock</h2>
-      <p>A 7 MB agent with no UI shares what you choose from each machine: vitals, processes, ports, containers.</p>
-      <ol class="msteps"><li><b>1</b>Pick what it may share</li><li><b>2</b>Run one command there</li><li><b>3</b>It appears here, paired</li></ol>
-      <div class="mchips"><span>${ICON.key}Paired to this Mac only</span><span>${ICON.lock}Encrypted both ways</span><span>${ICON.net}Private networks only</span><span>${ICON.eye}Read-only</span></div>
-      <button class="btn-primary madd big" onclick="DevDockViews.machines.openAdd()">${ICON.plus}Add your first machine</button>
+      <div class="mhero-art">${ICON.monitor}</div>
+      <h2>No machines yet</h2>
+      <p>See your servers, VMs and Raspberry Pis next to this Mac: vitals, processes, ports and containers.</p>
+      <div class="mlink" aria-hidden="true">
+        <div class="mlink-node">${ICON.laptop}<span>This Mac</span></div>
+        <div class="mlink-wire"><i></i><b>${ICON.lock}</b></div>
+        <div class="mlink-node">${ICON.server}<span>Your machine</span></div>
+      </div>
+      <ol class="msteps">
+        <li><b>1</b><span>Tell DevDock where it is</span></li>
+        <li><b>2</b><span>Run one command on it</span></li>
+        <li><b>3</b><span>Check the key, and it's paired</span></li>
+      </ol>
+      <button class="btn-primary madd" onclick="DevDockViews.machines.openAdd()">${ICON.plus}Add Machine…</button>
+      <p class="mfine">${ICON.key}Only this Mac's key gets in, and every action asks for Touch ID.</p>
     </section>`;
   }
 
   // ── Add a machine ──────────────────────────────────────────────────
-  function sheet(id, body) {
+  function sheet(id, body, fresh) {
     let el = document.getElementById(id);
     if (!el) {
       el = document.createElement('div');
@@ -150,22 +172,26 @@
       document.body.appendChild(el);
     }
     el.style.display = 'flex';
+    if (el.dataset.body === body) return el; // same content: leave it, so animations and focus keep running
+    el.dataset.body = body;
     // keep what the user typed across live re-renders
-    const keep = [...el.querySelectorAll('input[name]')].map(i => [i.name, i.type === 'checkbox' || i.type === 'radio' ? i.checked : i.value, i.value]);
+    const focus = el.contains(document.activeElement) && document.activeElement.name;
+    const keep = fresh ? [] : [...el.querySelectorAll('input[name]')].map(i => [i.name, i.type === 'checkbox' || i.type === 'radio' ? i.checked : i.value, i.value]);
     el.innerHTML = `<div class="modal msheet">${body}</div>`;
     for (const [name, v, val] of keep) {
       const i = el.querySelector(`input[name="${name}"]${typeof v === 'boolean' ? `[value="${val}"]` : ''}`);
       if (i) typeof v === 'boolean' ? (i.checked = v) : (i.value = v);
     }
+    if (focus) { const i = el.querySelector(`input[name="${focus}"]`); if (i?.setSelectionRange) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }
     return el;
   }
   function close() {
-    adding = null;
+    adding = null; look = null;
     document.querySelectorAll('.msheet-overlay').forEach(e => e.remove());
   }
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape' || DevDock.tab !== 'machines' || document.querySelector('.modal-overlay[style*="flex"]:not(.msheet-overlay)')) return;
-    if (adding) close();
+    if (adding || look) close();
     else if (openId && !e.target.matches('input')) DevDockViews.machines.back();
   });
 
@@ -184,36 +210,160 @@
         <h2>${esc(m.name)} is paired</h2><p>Only this Mac can talk to it, over an encrypted link, and it shares only what you picked.</p>
         <button class="btn-primary" onclick="DevDockViews.machines.close();DevDockViews.machines.open('${m.id}')">Open ${esc(m.name)}</button></div>`);
     }
-    if (m) return sheet('maddSheet', `
-      <div class="modal-header"><div class="modal-title">Install on ${esc(m.host)}</div><button class="modal-close" onclick="DevDockViews.machines.close()">&times;</button></div>
-      <p class="msub">Run this on ${esc(m.host)}. It downloads the agent, sets it up as a locked-down service, and DevDock pairs with it on its own.</p>
-      <div class="mcmd"><code>${esc(m.command)}</code></div>
-      <div class="mrow">
-        <button class="btn-primary" onclick="copyText(DevDockViews.machines.cmd('${m.id}'), 'Install command')">${ICON.copy}Copy command</button>
-        <button class="hbtn" onclick="DevDockViews.machines.ssh('${m.id}')" title="Opens ssh ${esc(m.host)} in DevDock and runs it there; sudo asks for your password">${ICON.term}Run over SSH</button>
+    if (m) return installStep(m);
+    wizard();
+  }
+
+  // ── Step 3: run the command, and a short tour of what it does ─────
+  // Each stop lights up its part of the command and plays a small loop that shows the idea.
+  const TOUR = [
+    ['download', 'It fetches the installer and checks it', 'The download must match the installer inside this DevDock, byte for byte. The installer then only accepts an agent signed with DevDock\'s release key.',
+      [/curl -fsSLo "\$d\/i\.sh" \S+/, /grep -q "\^[0-9a-f]+ "/]],
+    ['master', 'It trusts only this Mac', 'This Mac\'s key fingerprint is baked in. Anything else that knocks on the agent\'s port is turned away, even on your own network.', [/--master \S+/]],
+    ['token', 'A one-time code proves it\'s yours', 'The code works once, within an hour. It goes to the installer on its input, so it never shows up in a command line other users could read.', [/t=[^;]+;/, /IFS= read -r t/]],
+    ['scope', 'It shares only what you picked', 'The list is written into the agent\'s settings. Only root on that machine can widen it later, never DevDock.', [/--scope \S+/, /--action-key \S+/]],
+    ['sandbox', 'It runs locked down', 'sudo is only for setting up the service. The agent itself runs as its own user, with no privileges and a 64 MB memory cap.', [/sudo sh "\$d\/i\.sh"/]],
+    ['key', 'You check its key', 'When it finishes it prints the agent\'s key. DevDock shows you the same key before it trusts the machine.', []],
+  ];
+  function marked(cmd, res) {
+    const hits = [];
+    for (const re of res) { const x = re.exec(cmd); if (x) hits.push([x.index, x.index + x[0].length]); }
+    hits.sort((a, b) => a[0] - b[0]);
+    let out = '', at = 0;
+    for (const [a, b] of hits) if (a >= at) { out += esc(cmd.slice(at, a)) + `<mark>${esc(cmd.slice(a, b))}</mark>`; at = b; }
+    return out + esc(cmd.slice(at));
+  }
+  function tourArt(k, m) {
+    const scopes = SCOPES.map(([id, label]) => `<span class="${m.scope?.[id] ? 'on' : ''}">${label}</span>`).join('');
+    return {
+      download: `<div class="ta-dl"><span class="ta-cloud">${ICON.net}</span><span class="ta-file">${ICON.copy}</span><span class="ta-seal">${ICON.check}</span></div>`,
+      master: `<div class="ta-master"><span class="ta-mac">${ICON.laptop}<i>${ICON.key}</i></span><span class="ta-x x1">${ICON.laptop}</span><span class="ta-x x2">${ICON.laptop}</span><span class="ta-srv">${ICON.server}</span><b class="ta-beam"></b></div>`,
+      token: `<div class="ta-code">${[0, 1, 2, 3, 4, 5].map(i => `<span style="--i:${i}"></span>`).join('')}<em>used</em></div>`,
+      scope: `<div class="ta-scope">${scopes}</div>`,
+      sandbox: `<div class="ta-box"><span class="ta-agent">${ICON.shield}</span><div class="ta-mem"><i></i><b>64 MB</b></div><small>user: devdock · no sudo</small></div>`,
+      key: `<div class="ta-keys"><code>${esc((m.keyCode || '7F3A 91C2 E04B').slice(0, 14))}</code><span>${ICON.check}</span><code>${esc((m.keyCode || '7F3A 91C2 E04B').slice(0, 14))}</code></div>`,
+    }[k];
+  }
+  function installStep(m) {
+    const f = adding, steps = `<ol class="mwz-steps">${STEPS.map((t, i) => `<li class="${i < 2 ? 'done' : 'on'}"><b>${i < 2 ? ICON.check : 3}</b>${t}</li>`).join('<i></i>')}</ol>`;
+    const head = `<div class="modal-header"><div class="modal-title">Install on ${esc(m.name)}</div><button class="modal-close" aria-label="Close" onclick="DevDockViews.machines.close()">&times;</button></div>${steps}`;
+    if (f.tour != null) {
+      const [k, title, text, res] = TOUR[f.tour], last = f.tour === TOUR.length - 1;
+      return sheet('maddSheet', `${head}
+        <div class="mtour" data-k="${k}">
+          <div class="mtour-art" aria-hidden="true">${tourArt(k, m)}</div>
+          <div class="mtour-n">${f.tour + 1} of ${TOUR.length}</div>
+          <h3 class="mwz-q">${title}</h3><p class="mtour-p">${text}</p>
+          <pre class="mtour-cmd">${marked(m.command, res)}</pre>
+          <div class="mtour-dots">${TOUR.map((_, i) => `<button aria-label="Step ${i + 1}" class="${i === f.tour ? 'on' : ''}" onclick="DevDockViews.machines.tourGo(${i})"></button>`).join('')}</div>
+        </div>
+        <div class="modal-footer"><button class="hbtn ghost" onclick="DevDockViews.machines.tourGo(${f.tour ? f.tour - 1 : null})">${f.tour ? 'Back' : 'Done'}</button>
+          <button class="btn-primary" onclick="DevDockViews.machines.tourGo(${last ? null : f.tour + 1})">${last ? 'Got It' : 'Next'}</button></div>`, true);
+    }
+    const how = f.how || 'ssh', orb = /\.orb\.local$/.test(m.host) && m.host.replace(/\.orb\.local$/, '');
+    return sheet('maddSheet', `${head}
+      <h3 class="mwz-q">How do you want to run it?</h3>
+      <div class="mpresets">
+        <label class="mpreset"><input type="radio" name="how" value="ssh" ${how === 'ssh' ? 'checked' : ''} onchange="DevDockViews.machines.set('how', 'ssh')">
+          <span class="mpreset-ic">${ICON.term}</span><span><b>Run it for me<em>Recommended</em></b><small>DevDock connects with ssh ${esc(m.ssh || m.host)} and runs it. sudo may ask for your password.</small></span></label>
+        <label class="mpreset"><input type="radio" name="how" value="paste" ${how === 'paste' ? 'checked' : ''} onchange="DevDockViews.machines.set('how', 'paste')">
+          <span class="mpreset-ic">${ICON.copy}</span><span><b>I'll paste it myself</b><small>Copy one command and run it in any terminal on ${esc(m.name)}.</small></span></label>
       </div>
-      <div class="mwait"><div class="mradar small"><i></i><i></i><i></i></div><div><b>${esc(m.note || 'Waiting for the agent…')}</b><span>Checking ${esc(m.host)}:${m.port} every few seconds. The code in this command works once, for an hour.</span></div></div>
-      <details class="mwhy"><summary>${ICON.shield}What this command does</summary><ul>
-        <li><b>--master</b> is this Mac's key fingerprint. The agent will accept nobody else.</li>
-        <li><b>t</b> is a one-time code. It goes to the installer on its input, never on a command line other users could read. The agent proves it has it when pairing.</li>
-        <li>The installer must match the one inside this DevDock, and it only installs an agent signed with DevDock's release key.</li>
-        <li>When it's done it prints the agent's key. DevDock shows you the same key before it trusts the machine.</li>
-        <li><b>--scope</b> is what it may share. Only root on that machine can widen it later, never DevDock.</li>
-        <li>It runs as its own user, with no privileges and a 64 MB memory cap.</li></ul></details>
-      <div class="modal-footer"><button class="hbtn ghost" onclick="DevDockViews.machines.remove('${m.id}')">Cancel and forget it</button></div>`);
-    sheet('maddSheet', `
-      <div class="modal-header"><div class="modal-title">Add a machine</div><button class="modal-close" onclick="DevDockViews.machines.close()">&times;</button></div>
-      <label class="mfield"><span>Where is it?</span><input name="host" placeholder="nas.local, 192.168.1.20 or a Tailscale name" autocomplete="off" spellcheck="false" autofocus></label>
-      <div class="mfields2"><label class="mfield"><span>Name</span><input name="name" placeholder="optional" maxlength="40"></label>
-        <label class="mfield"><span>Port</span><input name="port" value="7337" inputmode="numeric"></label></div>
-      <h4 class="mh">What it may share <em>recommended choices are ticked</em></h4>
-      <div class="mscopes">${SCOPES.map(([k, label, hint, rec]) => `<label class="mscope"><input type="checkbox" name="scope-${k}" value="1" ${rec ? 'checked' : ''}><span><b>${label}${k === 'containers' ? ` <i class="mwarn">${ICON.warn}root-level</i>` : k === 'actions' ? ` <i class="mtid">${ICON.finger}Touch ID</i>` : ''}</b><small>${hint}</small></span></label>`).join('')}
-        <label class="mscope off"><input type="checkbox" disabled><span><b>Terminal</b><small>A shell on the machine, opened with Touch ID. Coming soon.</small></span></label></div>
-      <h4 class="mh">Who may connect</h4>
-      <div class="mscopes two"><label class="mscope"><input type="radio" name="networks" value="private" checked><span><b>Private networks</b><small>Your LAN and Tailscale. Recommended.</small></span></label>
-        <label class="mscope"><input type="radio" name="networks" value="any"><span><b>Any network</b><small>Still only this Mac's key gets in, but the port is reachable from anywhere.</small></span></label></div>
-      <div class="mlayers">${ICON.key}Paired to this Mac ${ICON.lock}TLS 1.3 both ways ${ICON.eye}Read-only ${ICON.hand}Root decides the scope</div>
-      <div class="modal-footer"><button class="hbtn ghost" onclick="DevDockViews.machines.close()">Cancel</button><button class="btn-primary" onclick="DevDockViews.machines.create()">Create install command</button></div>`);
+      ${how === 'ssh' ? `<div class="mrun"><button class="btn-primary" onclick="DevDockViews.machines.ssh('${m.id}')">${ICON.play}Run on ${esc(m.name)}</button>
+          <span>Uses your SSH keys and ~/.ssh/config. Different user? Add a machine as <code>me@${esc(m.host)}</code>.</span></div>`
+        : `<ol class="mpaste">
+          <li><b>1</b><span>Open a terminal on ${esc(m.name)}: <code>${orb ? `orb -m ${esc(orb)}` : `ssh ${esc(m.host)}`}</code>${orb ? ' (an OrbStack machine)' : ', or its own console'}</span></li>
+          <li><b>2</b><span>Paste this and press Return</span></li></ol>
+          <div class="mcmd"><code>${esc(m.command)}</code><button class="hbtn" onclick="copyText(DevDockViews.machines.cmd('${m.id}'), 'Install command')">${ICON.copy}Copy</button></div>`}
+      <div class="mwait"><div class="mradar small"><i></i><i></i><i></i></div><div><b>${esc(m.note || 'Waiting for the agent…')}</b><span>Checking ${esc(m.host)}:${m.port} every few seconds. The code in the command works once, for an hour.</span></div></div>
+      <button class="mtour-open" onclick="DevDockViews.machines.tourGo(0)">${ICON.shield}<span><b>What does the command do?</b><small>Six short steps, about a minute</small></span>${ICON.back}</button>
+      <div class="modal-footer"><button class="hbtn ghost" onclick="DevDockViews.machines.remove('${m.id}')">Cancel and Forget It</button></div>`, true);
+  }
+
+  // ── The add flow: three short steps, choices instead of forms ─────
+  const PRESETS = [
+    ['watch', ICON.pulse, 'Watch it', 'Vitals, the busiest processes and open ports. Nothing can change on it.', { system: true, processes: true, ports: true }],
+    ['docker', ICON.box, 'Watch it and its containers', 'Adds Docker containers and compose stacks. Docker access is root-level on most machines.', { system: true, processes: true, ports: true, containers: true }],
+    ['control', ICON.hand, 'Watch and act', 'Also stop processes and run containers and stacks. Each action asks for Touch ID here, and the machine checks it.', { system: true, processes: true, ports: true, containers: true, actions: true }],
+    ['custom', ICON.sliders, 'Choose myself', 'Pick exactly what it may share.', null],
+  ];
+  const STEPS = ['Where', 'Access', 'Install'];
+  let found = null; // machines DevDock spotted on this Mac's network, fetched once per open
+  function wizard() {
+    const f = adding;
+    const steps = `<ol class="mwz-steps">${STEPS.map((t, i) => `<li class="${i < f.step ? 'done' : i === f.step ? 'on' : ''}"><b>${i < f.step ? ICON.check : i + 1}</b>${t}</li>`).join('<i></i>')}</ol>`;
+    const head = `<div class="modal-header"><div class="modal-title">Add Machine</div><button class="modal-close" aria-label="Close" onclick="DevDockViews.machines.close()">&times;</button></div>${steps}`;
+    if (f.step === 0) {
+      const sugg = (found || []).filter(x => !data().machines.some(m => m.host === x.host));
+      return sheet('maddSheet', `${head}
+      <h3 class="mwz-q">Where is it?</h3>
+      <label class="mfield"><input name="host" value="${esc(f.host)}" placeholder="nas.local, 192.168.1.20 or a Tailscale name" autocomplete="off" spellcheck="false" autofocus
+        oninput="DevDockViews.machines.set('host', this.value)" onkeydown="if(event.key==='Enter')DevDockViews.machines.next()"></label>
+      ${found === null ? `<div class="mwz-found dim">Looking for machines nearby…</div>` : sugg.length ? `<div class="mwz-found"><span>Found on this Mac</span>${sugg.map(x => `<button class="mpick ${f.host === x.host ? 'on' : ''}" data-h="${esc(x.host)}" data-n="${esc(x.name)}" onclick="DevDockViews.machines.pickHost(this.dataset.h, this.dataset.n)" title="${esc(x.host)}">${ICON.server}<b>${esc(x.name)}</b><small>${esc(x.from)}</small></button>`).join('')}</div>` : ''}
+      <details class="mwz-more" ${f.name || f.port !== '7337' ? 'open' : ''}><summary>Name and port</summary>
+        <div class="mfields2"><label class="mfield"><span>Name</span><input name="name" value="${esc(f.name)}" placeholder="${esc(f.host.split('.')[0] || 'optional')}" maxlength="40" oninput="DevDockViews.machines.set('name', this.value)"></label>
+          <label class="mfield"><span>Port</span><input name="port" value="${esc(f.port)}" inputmode="numeric" oninput="DevDockViews.machines.set('port', this.value)"></label></div></details>
+      <div class="modal-footer"><button class="hbtn ghost" onclick="DevDockViews.machines.close()">Cancel</button><button class="btn-primary" ${f.host.trim() ? '' : 'disabled'} onclick="DevDockViews.machines.next()">Continue</button></div>`, true);
+    }
+    const custom = f.preset === 'custom';
+    sheet('maddSheet', `${head}
+      <h3 class="mwz-q">What may DevDock do on ${esc(f.name || f.host)}?</h3>
+      <div class="mpresets">${PRESETS.map(([k, ic, t, d]) => `<label class="mpreset"><input type="radio" name="preset" value="${k}" ${f.preset === k ? 'checked' : ''} onchange="DevDockViews.machines.set('preset', this.value)">
+        <span class="mpreset-ic">${ic}</span><span><b>${t}${k === 'watch' ? '<em>Recommended</em>' : ''}</b><small>${d}</small></span></label>`).join('')}</div>
+      ${custom ? `<div class="mscopes mcompact">${SCOPES.map(([k, label, hint]) => `<label class="mscope" title="${esc(hint)}"><input type="checkbox" ${f.scope[k] ? 'checked' : ''} onchange="DevDockViews.machines.scope('${k}', this.checked)"><span><b>${label}</b></span></label>`).join('')}</div>` : ''}
+      <div class="mwz-net"><span>Reachable from</span><div class="mseg" role="radiogroup">${[['private', 'Private networks'], ['any', 'Any network']].map(([v, t]) => `<button role="radio" aria-checked="${f.networks === v}" class="${f.networks === v ? 'on' : ''}" onclick="DevDockViews.machines.set('networks', '${v}')">${t}</button>`).join('')}</div>
+        <small>${f.networks === 'private' ? 'Your LAN and Tailscale. Recommended.' : "Still only this Mac's key gets in, but the port answers from anywhere."}</small></div>
+      <div class="modal-footer"><button class="hbtn ghost" onclick="DevDockViews.machines.back1()">Back</button><button class="btn-primary" ${Object.values(f.scope).some(Boolean) ? '' : 'disabled'} onclick="DevDockViews.machines.create()">Create Install Command</button></div>`, true);
+  }
+
+  // ── The icon picker: brand icons, emoji, or your own picture ──────
+  // Brand icons are Simple Icons (CC0), bundled, so it works offline. Search covers all of them.
+  const PICKS = ('ubuntu debian fedora redhat rockylinux almalinux archlinux alpinelinux nixos linux apple raspberrypi '
+    + 'docker kubernetes podman proxmox truenas synology unraid homeassistant nginx caddy traefikproxy cloudflare '
+    + 'googlecloud digitalocean hetzner vercel nodedotjs python go rust php ruby openjdk dotnet deno bun '
+    + 'mongodb postgresql mysql mariadb redis sqlite elasticsearch rabbitmq apachekafka grafana prometheus '
+    + 'jenkins gitlab github gitea plex jellyfin nextcloud pihole wireguard tailscale ollama nvidia minecraft').split(' ');
+  let look = null, ICONS = null, EMOJI = null;
+  const loadJSON = async u => (await fetch(u)).json();
+  function lookHTML() {
+    const m = byId(look.id);
+    if (!m) return close();
+    const tabs = [['icons', 'Icons'], ['emoji', 'Emoji'], ['upload', 'Upload']];
+    const q = look.q.trim().toLowerCase();
+    let body = '';
+    if (look.tab === 'icons') {
+      if (!ICONS) body = '<div class="lk-empty">Loading icons…</div>';
+      else {
+        const hit = q ? ICONS.filter(i => i[0].includes(q.replace(/[^a-z0-9]/g, '')) || i[1].toLowerCase().includes(q) || i[4].toLowerCase().includes(q))
+          .sort((a, b) => (b[1].toLowerCase().startsWith(q) - a[1].toLowerCase().startsWith(q)) || a[1].length - b[1].length).slice(0, 120)
+          : PICKS.map(k => ICONS.find(i => i[0] === k)).filter(Boolean);
+        body = (q ? '' : '<div class="lk-cap">Popular on servers</div>') + (hit.length ? `<div class="lk-grid">${hit.map(i => `<button class="lk-tile${m.icon?.slug === i[0] ? ' on' : ''}" data-s="${i[0]}" title="${esc(i[1])}" onclick="DevDockViews.machines.useIcon(this.dataset.s)">${brand(i[2], i[3], 26)}<span>${esc(i[1])}</span></button>`).join('')}</div>`
+          : `<div class="lk-empty">No icon called “${esc(look.q)}”. Try Emoji, or upload a picture.</div>`);
+      }
+    } else if (look.tab === 'emoji') {
+      if (!EMOJI) body = '<div class="lk-empty">Loading emoji…</div>';
+      else {
+        const list = q ? EMOJI.filter(e => e[1].includes(q)) : EMOJI;
+        const groups = [...new Set(list.map(e => e[2]))];
+        body = list.length ? groups.map(g => `${q ? '' : `<div class="lk-cap">${esc(g)}</div>`}<div class="lk-emoji">${list.filter(e => e[2] === g).map(e => `<button title="${esc(e[1])}" data-e="${esc(e[0])}" onclick="DevDockViews.machines.useEmoji(this.dataset.e)">${e[0]}</button>`).join('')}</div>`).join('')
+          : `<div class="lk-empty">No emoji for “${esc(look.q)}”.</div>`;
+      }
+    } else {
+      body = `<label class="lk-drop" ondragover="event.preventDefault();this.classList.add('over')" ondragleave="this.classList.remove('over')"
+          ondrop="event.preventDefault();DevDockViews.machines.usePicture(event.dataTransfer.files[0])">
+        ${m.picture ? avatar(m, 72) : ICON.image}<b>Drop a picture here</b><span>or click to choose one. PNG, JPEG or WebP; it's resized to 256 px.</span>
+        <input type="file" accept="image/png,image/jpeg,image/webp" onchange="DevDockViews.machines.usePicture(this.files[0])"></label>`;
+    }
+    sheet('mlookSheet', `<div class="modal-header"><div class="modal-title">Icon for ${esc(m.name)}</div><button class="modal-close" aria-label="Close" onclick="DevDockViews.machines.close()">&times;</button></div>
+      <div class="lk-top"><div class="mseg" role="tablist">${tabs.map(([k, t]) => `<button role="tab" aria-selected="${look.tab === k}" class="${look.tab === k ? 'on' : ''}" onclick="DevDockViews.machines.lookTab('${k}')">${t}</button>`).join('')}</div>
+        ${look.tab === 'upload' ? '' : `<label class="lk-search">${ICON.search}<input name="lq" value="${esc(look.q)}" placeholder="${look.tab === 'icons' ? 'Search 3,400 brands: mongo, postgres, node…' : 'Search emoji: rocket, fire, cloud…'}" autocomplete="off" spellcheck="false" autofocus oninput="DevDockViews.machines.lookFind(this.value)"></label>`}</div>
+      <div class="lk-body">${body}</div>
+      <div class="modal-footer lk-foot"><span class="dim small">${look.tab === 'icons' ? 'Brand icons from Simple Icons' : ''}</span><button class="hbtn ghost" onclick="DevDockViews.machines.lookReset('${m.id}')">Use Default</button></div>`, true).classList.add('lk-overlay');
+  }
+  async function lookLoad() {
+    if (look?.tab === 'icons' && !ICONS) ICONS = await loadJSON('/vendor/icons.json').catch(() => []);
+    if (look?.tab === 'emoji' && !EMOJI) EMOJI = await loadJSON('/vendor/emoji.json').catch(() => []);
+    if (look) lookHTML();
   }
 
   // ── One machine: a page with the same tabs as DevDock itself ───────
@@ -297,8 +447,15 @@
   // and esc() quotes come back as quotes before an onclick runs. Values ride in data-*.
   const actBtn = (m, action, target, label, cls, content, title = '') => `<button class="${cls}" title="${esc(title)}" data-id="${m.id}" data-a="${action}"
     data-t="${esc(String(target ?? ''))}" data-l="${esc(String(label ?? ''))}" onclick="DevDockViews.machines.act(this)">${content}</button>`;
-  const act = (m, list, target, label) => !m.scope?.actions || m.status !== 'online' ? '<td></td>'
-    : `<td class="macts">${list.map(([a, ic, t]) => actBtn(m, a, target, label, 'micon', ic, `${t} ${label} (Touch ID)`)).join('')}</td>`;
+  // The row's ⋯ menu, shown on hover, the same as every other DevDock table
+  const canAct = m => m.scope?.actions && m.status === 'online';
+  function rowMenu(id, items) {
+    items = items.filter(Boolean).join('');
+    return `<td class="actions-cell">${items ? `<button class="actions-trigger" aria-label="Actions" onclick="event.stopPropagation();toggleActionsMenu('${id}',this)">⋯</button><div class="actions-menu" id="menu-${id}">${items}</div>` : ''}</td>`;
+  }
+  // a signed action (asks for Touch ID), only when the machine allows actions
+  const signed = (m, action, target, label, icon, text, cls = '') => canAct(m) ? actBtn(m, action, target, label, cls, `${icon}${text}<span class="mtid-hint">${ICON.finger}</span>`, `${text} ${label}: asks for Touch ID`) : '';
+  const copyItem = (value, text) => `<button data-v="${esc(String(value))}" onclick="closeAllMenus();copyText(this.dataset.v, '${text}')">${ICON.copy}Copy ${text}</button>`;
   const matches = (q, ...f) => !q || q.split(/\s+/).every(w => f.join(' ').toLowerCase().includes(w));
   // Click a header to sort by it; again to flip. Numbers start biggest first.
   const msort = {};
@@ -339,6 +496,26 @@
     return { pick, html: groups.length ? `<div class="patterns mpatterns">${DevDockPatterns.html(scope, groups)}${DevDockPatterns.on(scope) ? `<span class="subbar-count">${pick(all).length} of ${all.length}</span>` : ''}</div>` : '' };
   }
 
+  // A button that opens a terminal over your SSH (docker exec, compose pull/up). Values ride in data-*.
+  const termItem = (m, kind, target, icon, text) => `<button data-id="${m.id}" data-k="${kind}" data-t="${esc(target)}" onclick="DevDockViews.machines.dockerTerm(this)">${icon}${text}</button>`;
+  // Compose projects on the machine, one row each, above the containers
+  function stacksHTML(m, containers) {
+    const by = new Map();
+    for (const c of containers) if (c.project) (by.get(c.project) || by.set(c.project, []).get(c.project)).push(c);
+    if (!by.size) return '';
+    const rows = [...by].map(([name, list]) => {
+      const on = list.filter(c => c.state === 'running').length, dir = list.find(c => c.dir)?.dir;
+      return `<tr data-key="s:${esc(name)}"><td><b>${esc(name)}</b>${dir ? `<div class="dim small" title="${esc(dir)}">${esc(dir)}</div>` : ''}</td>
+        <td><div class="stk-svcs">${list.map(c => `<span class="stk-svc ${c.state === 'running' ? 'on' : c.state === 'restarting' ? 'bad' : ''}" title="${esc(c.name)} · ${esc(c.image)}\n${esc(c.status)}"><i></i>${esc(c.service || c.name)}</span>`).join('')}</div></td>
+        <td class="num">${on}/${list.length}</td>
+        ${rowMenu(`ms-${name}`, [on < list.length && signed(m, 'stack-start', name, name, ICON.play, 'Start'), on && signed(m, 'stack-restart', name, name, ICON.redo, 'Restart'),
+          dir && termItem(m, 'stack-update', name, ICON.update, 'Update (pull and up)'), dir && copyItem(dir, 'folder'),
+          `<button data-v="${esc(name)}" onclick="closeAllMenus();DevDockViews.machines.onlyStack(this.dataset.v)">${ICON.eye}Show its containers</button>`,
+          on && signed(m, 'stack-stop', name, name, ICON.stop, 'Stop', 'danger')])}</tr>`;
+    });
+    return `<h4 class="mstacks-h">Stacks</h4>` + table([['Stack'], ['Services'], ['Running', 'num'], ['']], rows, '') + '<h4 class="mstacks-h">Containers</h4>';
+  }
+
   function tabBody(m, q) {
     const s = m.snap;
     if (mtab === 'overview') return overview(m);
@@ -350,14 +527,16 @@
       const ch = chips(s.processes);
       const rows = sorted(ch.pick(s.processes)).filter(p => matches(q, p.name, p.user, p.pid)).map(p => `<tr data-key="p:${p.pid}"><td><b>${esc(p.name)}</b></td><td>${esc(p.user)}</td><td class="num dim">${p.pid}</td>
         <td class="num"><span class="mcpu"><span class="mcpubar"><i style="width:${(p.cpu / max * 100).toFixed(1)}%"></i></span>${p.cpu.toFixed(1)}%</span></td>
-        <td class="mspark">${sparkline(m.procSpark?.[p.pid], { color: 'var(--accent)', w: 80, h: 20 })}</td><td class="num">${bytes(p.mem)}</td>${act(m, [['process-stop', ICON.stop, 'Stop'], ['process-kill', ICON.close, 'Force quit']], p.pid, p.name)}</tr>`);
+        <td class="mspark">${sparkline(m.procSpark?.[p.pid], { color: 'var(--accent)', w: 80, h: 20 })}</td><td class="num">${bytes(p.mem)}</td>${rowMenu(`mp-${p.pid}`, [copyItem(p.pid, 'PID'), signed(m, 'process-stop', p.pid, p.name, ICON.stop, 'Stop'), signed(m, 'process-kill', p.pid, p.name, ICON.close, 'Force quit', 'danger')])}</tr>`);
       return ch.html + table([['Process', '', 'name'], ['User', '', 'user'], ['PID', 'num', 'pid'], ['CPU', 'num', 'cpu'], ['Last 15 min'], ['Memory', 'num', 'mem'], ['']], rows, 'No processes match') + '<p class="hcap mnote">The 20 busiest processes, refreshed every 3 seconds.</p>';
     }
     if (mtab === 'ports') {
       const ch = chips(s.ports);
       const rows = sorted(ch.pick([...s.ports].sort((a, b) => a.port - b.port))).filter(p => matches(q, p.port, p.name, p.pid))
-        .map(p => `<tr><td class="num mono"><b>${p.port}</b></td><td>${esc(p.name || '–')}</td><td class="num dim">${p.pid || ''}</td><td class="dim">${esc(p.proto)}</td></tr>`);
-      return ch.html + table([['Port', 'num', 'port'], ['Process', '', 'name'], ['PID', 'num', 'pid'], ['Protocol', '', 'proto']], rows, 'Nothing listening matches');
+        .map(p => `<tr data-key="o:${p.port}"><td class="mono"><b>${p.port}</b></td><td>${esc(p.name || '–')}</td><td class="num dim">${p.pid || ''}</td><td class="dim">${esc(p.proto)}</td>
+          ${rowMenu(`mo-${p.port}-${p.proto}`, [p.proto === 'tcp' && `<button data-u="http://${esc(m.host)}:${p.port}" onclick="closeAllMenus();window.open(this.dataset.u)">${ICON.jump}Open in browser</button>`,
+            copyItem(`${m.host}:${p.port}`, 'address'), p.pid && signed(m, 'process-stop', p.pid, p.name || `port ${p.port}`, ICON.stop, `Stop ${esc(p.name || 'its process')}`, 'danger')])}</tr>`);
+      return ch.html + table([['Port', '', 'port'], ['Process', '', 'name'], ['PID', 'num', 'pid'], ['Protocol', '', 'proto'], ['']], rows, 'Nothing listening matches');
     }
     if (mtab === 'containers') {
       if (!s.containers) return `<div class="empty-view">${esc((s.errors || []).find(e => /docker/i.test(e)) || 'No Docker here')}</div>`;
@@ -367,9 +546,10 @@
         return `<tr data-key="c:${esc(c.id)}"><td><b>${esc(c.name)}</b>${c.project ? `<div class="dim small">${esc(c.project)}</div>` : ''}</td><td class="dim"><span class="mimg" title="${esc(c.image)}">${esc(c.image)}</span></td>
           <td><span class="mstate ${esc(c.state)}">${esc(c.state)}</span><div class="dim small">${esc(c.status)}</div></td>
           <td class="num">${on ? c.cpu.toFixed(1) + '%' : ''}</td><td class="num">${on ? bytes(c.mem) : ''}</td><td class="num dim">${on ? `↓ ${rate(c.rx)}<br>↑ ${rate(c.tx)}` : ''}</td>
-          ${act(m, on ? [['container-restart', ICON.redo, 'Restart'], ['container-stop', ICON.stop, 'Stop']] : [['container-start', ICON.play, 'Start']], c.id, c.name)}</tr>`;
+          ${rowMenu(`mc-${c.id.slice(0, 12)}`, [on && termItem(m, 'container-shell', c.id, ICON.term, 'Open a shell'), !on && signed(m, 'container-start', c.id, c.name, ICON.play, 'Start'),
+            on && signed(m, 'container-restart', c.id, c.name, ICON.redo, 'Restart'), copyItem(c.id.slice(0, 12), 'ID'), on && signed(m, 'container-stop', c.id, c.name, ICON.stop, 'Stop', 'danger')])}</tr>`;
       });
-      return ch.html + table([['Container', '', 'name'], ['Image', '', 'image'], ['State', '', 'state'], ['CPU', 'num', 'cpu'], ['Memory', 'num', 'mem'], ['Network', 'num', 'net'], ['']], rows, 'No containers match');
+      return ch.html + stacksHTML(m, s.containers) + table([['Container', '', 'name'], ['Image', '', 'image'], ['State', '', 'state'], ['CPU', 'num', 'cpu'], ['Memory', 'num', 'mem'], ['Network', 'num', 'net'], ['']], rows, 'No containers match');
     }
     return '';
   }
@@ -407,10 +587,9 @@
   function settingsHTML(m) {
     return `<div class="mcols2"><div>
       <section class="mgroup"><h4>Appearance</h4><div class="mlist">
-        <div class="mlistrow mlook"><label class="mdpic" title="Change picture">${avatar(m, 56)}<input type="file" accept="image/png,image/jpeg,image/webp" onchange="DevDockViews.machines.pic('${m.id}', this.files[0])"></label>
+        <div class="mlistrow mlook"><button class="mdpic" title="Change icon" onclick="DevDockViews.machines.lookOpen('${m.id}')">${avatar(m, 56)}<i>${ICON.edit}</i></button>
           <div><input name="mname" class="minline big" value="${esc(m.name)}" maxlength="40" onchange="DevDockViews.machines.customize('${m.id}', {name: this.value})">
-          <span class="hcap">${m.picture ? `<button class="link-btn" onclick="DevDockViews.machines.pic('${m.id}', null)">Remove picture</button>` : 'Click the icon to use a picture'}</span></div></div>
-        <label class="mlistrow"><span>Emoji</span><input name="memoji" class="minline right" value="${esc(m.emoji || '')}" placeholder="None" maxlength="4" onchange="DevDockViews.machines.customize('${m.id}', {emoji: this.value})"></label>
+          <span class="hcap"><button class="link-btn" onclick="DevDockViews.machines.lookOpen('${m.id}')">Change icon</button>${m.picture || m.icon || m.emoji ? ` · <button class="link-btn" onclick="DevDockViews.machines.lookReset('${m.id}')">Use default</button>` : ''}</span></div></div>
         <div class="mlistrow"><span>Colour</span><span class="mswatches">${COLORS.map(c => `<button class="mswatch${c === m.color ? ' on' : ''}" style="background:${c}" aria-label="${c}" onclick="DevDockViews.machines.customize('${m.id}', {color: '${c}'})"></button>`).join('')}</span></div>
       </div></section>
       <section class="mgroup"><h4>Connection</h4><div class="mlist">
@@ -431,7 +610,7 @@
       <header class="mphead">
         <button class="mback" onclick="DevDockViews.machines.back()" title="All machines  Esc">${ICON.back}Machines</button>
         <div class="mpid">${avatar(m, 44)}<div class="mtitle"><b>${esc(m.name)}</b><span>${esc(h?.hostname || m.host)}${h?.distro ? ` · ${esc(h.distro)}` : ''}${s ? ` · up ${dur(s.uptime)}` : ''}</span></div>${statusPill(m)}</div>
-        <button class="hbtn" onclick="DevDockViews.machines.shell('${m.id}')">${ICON.term}Shell</button>
+        <button class="btn-primary mshell" onclick="DevDockViews.machines.shell('${m.id}')" title="ssh ${esc(m.ssh || m.host)} in DevDock">${ICON.term}Open Shell</button>
       </header>
       ${m.status === 'untrusted' ? `<div class="malert">${ICON.warn}<div><b>This machine's key changed.</b> DevDock stopped talking to it. If you reinstalled the agent, run <code>sudo devdock-agent pair</code> there and paste the code in Settings. If you didn't, someone may be posing as it.</div></div>` : ''}
       <nav class="mseg" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${k === mtab}" onclick="DevDockViews.machines.tab('${k}')">${l}${count[k] ? `<span class="${k === 'overview' ? 'malertn' : ''}">${count[k]}</span>` : ''}</button>`).join('')}</nav>
@@ -456,6 +635,13 @@
   }
 
   DevDockViews.machines = {
+    exportRows() {
+      if (openId) return null; // a machine's page: its tables export like any other
+      const list = data().machines || [];
+      return { cols: ['Name', 'Host', 'Status', 'OS', 'CPU %', 'Memory used', 'Memory total', 'Uptime', 'Agent'],
+        rows: list.map(m => { const s = m.snap || {}; return [m.name, m.port && m.port !== 7337 ? `${m.host}:${m.port}` : m.host, m.status, s.host?.distro || '', s.cpu ? Math.round(s.cpu.usage) : '',
+          s.mem ? bytes(s.mem.used) : '', s.mem ? bytes(s.mem.total) : '', s.uptime ? dur(s.uptime) : '', s.version || '']; }) };
+    },
     render, close,
     snooze(id, ms) {
       if (id) snoozed[id] = Date.now() + ms; else snoozed = {};
@@ -479,20 +665,61 @@
       muxes[id] = r ? { sessions: r.sessions, error: r.error } : { error: 'Couldn\'t list sessions' };
       render();
     },
+    dockerTerm(btn) {
+      closeAllMenus();
+      const m = byId(btn.dataset.id), k = btn.dataset.k, t = btn.dataset.t;
+      if (!m) return;
+      const c = m.snap?.containers?.find(x => x.id === t);
+      openSession({ id: m.id, kind: k, target: t }, k === 'stack-update' ? `Update ${t} on ${m.name}` : `${c?.name || t.slice(0, 12)} on ${m.name}`, 'machines');
+    },
     shell(id) { const m = byId(id); if (m) openSession({ id }, `${m.name} shell`, 'machines'); },
     attach(id, mux, session) { const m = byId(id); if (m) openSession({ id, mux, session }, `${session} on ${m.name}`, 'machines'); },
-    openAdd(id) { adding = { id: id || null }; renderAdd(); },
+    openAdd(id) {
+      adding = { id: id || null, step: 0, host: '', name: '', port: '7337', preset: 'watch', scope: { ...PRESETS[0][4] }, networks: 'private' };
+      renderAdd();
+      if (!id) sourceAction('machines', 'nearby').then(r => { found = r?.found || []; if (adding && !adding.id && adding.step === 0) renderAdd(); });
+    },
+    set(k, v) {
+      adding[k] = v;
+      if (k === 'preset' && v !== 'custom') adding.scope = { ...PRESETS.find(p => p[0] === v)[4] };
+      if (k === 'host') { const b = document.querySelector('#maddSheet .modal-footer .btn-primary'); if (b) b.disabled = !v.trim(); return; }
+      if (k !== 'name' && k !== 'port') renderAdd();
+    },
+    scope(k, on) { adding.scope[k] = on; renderAdd(); },
+    pickHost(host, name) { Object.assign(adding, { host, name: adding.name || name }); renderAdd(); },
+    next() { if (adding.host.trim()) { adding.step = 1; renderAdd(); } },
+    back1() { adding.step = 0; renderAdd(); },
+    onlyStack(name) { searchInput.value = name; searchInput.dispatchEvent(new Event('input')); },
+    tourGo(i) { adding.tour = i; renderAdd(); },
+    lookOpen(id) { look = { id, tab: 'icons', q: '' }; lookHTML(); lookLoad(); },
+    lookTab(tab) { look.tab = tab; look.q = ''; lookHTML(); lookLoad(); },
+    lookFind(q) { look.q = q; lookHTML(); },
+    async useIcon(slug) {
+      const i = ICONS.find(x => x[0] === slug), id = look.id;
+      if (i && await sourceAction('machines', 'customize', { id, icon: { slug: i[0], title: i[1], hex: i[2], path: i[3] } })) {
+        Object.assign(byId(id), { icon: { slug: i[0], title: i[1], hex: i[2], path: i[3] }, emoji: '', picture: null }); close(); render();
+      }
+    },
+    async useEmoji(e) {
+      const id = look.id;
+      if (await sourceAction('machines', 'customize', { id, emoji: e })) { Object.assign(byId(id), { emoji: e, icon: null, picture: null }); close(); render(); }
+    },
+    async usePicture(file) { const id = look.id; close(); await DevDockViews.machines.pic(id, file); },
+    async lookReset(id) {
+      const m = byId(id);
+      if (m.picture) await DevDockViews.machines.pic(id, null);
+      if (await sourceAction('machines', 'customize', { id, icon: null, emoji: '' })) { Object.assign(m, { emoji: '', icon: null, picture: null }); close(); render(); }
+    },
     cmd: id => byId(id)?.command || '',
     async create() {
-      const el = document.getElementById('maddSheet');
-      const v = n => el.querySelector(`[name="${n}"]`);
-      const scope = Object.fromEntries(SCOPES.map(([k]) => [k, v('scope-' + k).checked]));
-      const r = await sourceAction('machines', 'add', { host: v('host').value, name: v('name').value, port: v('port').value, scope, networks: el.querySelector('[name="networks"]:checked').value });
+      const f = adding, el = document.getElementById('maddSheet');
+      const scope = Object.fromEntries(SCOPES.map(([k]) => [k, !!f.scope[k]]));
+      const r = await sourceAction('machines', 'add', { host: f.host.trim(), name: f.name.trim(), port: f.port, scope, networks: f.networks });
       if (!r) return;
-      adding = { id: r.id };
+      adding = { id: r.id, how: 'ssh', tour: null };
       // show the command right away; the next scan fills in the waiting state
-      DevDock.sourceData.machines.machines.push({ id: r.id, name: v('name').value || v('host').value.split('.')[0], host: v('host').value, port: +v('port').value, color: COLORS[0], status: 'pending', command: r.command, scope, networks: 'private' });
-      el.remove();
+      DevDock.sourceData.machines.machines.push({ id: r.id, name: f.name.trim() || f.host.trim().split('.')[0], host: f.host.trim(), port: +f.port, color: COLORS[0], status: 'pending', command: r.command, scope, networks: f.networks });
+      el?.remove();
       renderAdd();
     },
     async confirm(id, matches) {
@@ -506,6 +733,7 @@
       if (m) openSession({ id }, `ssh ${m.host}`, 'machines');
     },
     async act(btn) {
+      closeAllMenus();
       const { id, a: action, t: target, l: label } = btn.dataset;
       btn.classList.add('busy');
       const r = await sourceAction('machines', 'act', { id, action, target, label });
@@ -516,7 +744,7 @@
     async pic(id, file) {
       const dataUrl = file ? await resize(file).catch(() => null) : null;
       if (file && !dataUrl) return showToast('That picture couldn\'t be read', 'warn');
-      if (await sourceAction('machines', 'picture', { id, dataUrl })) byId(id).picture = dataUrl ? Date.now() : null, render();
+      if (await sourceAction('machines', 'picture', { id, dataUrl })) { Object.assign(byId(id), dataUrl ? { picture: Date.now(), icon: null, emoji: '' } : { picture: null }); render(); }
     },
     async repair(id) {
       const token = view.querySelector('[name="repair"]')?.value || '';

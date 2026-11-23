@@ -15,6 +15,28 @@ const FINISHED_FOR = 15 * MIN;
 const FORGOTTEN_AFTER = 6 * 60 * MIN;
 const CRASH_RESTARTS = 3;
 
+function runaway(list, now) {
+  const recent = list.filter(s => now - s.t <= RUNAWAY_FOR);
+  if (!list.length || now - list[0].t < RUNAWAY_FOR) return null;
+  // a short dip (GC, a pause between requests) doesn't reset it
+  const hot = recent.filter(s => s.cpu >= RUNAWAY_CPU).length;
+  if (hot < recent.length * 0.9) return null;
+  let since = now;
+  for (let i = list.length - 1; i >= 0 && list[i].cpu >= RUNAWAY_CPU * 0.8; i--) since = list[i].t;
+  return { since, value: recent.reduce((n, s) => n + s.cpu, 0) / recent.length };
+}
+function leak(list, now) {
+  const cur = list[list.length - 1];
+  if (!cur || cur.mem < LEAK_MB || now - list[0].t < LEAK_FOR) return null;
+  const start = list.find(s => now - s.t <= LEAK_FOR) || list[0];
+  if (cur.mem < start.mem * LEAK_GROWTH) return null;
+  // still climbing: each third of the window averages higher than the one before
+  const third = Math.floor(list.length / 3), avg = a => a.reduce((n, s) => n + s.mem, 0) / a.length;
+  const [a, b, c] = [list.slice(0, third), list.slice(third, 2 * third), list.slice(2 * third)].map(avg);
+  if (!(a < b && b < c)) return null;
+  return { since: start.t, from: start.mem, value: cur.mem, rate: (cur.mem - start.mem) / ((now - start.t) / MIN) };
+}
+
 module.exports = function home(ctx) {
   const samples = new Map(); // key -> [{ t, cpu, mem }]
   const totals = [];         // [{ t, cpu, mem }] for everything DevDock watches
@@ -31,28 +53,6 @@ module.exports = function home(ctx) {
     const step = Math.max(1, Math.floor(list.length / 24));
     return list.filter((_, i) => i % step === 0 || i === list.length - 1).map(s => Math.round(s[f]));
   };
-
-  function runaway(list, now) {
-    const recent = list.filter(s => now - s.t <= RUNAWAY_FOR);
-    if (!list.length || now - list[0].t < RUNAWAY_FOR) return null;
-    // a short dip (GC, a pause between requests) doesn't reset it
-    const hot = recent.filter(s => s.cpu >= RUNAWAY_CPU).length;
-    if (hot < recent.length * 0.9) return null;
-    let since = now;
-    for (let i = list.length - 1; i >= 0 && list[i].cpu >= RUNAWAY_CPU * 0.8; i--) since = list[i].t;
-    return { since, value: recent.reduce((n, s) => n + s.cpu, 0) / recent.length };
-  }
-  function leak(list, now) {
-    const cur = list[list.length - 1];
-    if (!cur || cur.mem < LEAK_MB || now - list[0].t < LEAK_FOR) return null;
-    const start = list.find(s => now - s.t <= LEAK_FOR) || list[0];
-    if (cur.mem < start.mem * LEAK_GROWTH) return null;
-    // still climbing: each third of the window averages higher than the one before
-    const third = Math.floor(list.length / 3), avg = a => a.reduce((n, s) => n + s.mem, 0) / a.length;
-    const [a, b, c] = [list.slice(0, third), list.slice(third, 2 * third), list.slice(2 * third)].map(avg);
-    if (!(a < b && b < c)) return null;
-    return { since: start.t, from: start.mem, value: cur.mem, rate: (cur.mem - start.mem) / ((now - start.t) / MIN) };
-  }
 
   async function scan() {
     if (ctx.DEMO) return require('../demo').demoHome();
@@ -222,3 +222,8 @@ module.exports = function home(ctx) {
 
   return { id: 'home', intervalMs: 5000, scan, actions: { talkers } };
 };
+
+// shared with sources/machines.js: the same rules for remote machines
+module.exports.runaway = runaway;
+module.exports.leak = leak;
+module.exports.MIN = MIN;

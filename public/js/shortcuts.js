@@ -10,6 +10,7 @@
     { key: '4', cmd: 'tab-apps' },
     { key: '5', cmd: 'tab-coding' },
     { key: '6', cmd: 'tab-home' },
+    { key: '7', cmd: 'tab-machines' },
     { key: 'g', shift: true, cmd: 'group-menu' },
     { key: 'y', cmd: 'history' },
     { key: '[', cmd: 'back' },

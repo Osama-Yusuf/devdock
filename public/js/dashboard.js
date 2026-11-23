@@ -1125,7 +1125,7 @@
     // ── Tabs: Servers (this file), Sessions and Containers (js/views/) ──
     // A view registers window.DevDockViews[id] = { render() } and reads
     // DevDock.sourceData[id], filled from the server's "source" messages.
-    const TABS = ['servers', 'sessions', 'containers', 'apps', 'coding', 'home'];
+    const TABS = ['servers', 'sessions', 'containers', 'apps', 'coding', 'home', 'machines'];
     const SEARCH_HINTS = {
       servers: 'Search ports, PIDs, processes, paths\u2026',
       sessions: 'Search sessions, folders, branches, agents\u2026',
@@ -1133,6 +1133,7 @@
       apps: 'Search apps, bundle IDs, processes, PIDs\u2026',
       coding: 'Search agents, folders, branches, sessions\u2026',
       home: 'Search what needs attention\u2026',
+      machines: 'Search machines, hosts, systems\u2026',
     };
     window.DevDockViews = {};
     window.DevDock = { sourceData: {}, tab: 'servers' };
@@ -1304,7 +1305,7 @@ $('settingsBtn').addEventListener('click', openSettings);
       switch (cmd) {
         case 'settings': openSettings(); break;
         case 'find': searchInput.focus(); searchInput.select(); break;
-        case 'tab-servers': case 'tab-sessions': case 'tab-containers': case 'tab-apps': case 'tab-coding': case 'tab-home': setTab(cmd.slice(4)); break;
+        case 'tab-servers': case 'tab-sessions': case 'tab-containers': case 'tab-apps': case 'tab-coding': case 'tab-home': case 'tab-machines': setTab(cmd.slice(4)); break;
         case 'group-menu': setTab('servers'); setGroupBy(GROUP_MODES[(GROUP_MODES.indexOf(groupBy) + 1) % GROUP_MODES.length]); break;
         case 'history': window.location.href = '/history'; break;
         case 'export': if ($('exportBtn').offsetParent) $('exportBtn').click(); else showToast('Turn on the export button in Settings', 'info'); break;

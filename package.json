@@ -9,10 +9,11 @@
     "start": "electron .",
     "dev": "NODE_ENV=development electron .",
     "build": "electron-builder",
-    "build:mac": "electron-builder --mac",
+    "build:mac": "npm run build:key && electron-builder --mac",
     "build:win": "electron-builder --win",
     "build:linux": "electron-builder --linux",
-    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true"
+    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true",
+    "build:key": "swiftc -O native/devdock-key.swift -o native/devdock-key"
   },
   "build": {
     "appId": "com.devdock.desktop",
@@ -63,6 +64,7 @@
     "asar": true,
     "asarUnpack": [
       "server.js",
+      "native/devdock-key",
       "sources/**/*",
       "agents/**/*",
       "assets/**/*",
@@ -78,7 +80,9 @@
       "assets/**/*",
       "public/**/*",
       "views/**/*",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      "native/devdock-key",
+      "agent/install-agent.sh"
     ]
   },
   "dependencies": {

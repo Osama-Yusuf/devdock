@@ -17,7 +17,7 @@ const wss = new WebSocketServer({ server, verifyClient: ({ req }) => isOwn(req) 
 
 app.use((req, res, next) => isOwn(req) ? next() : res.status(403).end());
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' })); // machine pictures arrive as small data URLs
 // demo pids are made up and may match real processes: never act on them
 if (DEMO) app.use(/^\/api\/(kill|restart|logs|start-server|sources\/(?!home\/))/, (req, res) => res.status(403).json({ error: 'Disabled in demo mode' }));
 
@@ -855,7 +855,7 @@ const sourceCtx = {
   binDirs: BIN_DIRS,
   source: id => sources[id],
 };
-const sources = Object.fromEntries(['sessions', 'containers', 'apps', 'coding', 'agents', 'home']
+const sources = Object.fromEntries(['sessions', 'containers', 'apps', 'coding', 'agents', 'home', 'machines']
   .map(id => [id, require(`./sources/${id}`)(sourceCtx)]));
 const sourceState = {}; // id -> { msg, sig }
 
@@ -886,6 +886,11 @@ app.get('/api/app-icon/:pid', async (req, res) => {
   if (!file) return res.status(404).end();
   res.set('Cache-Control', 'max-age=86400');
   res.sendFile(file);
+});
+
+app.get('/api/machines/:id/picture', (req, res) => {
+  const file = sources.machines.picturePath(req.params.id);
+  file ? res.sendFile(file) : res.status(404).end();
 });
 
 app.post('/api/sources/:id/:action', async (req, res) => {
@@ -932,7 +937,13 @@ async function openTerm(ws, m) {
       { name: 'xterm-256color', cols: Math.max(20, m.cols | 0), rows: Math.max(5, m.rows | 0), cwd: spec.cwd || os.homedir(), env });
   } catch (e) { return send({ type: 'term-exit', reason: 'Could not start: ' + e.message }); }
   ws._term = term;
-  term.onData(data => send({ type: 'term-out', data }));
+  // typed in, so it never shows in a command line; inputWhen waits until the far side is ready
+  let input = spec.input;
+  if (input && !spec.inputWhen) { term.write(input); input = null; }
+  term.onData(data => {
+    if (input && data.includes(spec.inputWhen)) { term.write(input); input = null; }
+    send({ type: 'term-out', data });
+  });
   term.onExit(() => { if (ws._term === term) { ws._term = null; send({ type: 'term-exit', reason: 'Detached' }); } });
   send({ type: 'term-start' });
 }

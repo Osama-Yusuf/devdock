@@ -206,4 +206,39 @@ function demoTalkers() {
   ] };
 }
 
-module.exports = { demoPorts, demoTransient, demoSessions, demoAgents, demoApps, demoContainers, demoHome, demoTalkers };
+// Machines tab: three servers, one waiting to pair
+function demoMachines() {
+  const wave = (n, base, amp, k = 0) => Array.from({ length: n }, (_, i) => +(base + amp * Math.sin((i + k) / 3) + amp * .4 * Math.sin((i + k) * 1.7)).toFixed(1));
+  const G = 2 ** 30, now = Date.now();
+  const scope = { system: true, processes: true, ports: true, containers: true };
+  const m = (id, name, emoji, color, host, distro, distroId, cores, memG, cpu, mem, disk, extra = {}) => ({
+    id, name, emoji, color, picture: null, host, port: 7337, scope, networks: 'private', addedAt: now - 9e8, pairedAt: now - 9e8,
+    status: 'online', error: null, lastSeen: now,
+    spark: { cpu: wave(40, cpu, cpu / 3), mem: wave(40, mem, 2), rx: wave(40, 4e5, 2e5), tx: wave(40, 1e5, 5e4) },
+    snap: { version: '0.1.0', at: now, uptime: 1.9e6, scope,
+      host: { hostname: name.toLowerCase().replace(/\W+/g, '-'), distro, distroId, kernel: '6.8.0-49-generic', arch: 'x86_64', cpuModel: 'AMD EPYC 7763', cores, memTotal: memG * G, virt: 'vm', machineId: '3f9c2a71d04be8a1', model: 'KVM' },
+      cpu: { usage: cpu, load: [cpu / 25, cpu / 28, cpu / 30] }, mem: { total: memG * G, used: memG * G * mem / 100, available: memG * G * (1 - mem / 100) },
+      disks: [{ mount: '/', fs: 'ext4', total: 200 * G, used: 200 * G * disk / 100 }],
+      net: [{ name: 'eth0', rx: 412e3, tx: 98e3, addrs: [host.match(/\d/) ? host : '10.0.4.12/24'] }],
+      processes: [['postgres', 'postgres', 38.2, 2.1], ['node', 'app', 21.5, .9], ['nginx', 'www-data', 3.1, .05], ['dockerd', 'root', 1.4, .2]].map(([name, user, c, g], i) => ({ pid: 1200 + i * 37, name, user, cpu: c, mem: g * G })),
+      ports: [22, 80, 443, 5432, 6379].map(port => ({ port, proto: 'tcp', name: { 22: 'sshd', 80: 'nginx', 443: 'nginx', 5432: 'postgres', 6379: 'redis-server' }[port] })),
+      containers: [['book-api', 'bookshop/api:2.4', 'book', 12.4, .6], ['book-web', 'bookshop/web:2.4', 'book', 3.2, .2], ['book-worker', 'bookshop/api:2.4', 'book', 4.1, .3],
+        ['book-search', 'opensearch:2.11', 'book', 6.8, 1.4], ['book-cron', 'bookshop/api:2.4', 'book', 0, 0, 'exited'], ['redis', 'redis:7', '', .8, .05],
+        ['nginx', 'nginx:1.27', '', .4, .03], ['metrics', 'prom/node-exporter:1.8', '', .2, .02], ['old-backup', 'restic/restic:0.16', '', 0, 0, 'exited']]
+        .map(([name, image, project, cpu, g, state = 'running'], i) => ({ id: `c${i}a1b2c3d4e5f6`, name, image, project, state, status: state === 'running' ? 'Up 21 days' : 'Exited (0) 3 hours ago', cpu, mem: g * G, rx: cpu * 9e3, tx: cpu * 4e3 })),
+      ...extra },
+  });
+  return { masterFp: 'demo', machines: [
+    { ...m('a1b2c3d4e5f6', 'Production DB', '🐘', '#60a5fa', 'db-1.internal', 'Ubuntu 24.04.1 LTS', 'ubuntu', 16, 64, 46, 71, 62),
+      items: [{ id: 'db:cpu:1200', type: 'cpu', severity: 'critical', subject: { pid: 1200, name: 'postgres', user: 'postgres' }, since: now - 7 * 6e4, value: 384, spark: wave(30, 380, 20) },
+        { id: 'db:mem:1237', type: 'mem', severity: 'critical', subject: { pid: 1237, name: 'node', user: 'app' }, since: now - 12 * 6e4, value: 2900, from: 1800, rate: 92, spark: Array.from({ length: 30 }, (_, i) => 1800 + i * 38) }],
+      procSpark: { 1200: wave(24, 38, 12), 1237: wave(24, 21, 8, 4), 1274: wave(24, 3, 1), 1311: wave(24, 1.4, .5) } },
+    { ...m('b2c3d4e5f6a1', 'Home NAS', '', '#34d399', '192.168.1.20', 'Debian GNU/Linux 12', 'debian', 4, 16, 8, 38, 91),
+      items: [{ id: 'nas:disk:/', type: 'disk', severity: 'warning', subject: { mount: '/' }, value: 91, free: 18 * G }] },
+    m('c3d4e5f6a1b2', 'Edge', '⚡', '#f472b6', 'edge.tail3f2a.ts.net', 'Alpine Linux v3.20', 'alpine', 2, 2, 17, 54, 23),
+    { id: 'd4e5f6a1b2c3', name: 'gpu-box', emoji: '', color: '#a78bfa', host: 'gpu-box.local', port: 7337, scope, networks: 'private', addedAt: now - 6e4,
+      status: 'pending', note: 'Waiting for the agent…', command: 'curl -fsSL https://github.com/Osama-Yusuf/devdock/releases/latest/download/install-agent.sh | sudo sh -s -- --master 7773af89… --token … --scope system,processes,ports' },
+  ] };
+}
+
+module.exports = { demoPorts, demoTransient, demoSessions, demoAgents, demoApps, demoContainers, demoHome, demoTalkers, demoMachines };

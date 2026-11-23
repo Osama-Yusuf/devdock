@@ -147,6 +147,7 @@ function buildAppMenu() {
       item('Apps', 'Cmd+4', 'tab-apps'),
       item('Agents', 'Cmd+5', 'tab-coding'),
       item('Home', 'Cmd+6', 'tab-home'),
+      item('Machines', 'Cmd+7', 'tab-machines'),
       { type: 'separator' },
       item('Next Grouping', 'Shift+Cmd+G', 'group-menu'),
       { type: 'separator' },

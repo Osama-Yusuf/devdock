@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>DevDock</title>
+<style>
+  :root { --bg: #0b0e13; --text: #e6e9ef; --muted: #8b93a3; --btn: rgba(255,255,255,.08); --btn-hover: rgba(255,255,255,.13); --ring: rgba(96,165,250,.55); }
+  @media (prefers-color-scheme: light) { :root { --bg: #f5f6f8; --text: #1b1f27; --muted: #6b7280; --btn: rgba(0,0,0,.06); --btn-hover: rgba(0,0,0,.1); } }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.4 -apple-system, BlinkMacSystemFont, sans-serif; display: grid; place-items: center;
+    -webkit-app-region: drag; -webkit-user-select: none; user-select: none; }
+  main { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; animation: in .4s ease both; }
+  img { width: 88px; height: 88px; margin-bottom: 14px; filter: drop-shadow(0 8px 24px rgba(0,0,0,.35)); }
+  h1 { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -.01em; }
+  p { margin: 0 0 18px; color: var(--muted); }
+  button { -webkit-app-region: no-drag; display: inline-flex; align-items: center; gap: 8px; font: inherit; font-weight: 550; color: var(--text);
+    background: var(--btn); border: 0; border-radius: 8px; padding: 8px 16px; cursor: pointer; transition: background .15s; }
+  button:hover { background: var(--btn-hover); }
+  button:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+  button[disabled] { opacity: .5; cursor: default; }
+  @keyframes in { from { opacity: 0; transform: translateY(6px); } }
+</style>
+</head>
+<body>
+<main>
+  <img src="../assets/icon.png" alt="">
+  <h1>DevDock is locked</h1>
+  <p>It holds the keys to your machines.</p>
+  <button id="u" autofocus>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 11v4"/><path d="M8.5 13.5c0-2 1.5-3.5 3.5-3.5s3.5 1.5 3.5 3.5c0 2-.5 4-1.5 5.5"/><path d="M5.5 15c-.3-1-.5-2-.5-3a7 7 0 0 1 14 0c0 1.5-.2 3-.7 4.3"/><path d="M8 20c.8-1.2 1.3-2.6 1.5-4"/><path d="M6.5 6.3A8.9 8.9 0 0 1 12 4.5c2 0 3.9.7 5.4 1.9"/></svg>
+    Unlock with Touch ID
+  </button>
+</main>
+<script>
+  // main.js watches the hash: a click asks again; ?asking greys the button while a prompt is up
+  const u = document.getElementById('u');
+  u.disabled = location.search.includes('asking');
+  u.onclick = () => { u.disabled = true; location.hash = 'unlock-' + Date.now(); };
+</script>
+</body>
+</html>

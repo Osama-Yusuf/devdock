@@ -725,6 +725,22 @@ app.get('/api/ports', async (req, res) => {
 // Cheap readiness check for the Electron shell
 app.get('/api/ping', (req, res) => res.json({ ok: true }));
 
+// Version, build and the newest release on GitHub. ponytail: says there is one and links it;
+// installing stays a download, since the app isn't notarized for silent self-updates.
+const { version: VERSION, build: BUILD } = require('./sources/version');
+app.get('/api/version', (req, res) => res.json({ version: VERSION, build: BUILD }));
+app.get('/api/update', async (req, res) => {
+  try {
+    const r = await fetch('https://api.github.com/repos/Osama-Yusuf/devdock/releases/latest', { headers: { 'User-Agent': 'DevDock', Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new Error(`GitHub said ${r.status}`);
+    const rel = await r.json();
+    const latest = String(rel.tag_name || '').replace(/^v/, '');
+    const newer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
+    const url = /^https:\/\/github\.com\/Osama-Yusuf\/devdock\//.test(rel.html_url) ? rel.html_url : 'https://github.com/Osama-Yusuf/devdock/releases/latest';
+    res.json({ current: VERSION, latest, available: newer(latest, VERSION), url, published: rel.published_at });
+  } catch (e) { res.status(502).json({ error: `Couldn't reach GitHub: ${e.message}` }); }
+});
+
 app.get('/api/health/:port', async (req, res) => {
   const port = parseInt(req.params.port);
   if (!port || isNaN(port)) return res.status(400).json({ error: 'Invalid port' });

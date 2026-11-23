@@ -231,6 +231,9 @@ function demoMachines() {
   return { masterFp: 'demo', machines: [
     { ...m('a1b2c3d4e5f6', 'Production DB', '🐘', '#60a5fa', 'db-1.internal', 'Ubuntu 24.04.1 LTS', 'ubuntu', 16, 64, 46, 71, 62),
       items: [{ id: 'db:cpu:1200', type: 'cpu', severity: 'critical', subject: { pid: 1200, name: 'postgres', user: 'postgres' }, since: now - 7 * 6e4, value: 384, spark: wave(30, 380, 20) },
+        { id: 'db:finished:3301', type: 'finished', severity: 'done', subject: { pid: 3301, name: 'claude', user: 'deploy', mem: 410 * 1048576 }, since: now - 4 * 6e4 },
+        { id: 'db:idle-agent:2290', type: 'idle-agent', severity: 'tidy', subject: { pid: 2290, name: 'codex', user: 'deploy', mem: 280 * 1048576 }, since: now - 5 * 3600e3 },
+        { id: 'db:stopped', type: 'stopped', severity: 'tidy', subjects: [{ id: 'c5', name: 'book-cron' }, { id: 'c9', name: 'old-backup' }] },
         { id: 'db:mem:1237', type: 'mem', severity: 'critical', subject: { pid: 1237, name: 'node', user: 'app' }, since: now - 12 * 6e4, value: 2900, from: 1800, rate: 92, spark: Array.from({ length: 30 }, (_, i) => 1800 + i * 38) }],
       procSpark: { 1200: wave(24, 38, 12), 1237: wave(24, 21, 8, 4), 1274: wave(24, 3, 1), 1311: wave(24, 1.4, .5) } },
     { ...m('b2c3d4e5f6a1', 'Home NAS', '', '#34d399', '192.168.1.20', 'Debian GNU/Linux 12', 'debian', 4, 16, 8, 38, 91),

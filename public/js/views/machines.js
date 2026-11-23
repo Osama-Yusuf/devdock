@@ -8,6 +8,7 @@
   const ICON = {
     plus: svg('<path d="M12 5v14M5 12h14"/>', 14),
     copy: svg('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>', 13),
+    jump: svg('<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>', 13),
     term: svg('<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>', 13),
     shield: svg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>', 14),
     check: svg('<path d="m5 12.5 4.5 4.5L19 7.5"/>', 13, 'stroke-width="2.6"'),
@@ -90,7 +91,7 @@
     return `
       <article class="mcard ${m.status}" style="--mc:${m.color}" onclick="DevDockViews.machines.open('${m.id}')">
         <header>${avatar(m)}<div class="mtitle"><b>${esc(m.name)}</b><span>${esc(h ? h.hostname : m.host)}${h?.distro ? ` · ${esc(h.distro)}` : ''}</span></div>${statusPill(m)}</header>
-        ${(m.items || []).filter(i => i.type !== 'offline').length ? `<div class="missues sev-${m.items.some(i => i.severity === 'critical') ? 'critical' : 'tidy'}">${ICON.warn}${m.items.filter(i => i.type !== 'offline').map(i => ({ cpu: 'Runaway CPU', mem: 'Memory leak', crash: 'Crash loop', disk: 'Disk filling', pressure: 'Out of memory', busy: 'CPU saturated' })[i.type]).join(' · ')}</div>` : ''}
+        ${(() => { const l = live(m).filter(i => i.type !== 'offline' && i.severity !== 'done'); return l.length ? `<div class="missues sev-${l.some(i => i.severity === 'critical') ? 'critical' : 'tidy'}">${ICON.warn}${[...new Set(l.map(i => LABEL[i.type]))].join(' · ')}</div>` : ''; })()}
         ${s ? `<div class="mrings">${ring(s.cpu?.usage || 0, 'CPU', 'var(--accent)')}${ring(s.mem ? pct(s.mem.used, s.mem.total) : 0, 'Memory', '#a78bfa')}${ring(d ? pct(d.used, d.total) : 0, 'Disk', '#34d399')}
           <div class="mnet"><span class="down">↓ ${rate(n.rx)}</span><span>↑ ${rate(n.tx)}</span>${sparkline(m.spark?.cpu, { color: 'var(--accent)', w: 96, h: 28 })}</div></div>`
         : `<div class="mempty">${m.status === 'untrusted' ? 'DevDock stopped talking to it: its key isn\'t the one you paired.' : esc(m.error || 'No data yet')}</div>`}
@@ -224,32 +225,45 @@
   try { mtab = localStorage.getItem('devdock:machine-tab') || mtab; } catch {}
   const tabsOf = m => TABS.filter(([, , need]) => !need || m.scope?.[need]);
 
-  const SEV = { critical: 'critical', warning: 'tidy' }; // reuse Home's colours
+  const SEV = { critical: 'critical', warning: 'tidy', tidy: 'tidy', done: 'done' }; // reuse Home's colours and sections
+  const SECTIONS = [['critical', 'Critical', 'Hurting this machine right now'], ['done', 'Just finished', 'Agents that wrapped up a turn'], ['tidy', 'Tidy up', 'Worth a look, nothing urgent']];
+  const LABEL = { offline: 'offline', cpu: 'runaway CPU', mem: 'memory leak', crash: 'crash loop', disk: 'disk filling', pressure: 'out of memory', busy: 'CPU saturated', finished: 'agent finished', 'idle-agent': 'idle agent', stopped: 'stopped containers' };
+  // Snoozed card ids -> until (ms), per viewer like Home's
+  let snoozed = {};
+  try { snoozed = JSON.parse(localStorage.getItem('devdock:machine-snooze')) || {}; } catch {}
+  const live = m => (m.items || []).filter(i => !(snoozed[i.id] > Date.now()));
+  const snoozeBtn = (it, ms = 3600000, label = 'Snooze 1h') => `<button class="hbtn ghost" data-sid="${esc(it.id)}" onclick="DevDockViews.machines.snooze(this.dataset.sid, ${ms})">${label}</button>`;
   function issue(m, it) {
     const s = it.subject || {};
     const card = (kicker, title, viz, actions = '') => `<article class="hcard sev-${SEV[it.severity]}"><div class="hcard-main">
       <div class="hcard-kicker">${ICON.warn}<span>${kicker}</span>${it.since ? `<em>for ${dur((Date.now() - it.since) / 1000)}</em>` : ''}</div>
-      <div class="hcard-title">${title}</div>${actions ? `<div class="hcard-actions">${actions}</div>` : ''}</div>${viz ? `<div class="hcard-viz">${viz}</div>` : ''}</article>`;
-    const stop = m.scope?.actions ? actBtn(m, 'process-stop', s.pid, s.name, 'hbtn danger', `${ICON.stop}Stop`) : '';
+      <div class="hcard-title">${title}</div><div class="hcard-actions">${actions}${it.type === 'offline' ? '' : snoozeBtn(it)}</div></div>${viz ? `<div class="hcard-viz">${viz}</div>` : ''}</article>`;
+    const show = (mt, key) => `<button class="hbtn" data-mt="${mt}" data-key="${esc(key)}" onclick="revealRow('machines', this.dataset.key, '', () => DevDockViews.machines.tab(this.dataset.mt))">${ICON.jump}Show in ${mt === 'processes' ? 'Processes' : 'Containers'}</button>`;
+    const stop = (s.pid ? show('processes', `p:${s.pid}`) : '') + (m.scope?.actions ? actBtn(m, 'process-stop', s.pid, s.name, 'hbtn danger', `${ICON.stop}Stop`) : '');
     const line = (v, color, cap) => `<div class="hval">${v}</div>${sparkline(it.spark, { color })}<div class="hcap">${cap}</div>`;
     switch (it.type) {
       case 'offline': return card('Not answering', `<b>${esc(m.name)}</b> last answered ${timeAgo(it.since)}`, '', `<span class="hcap">${esc(it.error || '')}</span>`);
       case 'cpu': return card('Runaway CPU', `<b>${esc(s.name)}</b> (${esc(s.user)}) is pinning ${(it.value / 100).toFixed(1)} cores`, line(`${Math.round(it.value)}<small>%</small>`, 'var(--red)', 'last 15 min'), stop);
       case 'mem': return card('Memory leak', `<b>${esc(s.name)}</b> keeps growing, +${formatMem(it.rate)} a minute`, line(formatMem(it.value), 'var(--red)', `${formatMem(it.from)} → ${formatMem(it.value)}`), stop);
-      case 'crash': return card('Crash loop', `Container <b>${esc(s.name)}</b> keeps restarting`, '', m.scope?.actions ? actBtn(m, 'container-stop', s.id, s.name, 'hbtn danger', `${ICON.stop}Stop it`) : '');
+      case 'crash': return card('Crash loop', `Container <b>${esc(s.name)}</b> keeps restarting`, '', show('containers', `c:${s.id}`) + (m.scope?.actions ? actBtn(m, 'container-stop', s.id, s.name, 'hbtn danger', `${ICON.stop}Stop it`) : ''));
       case 'disk': return card(it.severity === 'critical' ? 'Disk almost full' : 'Disk filling up', `<b>${esc(s.mount)}</b> is ${Math.round(it.value)}% full, ${bytes(it.free)} left`, `<div class="hval">${Math.round(it.value)}<small>%</small></div>`);
       case 'pressure': return card('Out of memory', `Memory has been over 90% for 5 minutes`, line(`${Math.round(it.value)}<small>%</small>`, 'var(--red)', 'last 5 min'));
+      case 'finished': return `<div class="hrow sev-done">${ICON.check}<b>${esc(s.name)}</b><span class="hrow-text">finished ${timeAgo(it.since)}</span>
+        <span class="hrow-meta">${esc(s.user)} · pid ${s.pid}</span><span class="hrow-actions">${show('processes', `p:${s.pid}`)}<button class="hbtn" onclick="DevDockViews.machines.tab('sessions')">${ICON.term || ''}Open a shell</button>${snoozeBtn(it, 7 * 86400000, 'Dismiss')}</span></div>`;
+      case 'idle-agent': return card('Idle agent', `<b>${esc(s.name)}</b> (${esc(s.user)}) has done nothing for ${dur((Date.now() - it.since) / 1000)}, holding ${bytes(s.mem)}`, '', stop);
+      case 'stopped': return card('Stopped containers', `${it.subjects.length} container${it.subjects.length > 1 ? 's are' : ' is'} not running: ${it.subjects.slice(0, 4).map(c => `<b>${esc(c.name)}</b>`).join(', ')}${it.subjects.length > 4 ? '…' : ''}`, '',
+        `<button class="hbtn" onclick="DevDockViews.machines.tab('containers')">Show them</button>`);
       case 'busy': return card('CPU saturated', `All cores have been over 90% busy for 5 minutes`, line(`${Math.round(it.value)}<small>%</small>`, 'var(--yellow)', 'last 5 min'));
     }
     return '';
   }
 
   function overview(m) {
-    const s = m.snap, h = s?.host || {}, items = m.items || [];
+    const s = m.snap, h = s?.host || {}, all = live(m), items = all.filter(i => i.severity !== 'done');
     const crit = items.filter(i => i.severity === 'critical').length;
     const sev = crit ? 'critical' : items.length ? 'tidy' : 'clear';
-    const headline = items.length ? `${items.length} ${items.length > 1 ? 'things need' : 'thing needs'} you` : m.status === 'online' ? 'All clear' : 'Not answering';
-    const sub = items.length ? items.map(i => ({ offline: 'offline', cpu: 'runaway CPU', mem: 'memory leak', crash: 'crash loop', disk: 'disk filling', pressure: 'out of memory', busy: 'CPU saturated' })[i.type]).join(' · ')
+    const headline = crit ? `${crit} ${crit > 1 ? 'things need' : 'thing needs'} you` : items.length ? 'Nothing urgent' : m.status === 'online' ? 'All clear' : 'Not answering';
+    const sub = items.length ? [...new Set(items.map(i => LABEL[i.type]))].join(' · ')
       : s ? `Watching ${s.processes?.length || 0} processes${s.containers ? `, ${s.containers.length} containers` : ''} and ${s.disks?.length || 0} disk${s.disks?.length === 1 ? '' : 's'}.` : esc(m.error || '');
     const meter = p => `<div class="hmeter"><i style="width:${p.toFixed(1)}%;${p >= 90 ? 'background:var(--red)' : ''}"></i></div>`;
     const d = rootDisk(s), n = netTotal(s);
@@ -264,9 +278,13 @@
       ['Memory', h.memTotal && bytes(h.memTotal)], ['Runs on', { bare: 'Hardware', vm: 'Virtual machine', container: 'Container' }[h.virt]], ['Model', h.model],
       ['Up for', s && dur(s.uptime)], ['Agent', s?.version && `v${s.version}`]].filter(([, v]) => v);
     return `<section class="hhero sev-${sev}">
-        <div class="horb">${sev === 'clear' ? ICON.check.replace('width="13" height="13"', 'width="30" height="30"') : `<span>${items.length || '!'}</span>`}</div>
+        <div class="horb">${sev === 'clear' ? ICON.check.replace('width="13" height="13"', 'width="30" height="30"') : `<span>${crit || items.length || '!'}</span>`}</div>
         <div class="hhead"><h2>${headline}</h2><p>${sub}</p></div>${vitals}</section>
-      ${items.length ? `<div class="hgrid">${items.map(it => issue(m, it)).join('')}</div>` : ''}
+      ${SECTIONS.map(([sv, title, hint]) => {
+        const list = all.filter(it => SEV[it.severity] === sv);
+        return list.length ? `<section class="hsec sev-${sv}"><header><h3>${title}</h3><span>${hint}</span></header><div class="${sv === 'done' ? 'hrows' : 'hgrid'}">${list.map(it => issue(m, it)).join('')}</div></section>` : '';
+      }).join('')}
+      ${(m.items || []).length > all.length ? `<div class="hfoot">${m.items.length - all.length} snoozed · <button class="link-btn" onclick="DevDockViews.machines.snooze()">show them</button></div>` : ''}
       <div class="mcols2">
         ${about.length ? `<section class="mgroup"><h4>About</h4><dl class="mfacts">${about.map(([k, v]) => `<dt>${k}</dt><dd>${esc(String(v))}</dd>`).join('')}${ips.length ? `<dt>Addresses</dt><dd>${ips.join('<br>')}</dd>` : ''}</dl></section>` : ''}
         ${s?.disks?.length ? `<section class="mgroup"><h4>Storage</h4>${s.disks.map(d => `<div class="mdisk"><span class="trunc">${esc(d.mount)}</span><span class="hbar"><i style="width:${pct(d.used, d.total).toFixed(1)}%;background:${pct(d.used, d.total) > 90 ? 'var(--red)' : '#34d399'}"></i></span><em>${bytes(d.total - d.used)} free</em></div>`).join('')}</section>` : ''}
@@ -330,7 +348,7 @@
     if (mtab === 'processes') {
       const max = Math.max(100, ...s.processes.map(p => p.cpu));
       const ch = chips(s.processes);
-      const rows = sorted(ch.pick(s.processes)).filter(p => matches(q, p.name, p.user, p.pid)).map(p => `<tr><td><b>${esc(p.name)}</b></td><td>${esc(p.user)}</td><td class="num dim">${p.pid}</td>
+      const rows = sorted(ch.pick(s.processes)).filter(p => matches(q, p.name, p.user, p.pid)).map(p => `<tr data-key="p:${p.pid}"><td><b>${esc(p.name)}</b></td><td>${esc(p.user)}</td><td class="num dim">${p.pid}</td>
         <td class="num"><span class="mcpu"><span class="mcpubar"><i style="width:${(p.cpu / max * 100).toFixed(1)}%"></i></span>${p.cpu.toFixed(1)}%</span></td>
         <td class="mspark">${sparkline(m.procSpark?.[p.pid], { color: 'var(--accent)', w: 80, h: 20 })}</td><td class="num">${bytes(p.mem)}</td>${act(m, [['process-stop', ICON.stop, 'Stop'], ['process-kill', ICON.close, 'Force quit']], p.pid, p.name)}</tr>`);
       return ch.html + table([['Process', '', 'name'], ['User', '', 'user'], ['PID', 'num', 'pid'], ['CPU', 'num', 'cpu'], ['Last 15 min'], ['Memory', 'num', 'mem'], ['']], rows, 'No processes match') + '<p class="hcap mnote">The 20 busiest processes, refreshed every 3 seconds.</p>';
@@ -346,7 +364,7 @@
       const ch = chips(s.containers);
       const rows = sorted(ch.pick(s.containers)).filter(c => matches(q, c.name, c.image, c.state, c.project)).map(c => {
         const on = c.state === 'running';
-        return `<tr><td><b>${esc(c.name)}</b>${c.project ? `<div class="dim small">${esc(c.project)}</div>` : ''}</td><td class="dim"><span class="mimg" title="${esc(c.image)}">${esc(c.image)}</span></td>
+        return `<tr data-key="c:${esc(c.id)}"><td><b>${esc(c.name)}</b>${c.project ? `<div class="dim small">${esc(c.project)}</div>` : ''}</td><td class="dim"><span class="mimg" title="${esc(c.image)}">${esc(c.image)}</span></td>
           <td><span class="mstate ${esc(c.state)}">${esc(c.state)}</span><div class="dim small">${esc(c.status)}</div></td>
           <td class="num">${on ? c.cpu.toFixed(1) + '%' : ''}</td><td class="num">${on ? bytes(c.mem) : ''}</td><td class="num dim">${on ? `↓ ${rate(c.rx)}<br>↑ ${rate(c.tx)}` : ''}</td>
           ${act(m, on ? [['container-restart', ICON.redo, 'Restart'], ['container-stop', ICON.stop, 'Stop']] : [['container-start', ICON.play, 'Start']], c.id, c.name)}</tr>`;
@@ -408,7 +426,7 @@
     const s = m.snap, h = s?.host, q = searchInput.value.trim().toLowerCase();
     const tabs = tabsOf(m);
     if (!tabs.some(([k]) => k === mtab)) mtab = 'overview';
-    const count = { overview: (m.items || []).length || '', processes: s?.processes?.length, ports: s?.ports?.length, containers: s?.containers?.length };
+    const count = { overview: live(m).filter(i => i.severity !== 'done').length || '', processes: s?.processes?.length, ports: s?.ports?.length, containers: s?.containers?.length };
     return `<div class="mpage" style="--mc:${m.color}">
       <header class="mphead">
         <button class="mback" onclick="DevDockViews.machines.back()" title="All machines  Esc">${ICON.back}Machines</button>
@@ -439,6 +457,12 @@
 
   DevDockViews.machines = {
     render, close,
+    snooze(id, ms) {
+      if (id) snoozed[id] = Date.now() + ms; else snoozed = {};
+      for (const [k, t] of Object.entries(snoozed)) if (t < Date.now()) delete snoozed[k];
+      try { localStorage.setItem('devdock:machine-snooze', JSON.stringify(snoozed)); } catch {}
+      render();
+    },
     sort(k, num) { const st = msort[mtab]; msort[mtab] = { k, dir: st?.k === k ? -st.dir : num ? -1 : 1 }; render(); },
     open(id) { openId = id; searchInput.value = ''; window.scrollTo(0, 0); render(); if (mtab === 'sessions') this.sessions(id); },
     back() { openId = null; searchInput.value = ''; render(); },

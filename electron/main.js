@@ -1,7 +1,8 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, powerMonitor, systemPreferences } = require('electron');
 app.setName('DevDock'); // menu bar reads this, not the bundle name
 const path = require('path');
-const { spawn } = require('child_process');
+const fs = require('fs');
+const { spawn, execFile } = require('child_process');
 
 const PORT = 4003;
 let mainWindow = null;
@@ -21,9 +22,18 @@ function getResourcePath(file) {
   return path.join(__dirname, '..', file);
 }
 
+// Settings live with the rest of DevDock's data, not inside the app bundle, where every
+// install or update replaced them. The first run after this moves the bundle's copy over.
+function settingsFile() {
+  const file = path.join(app.getPath('userData'), 'devdock-settings.json');
+  const old = getResourcePath('devdock-settings.json');
+  try { if (!fs.existsSync(file) && fs.existsSync(old)) fs.copyFileSync(old, file); } catch {}
+  return file;
+}
+
 function startServer() {
   serverProcess = spawn(process.execPath, ['--no-warnings', getResourcePath('server.js')], {
-    env: { ...process.env, ELECTRON: '1', ELECTRON_RUN_AS_NODE: '1' },
+    env: { ...process.env, ELECTRON: '1', ELECTRON_RUN_AS_NODE: '1', DEVDOCK_SETTINGS: settingsFile() },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   serverProcess.stdout?.on('data', (d) => process.stdout.write(d));
@@ -31,10 +41,40 @@ function startServer() {
   serverProcess.on('error', (err) => console.error('Server error:', err));
 }
 
+// DevDock holds the keys to your machines, so it opens with Touch ID (or the login password)
+// and locks again when the Mac does. ponytail: gates this window only; a browser on
+// localhost:4003 isn't asked, and remote actions still need their own Touch ID.
+// Fails closed: the window shows a lock screen (electron/lock.html) and the dashboard only
+// loads after Touch ID or the login password says yes. Asks on its own when the window
+// opens, like 1Password; the button asks again after a cancel.
+let locked = true, asking = false;
+const LOCK = path.join(__dirname, 'lock.html');
+// Touch ID through Electron, so the prompt reads "DevDock is trying to unlock" (it offers the
+// password itself). No sensor, or the lid closed: native/devdock-key asks for the password.
+const viaPassword = () => new Promise(done => execFile(getResourcePath('native/devdock-key'), ['unlock', 'unlock DevDock'], err => done(!err)));
+const ask = () => systemPreferences.canPromptTouchID()
+  ? systemPreferences.promptTouchID('unlock').then(() => true, () => false)
+  : viaPassword();
+async function unlock() {
+  if (!locked || asking || !mainWindow) return;
+  asking = true;
+  const ok = await ask();
+  asking = false;
+  if (!mainWindow) return;
+  if (ok) { locked = false; mainWindow.loadURL(`http://localhost:${PORT}`); }
+  else mainWindow.webContents.executeJavaScript("document.querySelectorAll('button').forEach(b => b.disabled = false)").catch(() => {});
+}
+function lock() {
+  if (locked) return;
+  locked = true;
+  mainWindow?.loadFile(LOCK); // the dashboard is gone from the window, not just hidden
+}
+
 function createWindow() {
   if (mainWindow) {
     mainWindow.show();
     mainWindow.focus();
+    unlock();
     return;
   }
 
@@ -50,14 +90,18 @@ function createWindow() {
     show: false,
   });
 
-  mainWindow.loadURL(`http://localhost:${PORT}`);
+  if (locked) mainWindow.loadFile(LOCK, { query: { asking: '1' } });
+  else mainWindow.loadURL(`http://localhost:${PORT}`);
+  mainWindow.webContents.on('did-navigate-in-page', (e, url) => { if (url.includes('#unlock-')) unlock(); });
+  // nothing but the lock screen while locked
+  mainWindow.webContents.on('will-navigate', (e, url) => { if (locked && !url.startsWith('file:')) e.preventDefault(); });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http')) require('electron').shell.openExternal(url);
     return { action: 'deny' };
   });
 
-  mainWindow.once('ready-to-show', () => mainWindow?.show());
+  mainWindow.once('ready-to-show', () => { mainWindow?.show(); unlock(); });
 
   mainWindow.on('close', (e) => {
     if (!app.isQuitting) {
@@ -100,8 +144,8 @@ function updateTrayMenu(count) {
   const contextMenu = Menu.buildFromTemplate([
     { label: `DevDock — ${count} listener${count !== 1 ? 's' : ''}`, enabled: false },
     { type: 'separator' },
-    { label: 'Show Dashboard', click: () => { app.dock?.show(); if (mainWindow) { mainWindow.show(); mainWindow.focus(); } else createWindow(); } },
-    { label: 'Open History', click: () => { app.dock?.show(); if (mainWindow) { mainWindow.show(); mainWindow.focus(); mainWindow.loadURL(`http://localhost:${PORT}/history`); } } },
+    { label: 'Show Dashboard', click: () => { app.dock?.show(); createWindow(); } },
+    { label: 'Open History', click: () => { app.dock?.show(); createWindow(); if (!locked) mainWindow?.loadURL(`http://localhost:${PORT}/history`); } },
     { type: 'separator' },
     { label: 'Launch at Startup', type: 'checkbox', checked: app.getLoginItemSettings().openAtLogin, click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }) },
     { type: 'separator' },
@@ -113,8 +157,9 @@ function updateTrayMenu(count) {
 
 // ── Menu bar (standard macOS layout and shortcuts) ──────────────────
 function command(cmd) {
-  if (!mainWindow) return createWindow();
-  app.dock?.show(); mainWindow.show(); mainWindow.focus();
+  const fresh = !mainWindow;
+  app.dock?.show(); createWindow();
+  if (fresh || locked) return;
   mainWindow.webContents.executeJavaScript(`window.devdockCommand?.(${JSON.stringify(cmd)})`).catch(() => {});
 }
 
@@ -141,12 +186,12 @@ function buildAppMenu() {
     { label: 'View', submenu: [
       item('Find', 'Cmd+F', 'find'),
       { type: 'separator' },
-      item('Servers', 'Cmd+1', 'tab-servers'),
-      item('Sessions', 'Cmd+2', 'tab-sessions'),
-      item('Containers', 'Cmd+3', 'tab-containers'),
-      item('Apps', 'Cmd+4', 'tab-apps'),
-      item('Agents', 'Cmd+5', 'tab-coding'),
-      item('Home', 'Cmd+6', 'tab-home'),
+      item('Home', 'Cmd+1', 'tab-home'),
+      item('Servers', 'Cmd+2', 'tab-servers'),
+      item('Sessions', 'Cmd+3', 'tab-sessions'),
+      item('Containers', 'Cmd+4', 'tab-containers'),
+      item('Apps', 'Cmd+5', 'tab-apps'),
+      item('Agents', 'Cmd+6', 'tab-coding'),
       item('Machines', 'Cmd+7', 'tab-machines'),
       { type: 'separator' },
       item('Next Grouping', 'Shift+Cmd+G', 'group-menu'),
@@ -170,11 +215,8 @@ function buildAppMenu() {
 // ── App lifecycle ────────────────────────────────────────────────────
 
 app.on('second-instance', () => {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
-  }
+  if (mainWindow?.isMinimized()) mainWindow.restore();
+  createWindow();
 });
 
 app.whenReady().then(() => {
@@ -189,7 +231,9 @@ app.whenReady().then(() => {
       if (res.ok) {
         started = true;
         clearInterval(check);
-        createWindow(); createTray();
+        createTray(); createWindow();
+        powerMonitor.on('lock-screen', lock);
+        powerMonitor.on('suspend', lock);
       }
     } catch {}
   }, 100);
@@ -200,8 +244,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-  if (mainWindow) mainWindow.show();
-  else createWindow();
+  createWindow();
 });
 
 app.on('before-quit', () => {

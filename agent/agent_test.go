@@ -227,3 +227,11 @@ func TestRootNeverWritesThroughAPlantedLink(t *testing.T) {
 		t.Fatalf("written through the link: %q", b)
 	}
 }
+
+func TestIdleCodingAgentsStayInTheList(t *testing.T) {
+	list := []Proc{{PID: 2, Name: "claude"}, {PID: 3, Name: "bash"}, {PID: 4, Name: "nginx", CPU: 9}, {PID: 5, Name: "java", CPU: 5}}
+	top := topProcs(list, 2)
+	if len(top) != 3 || top[0].PID != 4 || top[1].PID != 5 || top[2].Name != "claude" {
+		t.Fatalf("got %+v", top)
+	}
+}

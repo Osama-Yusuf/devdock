@@ -62,3 +62,6 @@ devdock-settings.json
 
 # Built from native/*.swift
 native/devdock-key
+
+# Written by npm run build:info
+build.json

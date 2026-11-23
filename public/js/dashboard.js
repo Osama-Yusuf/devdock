@@ -1125,7 +1125,7 @@
     // ── Tabs: Servers (this file), Sessions and Containers (js/views/) ──
     // A view registers window.DevDockViews[id] = { render() } and reads
     // DevDock.sourceData[id], filled from the server's "source" messages.
-    const TABS = ['servers', 'sessions', 'containers', 'apps', 'coding', 'home', 'machines'];
+    const TABS = ['home', 'servers', 'sessions', 'containers', 'apps', 'coding', 'machines'];
     const SEARCH_HINTS = {
       servers: 'Search ports, PIDs, processes, paths\u2026',
       sessions: 'Search sessions, folders, branches, agents\u2026',
@@ -1150,6 +1150,21 @@
       if (next !== 'servers') renderActiveView(); else if (allPorts.length) { lastFilteredKeys = ''; renderTable(); }
       updateClearBtn();
     }
+    // Home's "Show in …": open the tab, find the row, scroll to it and light it up for a moment.
+    // Views re-render on every refresh, so the highlight is re-applied until it fades.
+    // A key ending in ':' matches as a prefix (Servers rows are pid:port).
+    window.revealRow = (tab, key, name, then) => {
+      if (DevDock.tab !== tab) setTab(tab);
+      then?.();
+      const find = () => [...document.querySelectorAll('tr[data-key]')].find(r => r.offsetParent && (r.dataset.key === key || (key.endsWith(':') && r.dataset.key.startsWith(key))));
+      let n = 0, searched = false, scrolled = false;
+      const t = setInterval(() => {
+        const row = find();
+        if (!row && !searched && ++n > 6 && name) { searched = true; searchInput.value = name; searchInput.dispatchEvent(new Event('input')); }
+        if (row) { row.classList.add('row-hit'); if (!scrolled) { scrolled = true; row.scrollIntoView({ block: 'center', behavior: 'smooth' }); } }
+        if (++n > 22) { clearInterval(t); document.querySelectorAll('tr.row-hit').forEach(r => r.classList.remove('row-hit')); }
+      }, 150);
+    };
     function renderActiveView() {
       if (DevDock.tab !== 'servers') DevDockViews[DevDock.tab]?.render();
     }
@@ -1235,6 +1250,19 @@ $('settingsBtn').addEventListener('click', openSettings);
     $('modalOverlay').addEventListener('click', (e) => { if (e.target === $('modalOverlay')) closeSettings(); });
 
     // ── Settings panes: one section at a time, last one remembered ────
+    // Version, build, and a check against the newest GitHub release
+    fetch('/api/version').then(r => r.json()).then(v => { $('appVersion').textContent = v.version; $('appBuild').textContent = v.build; }).catch(() => {});
+    $('updateCheck').addEventListener('click', async () => {
+      const b = $('updateCheck'), st = $('updateStatus');
+      b.disabled = true; b.textContent = 'Checking…';
+      try {
+        const u = await fetch('/api/update').then(r => r.json());
+        if (u.error) throw new Error(u.error);
+        st.innerHTML = ' · ' + (u.available ? `<b>${esc(u.latest)}</b> is out. <a href="${esc(u.url)}" target="_blank">Download it</a>` : `You're on the latest version`);
+        b.textContent = u.available ? 'Check again' : 'Check for updates';
+      } catch (e) { st.textContent = ' · ' + e.message; b.textContent = 'Try again'; }
+      b.disabled = false;
+    });
     const PANE_KEY = 'devdock:settings-pane';
     function showPane(name) {
       const btns = [...$('settingsNav').querySelectorAll('button[data-pane]')];

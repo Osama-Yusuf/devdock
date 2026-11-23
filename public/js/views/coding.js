@@ -20,6 +20,19 @@
   const RANK = { 'needs-you': 3, working: 2, idle: 1 };
   // needs you first, then working, then most recently changed
   const order = (a, b) => (RANK[b.state?.status] || 0) - (RANK[a.state?.status] || 0) || (b.state?.since || b.startedAt || 0) - (a.state?.since || a.startedAt || 0);
+  // Click a header to sort by it, again to flip; State goes back to the default order
+  let sort = null;
+  try { sort = JSON.parse(localStorage.getItem('devdock:coding-sort')); } catch {}
+  const COLS = { name: a => a.name, folder: a => a.cwd || '', where: a => whereText(a), ports: a => a.ports[0] ?? Infinity, mem: a => a.memMB, started: a => a.startedAt || 0 };
+  const sorter = () => {
+    const get = sort && COLS[sort.k];
+    if (!get) return order;
+    return (a, b) => { const x = get(a), y = get(b); return (typeof x === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true })) * sort.dir || order(a, b); };
+  };
+  const th = (label, k, cls = '', num = false) => {
+    const on = k === 'state' ? !sort : sort?.k === k;
+    return `<th class="${cls} sortable ${on ? `sorted ${k === 'state' ? 'desc' : sort.dir > 0 ? 'asc' : 'desc'}` : ''}" onclick="DevDockViews.coding.sort('${k}', ${num})">${label}</th>`;
+  };
   const hit = (q, a) => !q || q.split(/\s+/).every(w => [a.name, a.agent, a.cwd, a.branch, a.pid, whereText(a), a.state?.status, ...a.ports].join(' ').toLowerCase().includes(w));
   const muxLabel = m => DevDock.sourceData.sessions?.muxes?.find(x => x.mux === m)?.label || m;
 
@@ -84,7 +97,7 @@
     const f = FILTERS.some(([k]) => k === filter) ? filter : 'all';
     const base = d.agents.filter(a => f === 'all' || a.state?.status === f);
     const patterns = DevDockPatterns.find('coding', base, a => `g:${a.pid}`, PATTERNS);
-    const list = DevDockPatterns.filter('coding', base.filter(a => hit(q, a)), a => `g:${a.pid}`).sort(order);
+    const list = DevDockPatterns.filter('coding', base.filter(a => hit(q, a)), a => `g:${a.pid}`).sort(sorter());
     setViewResult(list.length, base.length);
     view.innerHTML = `
       <div class="subbar">
@@ -92,7 +105,7 @@
         ${patterns.length ? `<div class="patterns">${DevDockPatterns.html('coding', patterns)}</div>` : ''}
       </div>
       ${list.length ? `<div class="scroll"><table class="coding-table">
-        <thead><tr><th>Agent</th><th>State</th><th>Folder</th><th>Where</th><th>Ports</th><th class="col-user">Memory</th><th class="col-user">Started</th><th></th></tr></thead>
+        <thead><tr>${th('Agent', 'name')}${th('State', 'state')}${th('Folder', 'folder')}${th('Where', 'where')}${th('Ports', 'ports', '', true)}${th('Memory', 'mem', 'col-user', true)}${th('Started', 'started', 'col-user', true)}<th></th></tr></thead>
         <tbody>${list.map(rowHTML).join('')}</tbody>
       </table></div>` : `<div class="empty-view">${DevDock.sourceData.coding ? (q || f !== 'all' ? 'No agents match.' : 'No coding agents running.') : 'Looking for agents…'}</div>`}`;
   }
@@ -120,6 +133,11 @@
 
   DevDockViews.coding = {
     render, jump,
+    sort(k, num) {
+      sort = k === 'state' ? null : { k, dir: sort?.k === k ? -sort.dir : num ? -1 : 1 };
+      try { localStorage.setItem('devdock:coding-sort', JSON.stringify(sort)); } catch {}
+      render();
+    },
     setFilter(k) { filter = k; try { localStorage.setItem('devdock:coding-filter', k); } catch {} render(); },
     stop(pid, force) { closeAllMenus(); const a = byPid(pid); if (a) stopMany([a], force); },
     // selection (js/selection.js)

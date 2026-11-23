@@ -166,11 +166,20 @@ func topProcs(list []Proc, n int) []Proc {
 		}
 		return list[i].Mem > list[j].Mem
 	})
-	if len(list) > n {
-		list = list[:n]
+	if len(list) <= n {
+		return list
 	}
-	return list
+	// coding agents always ride along: idle ones fall out of the top, and idle is what DevDock watches for
+	top := append([]Proc(nil), list[:n]...)
+	for _, p := range list[n:] {
+		if codingAgents[p.Name] {
+			top = append(top, p)
+		}
+	}
+	return top
 }
+
+var codingAgents = map[string]bool{"claude": true, "codex": true, "gemini": true, "aider": true, "opencode": true, "amp": true, "cursor-agent": true}
 
 // machineID hashes the OS's stable id with a fixed salt: the master can tell two machines
 // apart (or spot a reinstall) without learning the raw id.

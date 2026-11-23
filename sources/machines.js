@@ -23,7 +23,7 @@ const KEEP = 15 * 60 * 1000;
 const { runaway, leak, MIN } = require('./home'); // the same rules Home uses for this Mac
 // The installer comes from the release matching this DevDock and must hash to the copy we ship:
 // a swapped file on GitHub, or anyone in between, fails that check before sudo runs anything.
-const INSTALL_URL = process.env.DEVDOCK_INSTALL_URL || `https://github.com/Osama-Yusuf/devdock/releases/download/v${require('../package.json').version}/install-agent.sh`;
+const INSTALL_URL = process.env.DEVDOCK_INSTALL_URL || `https://github.com/Osama-Yusuf/devdock/releases/download/v${require('./version').version}/install-agent.sh`;
 const INSTALL_SHA = crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname, '../agent/install-agent.sh'))).digest('hex');
 // what people compare by eye: the agent prints the same groups when it installs (agent keyCode)
 const READY = 'devdock-install';
@@ -186,6 +186,9 @@ module.exports = function machines(ctx) {
       if (r) add('cpu', 'critical', p.pid, { subject, ...r, spark: l.map(x => Math.round(x.cpu)) });
       if (k) add('mem', 'critical', p.pid, { subject, ...k, spark: l.map(x => Math.round(x.mem)) });
     }
+    coding(st, s, now, add);
+    const stopped = (s.containers || []).filter(c => c.state === 'exited' || c.state === 'dead' || c.state === 'created');
+    if (stopped.length) add('stopped', 'tidy', stopped.map(c => c.id).sort().join(','), { subjects: stopped.map(c => ({ id: c.id, name: c.name, status: c.status })) });
     for (const c of s.containers || []) if (c.state === 'restarting') add('crash', 'critical', c.id, { subject: { id: c.id, name: c.name, image: c.image }, status: c.status });
     for (const d of s.disks || []) {
       const pct = d.total ? d.used / d.total * 100 : 0;
@@ -198,6 +201,32 @@ module.exports = function machines(ctx) {
     const cp = held('cpu', 90);
     if (cp) add('busy', 'warning', '', { value: cp[cp.length - 1].cpu, spark: cp.map(h => Math.round(h.cpu)) });
     return items;
+  }
+
+  // Coding agents on the machine, like Home's: a turn of real work then quiet = just finished;
+  // quiet for hours = left behind. CPU is the only signal: a remote agent has no hooks.
+  const AGENTS = new Set(['claude', 'codex', 'gemini', 'aider', 'opencode', 'amp', 'cursor-agent']);
+  function coding(st, s, now, add) {
+    st.agents ||= new Map();
+    const live = new Set();
+    for (const p of s.processes || []) {
+      if (!AGENTS.has(p.name)) continue;
+      live.add(p.pid);
+      const a = st.agents.get(p.pid) || { firstSeen: now };
+      st.agents.set(p.pid, a);
+      const recent = (st.procs?.get(`${p.pid}:${p.name}`) || []).filter(x => now - x.t <= 15e3);
+      const busy = recent.length && recent.reduce((n, x) => n + x.cpu, 0) / recent.length >= 3;
+      if (busy) { a.busySince ||= now; a.idleSince = null; }
+      else {
+        if (a.busySince && now - a.busySince >= 30e3) a.finishedAt = now;
+        a.busySince = null;
+        a.idleSince ||= now;
+      }
+      const subject = { pid: p.pid, name: p.name, user: p.user, mem: p.mem };
+      if (a.finishedAt && now - a.finishedAt < 30 * MIN) add('finished', 'done', `${p.pid}:${a.finishedAt}`, { subject, since: a.finishedAt });
+      if (a.idleSince && now - a.idleSince >= 2 * 60 * MIN) add('idle-agent', 'tidy', p.pid, { subject, since: a.idleSince });
+    }
+    for (const pid of st.agents.keys()) if (!live.has(pid)) st.agents.delete(pid);
   }
 
   const series = (h, f) => {

@@ -4,6 +4,7 @@
 //
 //   devdock-key pubkey <keyfile>          creates the key if missing, prints its public key (base64 SPKI)
 //   devdock-key sign <keyfile> <reason>   signs stdin, prints base64 DER ECDSA P-256/SHA-256
+//   devdock-key unlock <reason>           Touch ID (or the login password) to open DevDock; exit 0 = you
 //
 // Build: swiftc -O native/devdock-key.swift -o native/devdock-key
 import CryptoKit
@@ -16,6 +17,13 @@ func fail(_ msg: String, _ code: Int32 = 1) -> Never {
 }
 
 let args = CommandLine.arguments
+if args.count == 3 && args[1] == "unlock" {
+  let done = DispatchSemaphore(value: 0)
+  var ok = false
+  LAContext().evaluatePolicy(.deviceOwnerAuthentication, localizedReason: args[2]) { r, _ in ok = r; done.signal() }
+  done.wait()
+  exit(ok ? 0 : 2)
+}
 guard args.count >= 3 else { fail("usage: devdock-key pubkey|sign <keyfile> [reason]") }
 guard SecureEnclave.isAvailable else { fail("This Mac has no Secure Enclave", 3) }
 let file = URL(fileURLWithPath: args[2])

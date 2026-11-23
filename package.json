@@ -9,7 +9,8 @@
     "start": "electron .",
     "dev": "NODE_ENV=development electron .",
     "build": "electron-builder",
-    "build:mac": "npm run build:key && electron-builder --mac",
+    "build:mac": "npm run build:key && npm run build:info && electron-builder --mac",
+    "build:info": "node -e \"const x=c=>require('child_process').execSync(c).toString().trim();require('fs').writeFileSync('build.json',JSON.stringify({version:require('./package.json').version,build:x('git rev-list --count HEAD')+' ('+x('git rev-parse --short HEAD')+')'}))\"",
     "build:win": "electron-builder --win",
     "build:linux": "electron-builder --linux",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true",
@@ -64,7 +65,9 @@
     "asar": true,
     "asarUnpack": [
       "server.js",
+      "build.json",
       "native/devdock-key",
+      "agent/install-agent.sh",
       "sources/**/*",
       "agents/**/*",
       "assets/**/*",
@@ -75,6 +78,7 @@
     "files": [
       "electron/**/*",
       "server.js",
+      "build.json",
       "sources/**/*",
       "agents/**/*",
       "assets/**/*",

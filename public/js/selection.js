@@ -133,7 +133,6 @@
   const dock = Object.assign(document.createElement('div'), { id: 'selDock' });
   document.body.append(dock);
   let barSig = '', actions = [];
-  const SPARK = '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l1.9 5.6 5.6 1.9-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z" opacity=".7"/></svg>';
 
   function renderBar() {
     const its = items();
@@ -152,7 +151,7 @@
       <button class="sel-x" data-act="clear" title="Clear selection  Esc" aria-label="Clear selection"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
       ${actions.length ? '<span class="sel-sep"></span>' : ''}
       ${actions.map((a, i) => `<button class="sel-act ${a.danger ? 'danger' : ''}" data-act="${i}">${a.icon || ''}${esc(a.label)}</button>`).join('')}
-      ${agentsOn() ? `<span class="sel-sep"></span><button class="sel-ask ${composerOpen ? 'open' : ''}" data-act="ask" title="Hand these to ${esc(agent.label)} with a prompt  ⌘↵">${SPARK}<span>Ask ${esc(agent.label)}</span></button>` : ''}
+      ${agentsOn() ? `<span class="sel-sep"></span><button class="sel-ask ask-${esc(agent.id)} ${composerOpen ? 'open' : ''}" data-act="ask" title="Hand these to ${esc(agent.label)} with a prompt  ⌘↵">${glyph(agent.id)}<span>Ask ${esc(agent.label)}</span></button>` : ''}
     </div>`;
     const cmp = dock.querySelector('.composer');
     dock.innerHTML = bar;

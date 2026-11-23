@@ -51,6 +51,10 @@
   const btn = (label, onclick, icon = '', cls = '') => `<button class="hbtn ${cls}" onclick="${onclick}">${icon}${label}</button>`;
   const snoozeBtn = (it, ms = 3600000, label = 'Snooze 1h') => `<button class="hbtn ghost" title="Hide this for ${label === 'Dismiss' ? 'good' : 'an hour'}" onclick="DevDockViews.home.snooze('${esc(it.id)}', ${ms})">${label === 'Dismiss' ? '' : ICON.snooze}${label}</button>`;
   const jumpBtn = s => (s.where?.mux || s.where?.app) ? btn('Jump to it', `DevDockViews.coding.jump('${s.pid}')`, ICON.jump, 'primary') : '';
+  // where the alert comes from, and a way there with the row lit up
+  const SRC = { server: ['servers', 'Servers', s => `${s.pid}:`], agent: ['coding', 'Coding agents', s => `g:${s.pid}`], container: ['containers', 'Containers', s => `c:${s.id}`] };
+  const showBtn = s => { const src = SRC[s?.kind]; return src ? `<button class="hbtn" data-tab="${src[0]}" data-key="${esc(src[2](s))}" data-name="${esc(s.name || '')}"
+    onclick="revealRow(this.dataset.tab, this.dataset.key, this.dataset.name)">${ICON.jump}Show in ${src[1]}</button>` : ''; };
   const stopBtn = (subjects, label = 'Stop', cls = 'danger') => btn(label, `DevDockViews.home.stop('${subjects.map(s => `${s.kind[0]}${s.pid}`).join(',')}')`, ICON.stop, cls);
 
   function card(it) {
@@ -63,7 +67,7 @@
             ${kicker('Runaway CPU', `<em>for ${dur(Date.now() - it.since)}</em>`)}
             <div class="hcard-title">${subjectIcon(s)}<b>${esc(where(s))}</b> is pinning ${cores(it.value)}</div>
             <div class="hcard-meta">${metaLine(s)}</div>
-            <div class="hcard-actions">${stopBtn([s])}${snoozeBtn(it)}</div>
+            <div class="hcard-actions">${showBtn(s)}${stopBtn([s])}${snoozeBtn(it)}</div>
           </div>
           <div class="hcard-viz"><div class="hval">${Math.round(it.value)}<small>%</small></div>${sparkline(it.spark, { color: 'var(--red)', limit: 200 })}<div class="hcap">last 15 min · line at 2 cores</div></div>
         </article>`;
@@ -73,7 +77,7 @@
             ${kicker('Memory leak', `<em>climbing for ${dur(Date.now() - it.since)}</em>`)}
             <div class="hcard-title">${subjectIcon(s)}<b>${esc(where(s))}</b> keeps growing, +${formatMem(it.rate)} a minute</div>
             <div class="hcard-meta">${metaLine(s)}</div>
-            <div class="hcard-actions">${stopBtn([s], 'Stop')}${snoozeBtn(it)}</div>
+            <div class="hcard-actions">${showBtn(s)}${stopBtn([s], 'Stop')}${snoozeBtn(it)}</div>
           </div>
           <div class="hcard-viz"><div class="hval">${formatMem(it.value)}</div>${sparkline(it.spark, { color: 'var(--red)' })}<div class="hcap">${formatMem(it.from)} → ${formatMem(it.value)}</div></div>
         </article>`;
@@ -83,7 +87,7 @@
             ${kicker('Crash loop')}
             <div class="hcard-title"><b>${esc(s.name)}</b> keeps crashing and restarting</div>
             <div class="hcard-meta"><span class="trunc">${esc(s.pod ? `pod ${s.pod} · ${s.namespace}` : s.image)}</span><span class="trunc">${esc(s.status)}</span></div>
-            <div class="hcard-actions">${btn('Show in Containers', `DevDockViews.home.showContainer('${esc(s.name)}')`, ICON.jump, 'primary')}${s.pod ? '' : btn('Stop', `DevDockViews.home.stopContainer('${s.id}', '${esc(s.name)}')`, ICON.stop, 'danger')}${snoozeBtn(it)}</div>
+            <div class="hcard-actions">${showBtn(s)}${s.pod ? '' : btn('Stop', `DevDockViews.home.stopContainer('${s.id}', '${esc(s.name)}')`, ICON.stop, 'danger')}${snoozeBtn(it)}</div>
           </div>
           <div class="hcard-viz"><div class="hval">${it.value || '?'}<small> restarts</small></div>
             <div class="hdots">${Array.from({ length: Math.min(12, it.value || 1) }, (_, i) => `<i style="animation-delay:${i * 90}ms"></i>`).join('')}</div></div>
@@ -95,20 +99,20 @@
             <div class="hcard-title">${subjectIcon(s)}<b>${esc(s.name)}</b> is stuck until you answer</div>
             <div class="hcard-meta">${metaLine(s)}</div>
           </div>
-          <div class="hcard-side">${jumpBtn(s)}${snoozeBtn(it)}</div>
+          <div class="hcard-side">${jumpBtn(s) || showBtn(s)}${snoozeBtn(it)}</div>
         </article>`;
       case 'finished': return `
         <div class="hrow sev-done">
           ${ICON.finished}${subjectIcon(s)}<b>${esc(s.name)}</b><span class="hrow-text">finished ${dur(Date.now() - it.since)} ago</span>
           <span class="hrow-meta">${metaLine(s)}</span>
-          <span class="hrow-actions">${jumpBtn(s)}${snoozeBtn(it, 7 * 86400000, 'Dismiss')}</span>
+          <span class="hrow-actions">${jumpBtn(s) || showBtn(s)}${snoozeBtn(it, 7 * 86400000, 'Dismiss')}</span>
         </div>`;
       case 'forgotten': return `
         <article class="hcard sev-tidy">
           <div class="hcard-main">
             ${kicker('Forgotten', `<em>nothing owns ${it.subjects.length > 1 ? 'them' : 'it'}</em>`)}
             <div class="hcard-title">${it.subjects.length} ${it.subjects.length > 1 ? 'things' : 'thing'} idle for hours with no terminal</div>
-            <ul class="hlist">${it.subjects.map(f => `<li>${subjectIcon(f)}<b>${esc(where(f))}</b><span class="trunc">${esc(tildify(f.cwd || ''))}</span><em>idle ${dur(Date.now() - f.idleSince)} · ${formatMem(f.memMB)}</em></li>`).join('')}</ul>
+            <ul class="hlist">${it.subjects.map(f => `<li>${subjectIcon(f)}<b>${esc(where(f))}</b>${showBtn(f).replace('class="hbtn"', 'class="hbtn ghost hshow"').replace(/Show in [^<]*/, 'Show')}<span class="trunc">${esc(tildify(f.cwd || ''))}</span><em>idle ${dur(Date.now() - f.idleSince)} · ${formatMem(f.memMB)}</em></li>`).join('')}</ul>
             <div class="hcard-actions">${stopBtn(it.subjects, `Stop ${it.subjects.length > 1 ? 'all' : 'it'} · frees ${formatMem(it.value)}`)}${snoozeBtn(it)}</div>
           </div>
         </article>`;
@@ -121,7 +125,7 @@
             <div class="hcard-title"><b>${esc(it.name)}</b> is running ${it.subjects.length} times from the same folder</div>
             <div class="hcard-meta">${metaLine({ cwd: it.cwd, branch: it.subjects[0].branch })}</div>
             <div class="hdup">${it.subjects.map(s => `<span>${subjectIcon(s)}${esc(ports(s) || s.pid)}</span>`).join('<i>=</i>')}</div>
-            <div class="hcard-actions">${stopBtn([newest], `Stop ${ports(newest) || 'the newer one'}`)}${snoozeBtn(it)}</div>
+            <div class="hcard-actions">${showBtn(newest)}${stopBtn([newest], `Stop ${ports(newest) || 'the newer one'}`)}${snoozeBtn(it)}</div>
           </div>
         </article>`;
       }
@@ -210,7 +214,7 @@
     const items = visibleItems();
     const crit = items.filter(i => i.severity === 'critical').length, wait = items.filter(i => i.severity === 'needs-you').length;
     tab.dataset.alert = crit ? 'critical' : wait ? 'needs-you' : '';
-    tab.title = `Home${crit + wait ? ` · ${crit + wait} need${crit + wait > 1 ? '' : 's'} you` : ''}  ⌘6`;
+    tab.title = `Home${crit + wait ? ` · ${crit + wait} need${crit + wait > 1 ? '' : 's'} you` : ''}  ⌘1`;
   }
   document.addEventListener('devdock:source', e => { if (e.detail === 'home') badge(); });
 
@@ -235,7 +239,6 @@
       talkBusy = false; if (r) talk = r; render();
     },
     unsnooze() { snoozed = {}; try { localStorage.removeItem('devdock:home-snooze'); } catch {} render(); badge(); },
-    showContainer(name) { setTab('containers'); searchInput.value = name; searchInput.dispatchEvent(new Event('input')); },
     async stopContainer(id, name) {
       if (!await confirmDialog(`Stop container ${name}?`, 'It stays on disk; start it again from Containers.', 'Stop')) return;
       if (await sourceAction('containers', 'stop', { id })) showToast(`Stopped ${name}`);

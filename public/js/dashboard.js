@@ -546,6 +546,22 @@
 
     function rowKey(p) { return `${p.pid}:${p.port}`; }
 
+    // Sparkline with a soft area under it, and a dashed line where the alarm starts (Home, Containers)
+    function sparkline(values, { color, limit, w = 148, h = 42 } = {}) {
+      if (!(values?.length > 1)) return ''; // one point is no trend
+      const max = Math.max(...values, limit || 0) * 1.08 || 1, min = limit ? 0 : Math.min(...values) * 0.92;
+      const x = i => (i / Math.max(1, values.length - 1)) * w, y = v => h - ((v - min) / (max - min || 1)) * (h - 4) - 2;
+      const line = values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('');
+      const id = 'g' + Math.random().toString(36).slice(2, 8);
+      return `<svg class="hspark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+        <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".32"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+        ${limit ? `<line x1="0" x2="${w}" y1="${y(limit)}" y2="${y(limit)}" stroke="${color}" stroke-opacity=".45" stroke-dasharray="3 3"/>` : ''}
+        <path d="${line}L${w},${h}L0,${h}Z" fill="url(#${id})"/>
+        <path d="${line}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+        <circle cx="${x(values.length - 1)}" cy="${y(values[values.length - 1])}" r="2.6" fill="${color}"/>
+      </svg>`;
+    }
+
     function formatMem(mb) {
       if (!mb || mb === 0) return '0 MB';
       if (mb < 1024) return Math.round(mb) + ' MB';

@@ -42,22 +42,6 @@
   const ports = s => (s.ports || []).map(p => ':' + p).join(' ');
   const where = s => s.kind === 'server' ? `${s.name}${s.ports?.length ? ' ' + ports(s) : ''}` : s.name;
 
-  // Sparkline with a soft area under it, and a dashed line where the alarm starts
-  function spark(values, { color, limit, w = 148, h = 42 } = {}) {
-    if (!values?.length) return '';
-    const max = Math.max(...values, limit || 0) * 1.08 || 1, min = limit ? 0 : Math.min(...values) * 0.92;
-    const x = i => (i / Math.max(1, values.length - 1)) * w, y = v => h - ((v - min) / (max - min || 1)) * (h - 4) - 2;
-    const line = values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('');
-    const id = 'g' + Math.random().toString(36).slice(2, 8);
-    return `<svg class="hspark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
-      <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".32"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
-      ${limit ? `<line x1="0" x2="${w}" y1="${y(limit)}" y2="${y(limit)}" stroke="${color}" stroke-opacity=".45" stroke-dasharray="3 3"/>` : ''}
-      <path d="${line}L${w},${h}L0,${h}Z" fill="url(#${id})"/>
-      <path d="${line}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
-      <circle cx="${x(values.length - 1)}" cy="${y(values[values.length - 1])}" r="2.6" fill="${color}"/>
-    </svg>`;
-  }
-
   const subjectIcon = s => s.kind === 'agent' ? agentHTML(s.agent, s.agent)
     : s.kind === 'server' ? runtimeIconHTML(s.runtime, s.runtimeColor, '', 14) : '';
   const metaLine = s => [
@@ -81,7 +65,7 @@
             <div class="hcard-meta">${metaLine(s)}</div>
             <div class="hcard-actions">${stopBtn([s])}${snoozeBtn(it)}</div>
           </div>
-          <div class="hcard-viz"><div class="hval">${Math.round(it.value)}<small>%</small></div>${spark(it.spark, { color: 'var(--red)', limit: 200 })}<div class="hcap">last 15 min · line at 2 cores</div></div>
+          <div class="hcard-viz"><div class="hval">${Math.round(it.value)}<small>%</small></div>${sparkline(it.spark, { color: 'var(--red)', limit: 200 })}<div class="hcap">last 15 min · line at 2 cores</div></div>
         </article>`;
       case 'mem': return `
         <article class="hcard sev-critical">
@@ -91,7 +75,7 @@
             <div class="hcard-meta">${metaLine(s)}</div>
             <div class="hcard-actions">${stopBtn([s], 'Stop')}${snoozeBtn(it)}</div>
           </div>
-          <div class="hcard-viz"><div class="hval">${formatMem(it.value)}</div>${spark(it.spark, { color: 'var(--red)' })}<div class="hcap">${formatMem(it.from)} → ${formatMem(it.value)}</div></div>
+          <div class="hcard-viz"><div class="hval">${formatMem(it.value)}</div>${sparkline(it.spark, { color: 'var(--red)' })}<div class="hcap">${formatMem(it.from)} → ${formatMem(it.value)}</div></div>
         </article>`;
       case 'crash': return `
         <article class="hcard sev-critical">
@@ -145,6 +129,28 @@
     return '';
   }
 
+  // Speeds in bytes per second, decimal like Activity Monitor
+  const rate = n => { const u = ['B', 'KB', 'MB', 'GB']; let i = 0; while (n >= 1000 && i < 3) { n /= 1000; i++; } return `${n < 10 && i ? n.toFixed(1) : Math.round(n)} ${u[i]}/s`; };
+  function netTile(n) {
+    if (!n) return '<div class="hvital"><label>Network</label><div class="hv">—</div></div>';
+    const ips = [n.lan && `LAN ${n.lan}`, n.tailscale && `Tailscale ${n.tailscale}`].filter(Boolean).join(' · ');
+    return `<div class="hvital hnet"><label>Network · ${esc(n.iface)}</label>
+      <div class="hv"><span class="down">↓ ${rate(n.rx)}</span><small> ↑ ${rate(n.tx)}</small></div>
+      <div class="hnet-foot"><span class="trunc" title="${esc(ips)}">${esc(ips)}</span><button class="link-btn" onclick="DevDockViews.home.talkers()">Who's using it</button></div>
+      ${sparkline(n.rxSpark, { color: 'var(--green)', w: 120, h: 26 })}</div>`;
+  }
+  // One nettop sample, on demand (see sources/home.js talkers)
+  let talk = null, talkBusy = false;
+  function talkersHTML() {
+    if (!talk && !talkBusy) return '';
+    if (!talk) return '<section class="htalk"><header><h3>Who\'s using the network</h3><span>Measuring for a second…</span></header></section>';
+    const max = Math.max(1, ...talk.apps.map(a => a.rx + a.tx));
+    return `<section class="htalk"><header><h3>Who's using the network</h3><span>right now · ${talkBusy ? 'measuring…' : `<button class="link-btn" onclick="DevDockViews.home.talkers()">measure again</button>`} · <button class="link-btn" onclick="DevDockViews.home.talkers(false)">close</button></span></header>
+      ${talk.apps.length ? `<ul>${talk.apps.map(a => `<li><b class="trunc" title="PID ${esc(a.pids.join(', '))}">${esc(a.name)}</b>
+        <span class="hbar"><i class="rx" style="width:${(a.rx / max * 100).toFixed(1)}%"></i><i class="tx" style="width:${(a.tx / max * 100).toFixed(1)}%"></i></span>
+        <em><span class="down">↓ ${rate(a.rx)}</span> ↑ ${rate(a.tx)}</em></li>`).join('')}</ul>` : '<p class="hcap">Nothing is using the network right now.</p>'}</section>`;
+  }
+
   function hero(items) {
     const v = data()?.vitals || {};
     const crit = items.filter(i => i.severity === 'critical').length, wait = items.filter(i => i.severity === 'needs-you').length;
@@ -166,11 +172,11 @@
         <div class="horb">${sev === 'clear' ? ICON.check : `<span>${n || tidy}</span>`}</div>
         <div class="hhead"><h2>${headline}</h2><p>${esc(sub)}</p></div>
         <div class="hvitals">
-          <div class="hvital"><label>Dev CPU</label><div class="hv">${((v.cpu || 0) / 100).toFixed(1)}<small> / ${v.cores || '?'} cores</small></div>${meter(cpuPct)}${spark(v.cpuSpark, { color: 'var(--accent)', w: 120, h: 26 })}</div>
-          <div class="hvital"><label>Dev memory</label><div class="hv">${formatMem(v.mem || 0)}<small> / ${formatMem(v.totalMem || 0)}</small></div>${meter(memPct)}${spark(v.memSpark, { color: 'var(--accent)', w: 120, h: 26 })}</div>
-          <div class="hvital"><label>Agents</label><div class="hv">${v.agents || 0}</div>
+          <div class="hvital"><label>Dev CPU</label><div class="hv">${((v.cpu || 0) / 100).toFixed(1)}<small> / ${v.cores || '?'} cores</small></div>${meter(cpuPct)}${sparkline(v.cpuSpark, { color: 'var(--accent)', w: 120, h: 26 })}</div>
+          <div class="hvital"><label>Dev memory</label><div class="hv">${formatMem(v.mem || 0)}<small> / ${formatMem(v.totalMem || 0)}</small></div>${meter(memPct)}${sparkline(v.memSpark, { color: 'var(--accent)', w: 120, h: 26 })}</div>
+          <div class="hvital"><label>Agents · servers</label><div class="hv">${v.agents || 0}<small> agents · ${v.servers || 0} servers</small></div>
             <div class="hagents">${v.working ? `<span class="ast-working">${STATE_ICON.working}${v.working} working</span>` : ''}${v.needsYou ? `<span class="ast-needs-you">${STATE_ICON['needs-you']}${v.needsYou} waiting</span>` : ''}${!v.working && !v.needsYou ? '<span>all idle</span>' : ''}</div></div>
-          <div class="hvital"><label>Servers</label><div class="hv">${v.servers || 0}</div><div class="hagents"><span>project servers</span></div></div>
+          ${netTile(v.net)}
         </div>
       </section>`;
   }
@@ -187,6 +193,7 @@
     const snoozedCount = (d.items || []).length - all.length;
     view.innerHTML = `<div class="home">
       ${hero(all)}
+      ${talkersHTML()}
       ${SECTIONS.map(([sev, title, hint]) => {
         const list = items.filter(it => it.severity === sev);
         return list.length ? `<section class="hsec sev-${sev}"><header><h3>${title}</h3><span>${hint}</span></header>
@@ -221,6 +228,12 @@
 
   DevDockViews.home = {
     render, snooze, stop,
+    async talkers(open = true) {
+      if (!open) { talk = null; return render(); }
+      talkBusy = true; render();
+      const r = await sourceAction('home', 'talkers');
+      talkBusy = false; if (r) talk = r; render();
+    },
     unsnooze() { snoozed = {}; try { localStorage.removeItem('devdock:home-snooze'); } catch {} render(); badge(); },
     showContainer(name) { setTab('containers'); searchInput.value = name; searchInput.dispatchEvent(new Event('input')); },
     async stopContainer(id, name) {

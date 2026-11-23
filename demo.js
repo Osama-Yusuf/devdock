@@ -140,6 +140,11 @@ function demoContainers() {
     c('d4a8', 'billing-db-1', 'postgres:15', 'exited', 'Exited (0) 3 weeks ago', 'billing', [], 41 * MB, 30 * day, ['billing_pgdata']),
     c('e2c6', 'nostalgic_hopper', 'node:22', 'exited', 'Exited (1) 2 weeks ago', null, [], 210 * MB, 16 * day),
   ];
+  // usage history like sources/containers.js keeps: 30 points over 15 minutes
+  const wave = (base, amp, k) => Array.from({ length: 30 }, (_, i) => Math.max(0, Math.round((base + amp * Math.sin(i * k) + amp * 0.4 * Math.sin(i * k * 3.1)) * 10) / 10));
+  const use = (cpu, mem, rx, tx, k) => ({ cpu, mem, limit: 16384, rx, tx, cpuSpark: wave(cpu, cpu * 0.6, k), memSpark: wave(mem, mem * 0.04, k / 3), rxSpark: wave(rx, rx * 0.5, k), txSpark: wave(tx, tx * 0.5, k) });
+  const stats = { 'storefront-db-1': use(3.2, 182, 4200, 9800, 0.7), 'storefront-redis-1': use(0.6, 9, 1300, 1100, 1.3), 'storefront-mailpit-1': use(0.1, 22, 40, 0, 0.4) };
+  containers.forEach(x => { if (stats[x.name]) x.stats = stats[x.name]; });
   const img = (tag, size, users, running) => ({ id: `sha256:${tag}`, tags: tag ? [tag] : [], size: size * MB, unique: size * MB, createdAt: at(20 * day), containers: users, running, lastUsed: users ? Date.now() : null });
   const images = [img('postgres:16', 438, 1, true), img('redis:7-alpine', 41, 1, true), img('axllent/mailpit', 32, 1, true), img('postgres:15', 412, 1, false), img('node:22', 1120, 1, false), img('', 980, 0, false), img('python:3.12-slim', 155, 0, false)];
   const volumes = [
@@ -186,9 +191,19 @@ function demoHome() {
       ] },
     ],
     vitals: { servers: 7, agents: 8, working: 2, needsYou: 1, cpu: 318, mem: 5940, cores: 12, totalMem: 36864,
+      net: { iface: 'en0', rx: 2.4e6, tx: 310e3, lan: '192.168.1.42', tailscale: '100.101.7.23',
+        rxSpark: wave(24, 1.6e6, 7e5, 3e4), txSpark: wave(24, 2.6e5, 9e4, 2e3) },
       cpuSpark: [40, 42, 38, 51, 60, 140, 230, 262, 281, 300, 296, 310, 305, 298, 312, 320, 309, 315, 322, 311, 318, 314, 320, 318],
       memSpark: wave(24, 5100, 40, 36) },
   };
 }
 
-module.exports = { demoPorts, demoTransient, demoSessions, demoAgents, demoApps, demoContainers, demoHome };
+function demoTalkers() {
+  const t = (name, rx, tx, pids) => ({ name, rx, tx, pids: pids.map(String) });
+  return { at: Date.now(), apps: [
+    t('Google Chrome', 1.7e6, 92e3, [3101, 3102]), t('OrbStack', 410e3, 120e3, [812]), t('Claude Code', 180e3, 41e3, [41200, 44710]),
+    t('Slack', 64e3, 12e3, [2200]), t('next-server', 22e3, 31e3, [41388]), t('mDNSResponder', 4e3, 2e3, [495]),
+  ] };
+}
+
+module.exports = { demoPorts, demoTransient, demoSessions, demoAgents, demoApps, demoContainers, demoHome, demoTalkers };

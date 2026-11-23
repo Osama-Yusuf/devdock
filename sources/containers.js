@@ -35,6 +35,7 @@ module.exports = function containers(ctx) {
   let apiPrefix = null;
   let last = null; // latest scan; actions only accept ids from it
   const inspectCache = new Map(); // container id -> { state, startedAt, finishedAt }
+  const usage = new Map();        // running container id -> [{ t, cpu, mem, rx, tx }], last 15 min
 
   // DOCKER_HOST, then the active docker context, then the usual sockets.
   // ponytail: unix sockets only; a tcp:// DOCKER_HOST reports Docker as unavailable.
@@ -93,6 +94,48 @@ module.exports = function containers(ctx) {
     return info.finishedAt || info.startedAt || null;
   }
 
+  // One-shot stats (no 1s wait for Docker's own second sample): CPU and network are rates,
+  // so each comes from this reading and the one before it, kept here.
+  const raw = new Map(); // id -> previous reading
+  async function sample(c, now) {
+    const s = (await api('GET', `/containers/${c.id}/stats?stream=false&one-shot=true`, { timeout: 4000 })).body;
+    if (!s?.cpu_stats) return null;
+    const net = Object.values(s.networks || {}).reduce((n, x) => ({ rx: n.rx + x.rx_bytes, tx: n.tx + x.tx_bytes }), { rx: 0, tx: 0 });
+    const cur = { t: now, cpu: s.cpu_stats.cpu_usage?.total_usage || 0, sys: s.cpu_stats.system_cpu_usage || 0, ...net };
+    const prev = raw.get(c.id);
+    raw.set(c.id, cur);
+    // same as `docker stats`: page cache isn't the container's memory
+    const mem = Math.max(0, (s.memory_stats?.usage || 0) - (s.memory_stats?.stats?.inactive_file ?? s.memory_stats?.stats?.total_inactive_file ?? 0)) / 1048576;
+    if (!prev || cur.sys <= prev.sys) return null; // first reading: no rate yet
+    const secs = (now - prev.t) / 1000 || 1;
+    return {
+      cpu: (cur.cpu - prev.cpu) / (cur.sys - prev.sys) * (s.cpu_stats.online_cpus || 1) * 100,
+      mem, limit: (s.memory_stats?.limit || 0) / 1048576,
+      rx: Math.max(0, cur.rx - prev.rx) / secs, tx: Math.max(0, cur.tx - prev.tx) / secs,
+    };
+  }
+  // 30 points per series for sparklines
+  const series = (list, f) => {
+    const step = Math.max(1, Math.floor(list.length / 30));
+    return list.filter((_, i) => i % step === 0 || i === list.length - 1).map(x => Math.round(x[f] * 10) / 10);
+  };
+  async function stats(containers) {
+    const now = Date.now();
+    const running = containers.filter(c => c.state === 'running' && !c.k8s?.sandbox);
+    await Promise.all(running.map(async c => {
+      const u = await sample(c, now).catch(() => null);
+      if (!u) return;
+      const list = usage.get(c.id) || [];
+      list.push({ t: now, ...u });
+      while (now - list[0].t > 15 * 60000) list.shift();
+      usage.set(c.id, list);
+      c.stats = { cpu: u.cpu, mem: u.mem, limit: u.limit, rx: u.rx, tx: u.tx,
+        cpuSpark: series(list, 'cpu'), memSpark: series(list, 'mem'), rxSpark: series(list, 'rx'), txSpark: series(list, 'tx') };
+    }));
+    const live = new Set(running.map(c => c.id));
+    for (const id of usage.keys()) if (!live.has(id)) { usage.delete(id); raw.delete(id); }
+  }
+
   async function scan() {
     if (ctx.DEMO) return require('../demo').demoContainers();
     if (!await connect()) return { available: false, reason: "Docker isn't running" };
@@ -115,6 +158,7 @@ module.exports = function containers(ctx) {
       ports: [...new Set((c.Ports || []).map(p => p.PublicPort).filter(Boolean))].sort((a, b) => a - b),
       volumes: (c.Mounts || []).filter(m => m.Type === 'volume').map(m => m.Name),
     })));
+    await stats(containers);
     const ids = new Set(containers.map(c => c.id));
     for (const id of inspectCache.keys()) if (!ids.has(id)) inspectCache.delete(id);
 

@@ -37,6 +37,15 @@
   // The one purge that fits the sub-tab you're looking at
   const CONTEXT = { containers: 0, images: 2, volumes: 5, build: 3 };
 
+  // CPU, memory and network of a running container, each with its last 15 minutes
+  const usageCells = c => {
+    const u = c.stats;
+    if (!u) return '<td><span class="code">—</span></td>'.repeat(3);
+    const cell = (text, values, color, tip) => `<td><div class="ustat" title="${esc(tip)}"><span class="code">${text}</span>${sparkline(values, { color, w: 54, h: 18 })}</div></td>`;
+    return cell(`${u.cpu < 10 ? u.cpu.toFixed(1) : Math.round(u.cpu)}%`, u.cpuSpark, 'var(--accent)', `${u.cpu.toFixed(1)}% of one core`)
+      + cell(formatMem(u.mem), u.memSpark, '#a78bfa', `${formatMem(u.mem)}${u.limit ? ` of ${formatMem(u.limit)} allowed` : ''}`)
+      + `<td><div class="unet" title="In ${bytes(u.rx)}/s, out ${bytes(u.tx)}/s"><span class="code${u.rx < 1 ? ' zero' : ''}">↓ ${bytes(u.rx)}/s</span><span class="code${u.tx < 1 ? ' zero' : ''}">↑ ${bytes(u.tx)}/s</span></div></td>`;
+  };
   function bytes(n) {
     if (n == null || n < 0) return '—';
     const u = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -104,13 +113,14 @@
   };
 
   const BODIES = {
-    containers: (list, k8sCtx) => table('ctr-table', '<th>Name</th><th>Image</th><th>Ports</th><th class="col-user">Last ran</th><th class="col-user">Disk</th><th></th>',
+    containers: (list, k8sCtx) => table('ctr-table', '<th>Name</th><th>Image</th><th>Ports</th><th title="Last 15 minutes">CPU</th><th title="Last 15 minutes">Memory</th><th title="Network in and out, per second">Network</th><th class="col-user">Last ran</th><th class="col-user">Disk</th><th></th>',
       list.map((c, i) => `<tr data-key="c:${esc(c.id)}">
         <td class="col-name"><span class="path-cell">${c.k8s
           ? `<span class="trunc" title="Pod ${esc(c.k8s.pod)}\nContainer ${esc(c.k8s.container)}\n${esc(c.status)}">${esc(c.k8s.pod)}</span><span class="chip chip-k8s" title="Kubernetes namespace ${esc(c.k8s.namespace)}">k8s \u00B7 ${esc(c.k8s.namespace)}</span>`
-          : `<span class="trunc" title="${esc(c.status)}">${esc(c.name)}</span>`}${c.project ? `<span class="chip" title="Compose project">${esc(c.project)}</span>` : ''}</span></td>
+          : `<span class="trunc" title="${esc(c.name)}\n${esc(c.status)}">${esc(c.project && c.name.startsWith(c.project + '-') ? c.name.slice(c.project.length + 1) : c.name)}</span>`}${c.project ? `<span class="chip" title="Compose project">${esc(c.project)}</span>` : ''}</span></td>
         <td><span class="code trunc" title="${esc(c.image)}">${esc(c.image.startsWith('sha256:') ? short(c.image) : c.image)}</span></td>
         <td>${c.ports.map(p => `<a href="http://localhost:${p}" target="_blank" class="code port-link">${p}</a>`).join(' ') || '<span class="code">—</span>'}</td>
+        ${usageCells(c)}
         <td class="col-user">${stopped(c) ? `<span title="${esc(c.status)}">${when(false, c.lastUsed)}</span>` : when(true)}</td>
         <td class="col-user code">${bytes(c.size)}</td>
         <td class="actions-cell" style="text-align:right;">${menu(`ctr-${i}`, [

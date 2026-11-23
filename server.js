@@ -19,7 +19,7 @@ app.use((req, res, next) => isOwn(req) ? next() : res.status(403).end());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 // demo pids are made up and may match real processes: never act on them
-if (DEMO) app.use(/^\/api\/(kill|restart|logs|start-server|sources)/, (req, res) => res.status(403).json({ error: 'Disabled in demo mode' }));
+if (DEMO) app.use(/^\/api\/(kill|restart|logs|start-server|sources\/(?!home\/))/, (req, res) => res.status(403).json({ error: 'Disabled in demo mode' }));
 
 // ── Runtime definitions ──────────────────────────────────────────────
 const RUNTIMES = {

@@ -166,9 +166,59 @@ module.exports = function home(ctx) {
         needsYou: agents.filter(a => a.state?.status === 'needs-you').length,
         cpu: sumCpu, mem: sumMem, cpuSpark: spark(totals, 'cpu'), memSpark: spark(totals, 'mem'),
         cores: require('os').cpus().length, totalMem: require('os').totalmem() / 1024 / 1024,
+        net: await network(now),
       },
     };
   }
 
-  return { id: 'home', intervalMs: 5000, scan, actions: {} };
+  // Network speed of the interface the default route uses, from netstat's byte counters
+  // (free, unlike nettop). ponytail: one interface; traffic on a VPN that isn't the default route isn't counted.
+  const netHist = [];
+  let netPrev = null, iface = null, ifaceAt = 0;
+  async function network(now) {
+    if (!iface || now - ifaceAt > 30000) {
+      iface = (await ctx.run('route', ['-n', 'get', 'default'], { timeout: 3000 })).stdout.match(/interface:\s*(\S+)/)?.[1] || null;
+      ifaceAt = now;
+    }
+    if (!iface) return null;
+    // count from the end: lo0's link row has no address column
+    const row = (await ctx.run('netstat', ['-ibn', '-I', iface], { timeout: 3000 })).stdout.split('\n').find(l => /<Link#/.test(l))?.trim().split(/\s+/);
+    if (!row) return null;
+    const cur = { t: now, rx: +row[row.length - 5], tx: +row[row.length - 2] };
+    if (netPrev && cur.rx >= netPrev.rx && cur.tx >= netPrev.tx) {
+      const secs = (now - netPrev.t) / 1000 || 1;
+      netHist.push({ t: now, rx: (cur.rx - netPrev.rx) / secs, tx: (cur.tx - netPrev.tx) / secs });
+      while (netHist.length && now - netHist[0].t > KEEP) netHist.shift();
+    }
+    netPrev = cur;
+    const addrs = Object.entries(require('os').networkInterfaces()).flatMap(([name, list]) => list.filter(a => a.family === 'IPv4' && !a.internal).map(a => ({ name, ip: a.address })));
+    const last = netHist[netHist.length - 1] || { rx: 0, tx: 0 };
+    return {
+      iface, rx: last.rx, tx: last.tx, rxSpark: spark(netHist, 'rx'), txSpark: spark(netHist, 'tx'),
+      lan: addrs.find(a => a.name === iface)?.ip || null,
+      tailscale: addrs.find(a => /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(a.ip))?.ip || null, // 100.64.0.0/10
+    };
+  }
+
+  // Which processes use the network, from one nettop sample. On demand only: nettop costs
+  // about a CPU second per sample. Grouped by app, so Chrome's helpers count as Chrome.
+  // External interfaces only: localhost traffic (DevDock talking to your dev servers) isn't network use.
+  async function talkers() {
+    if (ctx.DEMO) return require('../demo').demoTalkers();
+    const out = (await ctx.run('nettop', ['-P', '-L', '2', '-d', '-s', '1', '-x', '-t', 'external', '-J', 'bytes_in,bytes_out'], { timeout: 8000 })).stdout;
+    const block = out.split(/^,bytes_in,bytes_out,$/m)[2] || ''; // the second block is the 1s delta
+    const procs = ctx.procs() || {};
+    const apps = {};
+    for (const line of block.split('\n')) {
+      const m = line.match(/^(.*)\.(\d+),(\d+),(\d+),$/);
+      if (!m || +m[3] + +m[4] === 0) continue;
+      const comm = procs[m[2]]?.comm || '';
+      const name = ctx.appFromPath(comm) || ctx.agentOf(comm) || path.basename(comm) || m[1];
+      const a = apps[name] ||= { name, rx: 0, tx: 0, pids: [] };
+      a.rx += +m[3]; a.tx += +m[4]; a.pids.push(m[2]);
+    }
+    return { at: Date.now(), apps: Object.values(apps).sort((x, y) => y.rx + y.tx - x.rx - x.tx).slice(0, 8) };
+  }
+
+  return { id: 'home', intervalMs: 5000, scan, actions: { talkers } };
 };

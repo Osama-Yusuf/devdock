@@ -5,7 +5,7 @@ const home = require('../sources/home');
 
 async function run(series) { // series(minute) -> { cpu, mem }, sampled every 5s for 15 min
   const server = { pid: '10', port: 3000, scriptPath: '/code/app', procName: 'node' };
-  const src = home({ procs: () => ({}), ports: () => [server], source: () => null });
+  const src = home({ procs: () => ({}), ports: () => [server], source: () => null, run: async () => ({ code: 1, stdout: '' }) });
   const real = Date.now;
   let now = 1e12, out;
   Date.now = () => now;

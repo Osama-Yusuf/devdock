@@ -4,7 +4,8 @@
 //
 //   node agent/release-sign.js keygen          create the key (once; back it up, keep it off GitHub)
 //   node agent/release-sign.js pub             the lines to embed: install-agent.sh and -X main.updateKey
-//   node agent/release-sign.js sign <file>     writes <file>.sig
+//   node agent/release-sign.js sign <file>     writes <file>.sig (SSHSIG, for install-agent.sh)
+//   node agent/release-sign.js raw <file>      writes <file>.sig (base64 Ed25519, for the agent's self-update)
 //
 // Key: $DEVDOCK_RELEASE_KEY or ~/.config/devdock/release-key.pem
 const crypto = require('crypto'), fs = require('fs'), os = require('os'), path = require('path');
@@ -38,7 +39,10 @@ if (cmd === 'keygen') {
 } else if (cmd === 'sign' && file) {
   fs.writeFileSync(file + '.sig', sign(load(), fs.readFileSync(file)));
   console.log(`Signed ${file}.sig`);
+} else if (cmd === 'raw' && file) {
+  fs.writeFileSync(file + '.sig', crypto.sign(null, fs.readFileSync(file), load()).toString('base64') + '\n');
+  console.log(`Signed ${file}.sig`);
 } else {
-  console.error('usage: release-sign.js keygen | pub | sign <file>');
+  console.error('usage: release-sign.js keygen | pub | sign <file> | raw <file>');
   process.exit(1);
 }

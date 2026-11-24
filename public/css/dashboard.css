@@ -1991,3 +1991,14 @@
     .actions-menu .mtid-hint { margin-left: auto; padding-left: 14px; color: var(--text-dim); display: inline-flex; }
     .actions-menu .mtid-hint svg { width: 12px; height: 12px; }
     .hgo { font-size: .78rem; color: var(--text-dim); text-decoration: underline; text-underline-offset: 3px; padding: 4px 6px; width: auto; }
+    .sev-limit { --sev: var(--yellow); }
+    .plimits { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 14px; }
+    .plimit { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; display: grid; gap: 8px; }
+    .plimit header { display: flex; align-items: center; gap: 8px; font-size: .85rem; }
+    .plimit header em { margin-left: auto; font-style: normal; font-size: .72rem; color: var(--text-dim); }
+    .plimit-row { display: grid; grid-template-columns: 96px 1fr auto; align-items: center; gap: 10px; font-size: .78rem; color: var(--text-dim); }
+    .plimit-row .hbar { height: 6px; }
+    .plimit-row .hbar i { background: var(--accent); }
+    .plimit-row.warn .hbar i { background: var(--yellow); } .plimit-row.bad .hbar i { background: var(--red); }
+    .plimit-row em { font-style: normal; font-variant-numeric: tabular-nums; }
+    .plimit-err { margin: 0; font-size: .78rem; color: var(--text-dim); }

@@ -173,6 +173,7 @@ function demoHome() {
   const wave = (n, base, amp, drift = 0) => Array.from({ length: n }, (_, i) => Math.round(base + drift * i + amp * Math.sin(i * 1.7) * (i % 3 ? 1 : -0.6)));
   return {
     items: [
+      { id: 'limit:Claude Code:5-hour', type: 'limit', severity: 'limit', tool: 'Claude Code', plan: 'Max', label: '5-hour', used: 86, resetsAt: Date.now() + 5400000 },
       { id: 'cpu:p41388', type: 'cpu', severity: 'critical', subject: srv(41388, 'next-server', [3000], 'storefront/apps/web', 'feat/checkout'),
         since: at(7 * min), value: 246, spark: [4, 6, 3, 5, 38, 120, 210, 232, 251, 240, 244, 255, 238, 249, 252, 241, 236, 250, 248, 243, 251, 239, 246, 247] },
       { id: 'mem:p41530', type: 'mem', severity: 'critical', subject: srv(41530, 'storybook', [6006], 'storefront/packages/ui', 'feat/checkout'),

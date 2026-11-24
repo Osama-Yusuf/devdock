@@ -87,6 +87,21 @@
     </tr>`;
   }
 
+  // Plan limits (sources/limits.js): one card per tool, a meter per window
+  function limitsHTML() {
+    const tools = DevDock.sourceData.limits?.tools || [];
+    if (!tools.length) return '';
+    const left = ms => { const m = Math.max(0, Math.round(ms / 60000)); return m < 60 ? `${m}m` : m < 2880 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${Math.floor(m / 1440)}d`; };
+    return `<div class="plimits">${tools.map(t => `<section class="plimit">
+      <header>${agentHTML(t.tool, t.tool)}<b>${esc(t.tool)}</b>${t.plan ? `<span class="chip">${esc(t.plan)}</span>` : ''}${t.stale ? '<em title="From Codex\'s last session: it updates when Codex runs">last seen</em>' : ''}</header>
+      ${t.error && !t.limits.length ? `<p class="plimit-err">${esc(t.error)}</p>` : t.limits.map(l => {
+        const used = Math.min(100, l.used), lvl = used >= 95 ? 'bad' : used >= 80 ? 'warn' : '';
+        return `<div class="plimit-row ${lvl}" title="${Math.round(used)}% used${l.resetsAt ? ', resets ' + esc(new Date(l.resetsAt).toLocaleString()) : ''}">
+          <span>${esc(l.label)}</span><span class="hbar"><i style="width:${used.toFixed(1)}%"></i></span>
+          <em>${Math.round(100 - used)}% left${l.resetsAt ? ` · ${left(l.resetsAt - Date.now())}` : ''}</em></div>`;
+      }).join('')}</section>`).join('')}</div>`;
+  }
+
   function render() {
     const d = data();
     const q = searchInput.value.trim().toLowerCase();
@@ -101,7 +116,7 @@
     const patterns = DevDockPatterns.find('coding', base, a => `g:${a.pid}`, PATTERNS);
     const list = DevDockPatterns.filter('coding', base.filter(a => hit(q, a)), a => `g:${a.pid}`).sort(sorter());
     setViewResult(list.length, base.length);
-    view.innerHTML = `
+    view.innerHTML = limitsHTML() + `
       <div class="subbar">
         <div class="subtabs" role="tablist">${FILTERS.map(([k, label], i) => `<button role="tab" aria-selected="${k === f}" aria-label="${label}" title="${label}${k === 'all' ? ` \u00B7 ${d.agents.length}` : ` \u00B7 ${count(k)}`}  \u2325${i + 1}" onclick="DevDockViews.coding.setFilter('${k}')">${k === 'all' ? STATE_ALL : STATE_ICON[k]}</button>`).join('')}</div>
         ${patterns.length ? `<div class="patterns">${DevDockPatterns.html('coding', patterns)}</div>` : ''}

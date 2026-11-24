@@ -37,6 +37,8 @@ function leak(list, now) {
   return { since: start.t, from: start.mem, value: cur.mem, rate: (cur.mem - start.mem) / ((now - start.t) / MIN) };
 }
 
+const LIMIT_AT = 80; // % of a plan window used before Home warns (20% left)
+
 module.exports = function home(ctx) {
   const samples = new Map(); // key -> [{ t, cpu, mem }]
   const totals = [];         // [{ t, cpu, mem }] for everything DevDock watches
@@ -162,6 +164,14 @@ module.exports = function home(ctx) {
       top.sort((x, y) => (x.startedAt || 0) - (y.startedAt || 0));
       items.push({ id: `dup:${top.map(s => s.pid).join(',')}`, type: 'duplicate', severity: 'tidy', subjects: top.map(serverSubject),
         name: path.basename(cwd), cwd });
+    }
+
+    // A coding plan running low: under 20% of a window left. The reset time is in the id,
+    // so each window alerts once and the card goes away when it resets.
+    for (const t of ctx.source('limits')?.last?.()?.tools || []) {
+      for (const l of t.limits) {
+        if (l.used >= LIMIT_AT) items.push({ id: `limit:${t.tool}:${l.label}:${l.resetsAt || ''}`, type: 'limit', severity: 'limit', tool: t.tool, plan: t.plan, label: l.label, used: l.used, resetsAt: l.resetsAt });
+      }
     }
 
     return {

@@ -8,6 +8,7 @@
     cpu: svg('<rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M19 9h3M19 15h3M2 9h3M2 15h3"/>'),
     mem: svg('<path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h6v6"/>'),
     crash: svg('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M12 8v4"/><path d="M12 16h.01"/>'),
+    limit: svg('<path d="M12 14l4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>'),
     'needs-you': svg('<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>'),
     finished: svg('<circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/>'),
     forgotten: svg('<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/>'),
@@ -20,6 +21,7 @@
   const SECTIONS = [
     ['critical', 'Critical', 'Hurting your Mac right now'],
     ['needs-you', 'Waiting on you', 'Agents stopped until you answer'],
+    ['limit', 'Plan limits', 'Running low on a coding plan'],
     ['done', 'Just finished', 'Agents that wrapped up a turn'],
     ['tidy', 'Tidy up', 'Left behind, safe to stop'],
   ];
@@ -103,6 +105,19 @@
           </div>
           <div class="hcard-side">${jumpBtn(s)}${agentLink(s)}${snoozeBtn(it)}</div>
         </article>`;
+      case 'limit': {
+        const left = Math.max(0, Math.round(100 - it.used)), until = it.resetsAt ? it.resetsAt - Date.now() : 0;
+        return `
+        <article class="hcard sev-limit">
+          <div class="hcard-main">
+            ${kicker('Plan limit', until > 0 ? `<em>resets in ${dur(until)}</em>` : '')}
+            <div class="hcard-title">${agentHTML(it.tool, it.tool)}<b>${esc(it.tool)}</b> has ${left}% of its ${esc(it.label.toLowerCase())} limit left</div>
+            <div class="hcard-meta">${it.plan ? `<span>${esc(it.plan)} plan</span>` : ''}${it.resetsAt ? `<span>resets ${esc(new Date(it.resetsAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }))}</span>` : ''}</div>
+            <div class="hcard-actions"><button class="link-btn hgo" onclick="setTab('coding')">See all limits</button>${snoozeBtn(it, Math.max(3600000, until), 'Dismiss')}</div>
+          </div>
+          <div class="hcard-viz"><div class="hval">${left}<small>% left</small></div><div class="hmeter"><i style="width:${Math.min(100, it.used).toFixed(1)}%"></i></div><div class="hcap">${Math.round(it.used)}% used</div></div>
+        </article>`;
+      }
       case 'finished': return `
         <div class="hrow sev-done">
           ${ICON.finished}${subjectIcon(s)}<b>${esc(s.name)}</b><span class="hrow-text">finished ${dur(Date.now() - it.since)} ago</span>
@@ -159,7 +174,8 @@
 
   function hero(items) {
     const v = data()?.vitals || {};
-    const crit = items.filter(i => i.severity === 'critical').length, wait = items.filter(i => i.severity === 'needs-you').length;
+    const crit = items.filter(i => i.severity === 'critical').length, agentsWait = items.filter(i => i.severity === 'needs-you').length;
+    const low = items.filter(i => i.severity === 'limit').length, wait = agentsWait + low;
     const tidy = items.filter(i => i.severity === 'tidy').length;
     const sev = crit ? 'critical' : wait ? 'needs-you' : tidy ? 'tidy' : 'clear';
     const n = crit + wait;
@@ -167,7 +183,8 @@
     const parts = [
       ...['cpu', 'mem', 'crash'].map(t => [t, items.filter(i => i.type === t).length]).filter(([, c]) => c)
         .map(([t, c]) => `${c} ${{ cpu: 'runaway', mem: 'leaking', crash: 'crash-looping' }[t]}`),
-      wait && `${wait} agent${wait > 1 ? 's' : ''} waiting`,
+      agentsWait && `${agentsWait} agent${agentsWait > 1 ? 's' : ''} waiting`,
+      low && `${low} plan limit${low > 1 ? 's' : ''} running low`,
       !crit && !wait && tidy && `${tidy} thing${tidy > 1 ? 's' : ''} to tidy up`,
     ].filter(Boolean);
     const sub = parts.length ? parts.join(' · ') : `Watching ${v.servers || 0} servers and ${v.agents || 0} agents. Nothing needs you.`;
@@ -214,11 +231,23 @@
     const tab = document.querySelector('#tabs [data-tab="home"]');
     if (!tab) return;
     const items = visibleItems();
-    const crit = items.filter(i => i.severity === 'critical').length, wait = items.filter(i => i.severity === 'needs-you').length;
+    const crit = items.filter(i => i.severity === 'critical').length, wait = items.filter(i => i.severity === 'needs-you' || i.severity === 'limit').length;
     tab.dataset.alert = crit ? 'critical' : wait ? 'needs-you' : '';
     tab.title = `Home${crit + wait ? ` · ${crit + wait} need${crit + wait > 1 ? '' : 's'} you` : ''}  ⌘1`;
   }
-  document.addEventListener('devdock:source', e => { if (e.detail === 'home') badge(); });
+  // One notification per plan window running low (the item id carries the window's reset time)
+  let told = {};
+  try { told = JSON.parse(localStorage.getItem('devdock:limit-told') || '{}'); } catch {}
+  function tellLimits() {
+    if (!currentSettings?.notifications) return;
+    for (const it of (data()?.items || []).filter(i => i.type === 'limit' && !told[i.id])) {
+      told[it.id] = it.resetsAt || Date.now() + 7 * 864e5;
+      notify(`${it.tool}: ${Math.max(0, Math.round(100 - it.used))}% of the ${it.label.toLowerCase()} limit left`, it.resetsAt ? `Resets in ${dur(it.resetsAt - Date.now())}` : 'Running low');
+    }
+    for (const k in told) if (told[k] < Date.now()) delete told[k];
+    try { localStorage.setItem('devdock:limit-told', JSON.stringify(told)); } catch {}
+  }
+  document.addEventListener('devdock:source', e => { if (e.detail === 'home') { badge(); tellLimits(); } });
 
   async function stop(refs) {
     closeAllMenus();

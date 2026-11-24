@@ -121,7 +121,7 @@
     const on = list.filter(m => m.status === 'online').length;
     document.getElementById('viewStats').innerHTML = list.length
       ? `<div class="stat"><span class="stat-value">${on}/${list.length}</span><span class="stat-label">online</span></div>` : '';
-    document.getElementById('viewTools').innerHTML = `<button class="btn-primary madd" onclick="DevDockViews.machines.openAdd()">${ICON.plus}Add machine</button>`;
+    document.getElementById('viewTools').innerHTML = `<button class="btn-primary madd-icon" title="Add machine" aria-label="Add machine" onclick="DevDockViews.machines.openAdd()">${ICON.plus}</button>`;
     if (adding) renderAdd();
     const m = openId && byId(openId);
     if (openId && !m) openId = null;
@@ -368,9 +368,15 @@
 
   // ── One machine: a page with the same tabs as DevDock itself ───────
   const TABS = [
-    ['overview', 'Overview'], ['processes', 'Processes', 'processes'], ['ports', 'Ports', 'ports'],
-    ['containers', 'Containers', 'containers'], ['sessions', 'Terminal'], ['settings', 'Settings'],
+    ['overview', 'Home'], ['ports', 'Servers', 'ports'], ['sessions', 'Sessions'], ['containers', 'Containers', 'containers'],
+    ['agents', 'Agents', 'processes'], ['processes', 'Processes', 'processes'], ['settings', 'Settings'],
   ];
+  const navIcon = sel => document.querySelector(sel)?.outerHTML || '';
+  const TAB_ICON = {
+    overview: () => navIcon('#tabs [data-tab="home"] svg'), ports: () => navIcon('#tabs [data-tab="servers"] svg'),
+    containers: () => navIcon('#tabs [data-tab="containers"] svg'), agents: () => navIcon('#tabs [data-tab="coding"] svg'), sessions: () => navIcon('#tabs [data-tab="sessions"] svg'),
+    settings: () => navIcon('#settingsBtn svg'), processes: () => svg('<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>'),
+  };
   let mtab = 'overview';
   try { mtab = localStorage.getItem('devdock:machine-tab') || mtab; } catch {}
   const tabsOf = m => TABS.filter(([, , need]) => !need || m.scope?.[need]);
@@ -473,7 +479,7 @@
     const st = msort[mtab], on = st?.k === h[2];
     return `<th class="${h[1] || ''} sortable ${on ? `sorted ${st.dir > 0 ? 'asc' : 'desc'}` : ''}" onclick="DevDockViews.machines.sort('${h[2]}', ${h[1] === 'num'})">${h[0]}</th>`;
   };
-  const table = (head, rows, empty) => rows.length ? `<div class="mtable-wrap"><table class="mtable"><thead><tr>${head.map(th).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`
+  const table = (head, rows, empty, cls = 'mtable') => rows.length ? `<div class="scroll"><table class="${cls}"><thead><tr>${head.map(th).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`
     : `<div class="empty-view">${empty}</div>`;
 
   // Pattern chips, the same ones the desktop tabs use: groups worth looking at together
@@ -498,24 +504,50 @@
 
   // A button that opens a terminal over your SSH (docker exec, compose pull/up). Values ride in data-*.
   const termItem = (m, kind, target, icon, text) => `<button data-id="${m.id}" data-k="${kind}" data-t="${esc(target)}" onclick="DevDockViews.machines.dockerTerm(this)">${icon}${text}</button>`;
-  // Compose projects on the machine, one row each, above the containers
-  function stacksHTML(m, containers) {
+  // Containers and Stacks sub-tabs with All/Running/Stopped, like the desktop Containers tab
+  let csub = { tab: 'containers', filter: 'all' };
+  try { csub = { ...csub, ...JSON.parse(localStorage.getItem('devdock:machine-ctr')) }; } catch {}
+  const CSUB = {
+    containers: ['Containers', svg('<rect x="2" y="7" width="20" height="13" rx="2"/><path d="M6 7V4h12v3"/><line x1="7" y1="11" x2="7" y2="16"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="17" y1="11" x2="17" y2="16"/>')],
+    stacks: ['Stacks', svg('<rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/>')],
+  };
+  const pctText = v => `${v < 10 ? v.toFixed(1) : Math.round(v)}%`;
+  const runChip = '<span class="chip chip-live">running</span>';
+  function stackList(containers) {
     const by = new Map();
     for (const c of containers) if (c.project) (by.get(c.project) || by.set(c.project, []).get(c.project)).push(c);
-    if (!by.size) return '';
-    const rows = [...by].map(([name, list]) => {
-      const on = list.filter(c => c.state === 'running').length, dir = list.find(c => c.dir)?.dir;
-      return `<tr data-key="s:${esc(name)}"><td><b>${esc(name)}</b>${dir ? `<div class="dim small" title="${esc(dir)}">${esc(dir)}</div>` : ''}</td>
-        <td><div class="stk-svcs">${list.map(c => `<span class="stk-svc ${c.state === 'running' ? 'on' : c.state === 'restarting' ? 'bad' : ''}" title="${esc(c.name)} · ${esc(c.image)}\n${esc(c.status)}"><i></i>${esc(c.service || c.name)}</span>`).join('')}</div></td>
-        <td class="num">${on}/${list.length}</td>
+    return [...by].map(([name, list]) => {
+      const run = list.filter(c => c.state === 'running');
+      return { name, list, on: run.length, dir: list.find(c => c.dir)?.dir, cpu: run.reduce((n, c) => n + c.cpu, 0), mem: run.reduce((n, c) => n + c.mem, 0) };
+    });
+  }
+  function stacksBody(m, stacks, q) {
+    const rows = stacks.filter(x => matches(q, x.name, x.dir, x.list.map(c => `${c.name} ${c.image}`).join(' '))).map(({ name, list, on, dir, cpu, mem }) =>
+      `<tr data-key="s:${esc(name)}"><td class="col-name"><div class="stk-name"><b class="trunc">${esc(name)}</b>${dir ? `<span class="code trunc dim" title="${esc(dir)}">${esc(dir)}</span>` : ''}</div></td>
+        <td><div class="stk-svcs">${list.map(c => `<span class="stk-svc ${c.state === 'running' ? 'on' : c.state === 'restarting' ? 'bad' : ''}" title="${esc(c.name)} · ${esc(c.image)}\n${esc(c.status)}"><i></i>${esc(c.service || c.name)}</span>`).join('')}</div>
+          <span class="stk-count">${on}/${list.length} running</span></td>
+        <td class="code">${on ? pctText(cpu) : '—'}</td><td class="code">${on ? bytes(mem) : '—'}</td><td>${on ? runChip : '<span class="code">stopped</span>'}</td>
         ${rowMenu(`ms-${name}`, [on < list.length && signed(m, 'stack-start', name, name, ICON.play, 'Start'), on && signed(m, 'stack-restart', name, name, ICON.redo, 'Restart'),
           dir && termItem(m, 'stack-update', name, ICON.update, 'Update (pull and up)'), dir && copyItem(dir, 'folder'),
           `<button data-v="${esc(name)}" onclick="closeAllMenus();DevDockViews.machines.onlyStack(this.dataset.v)">${ICON.eye}Show its containers</button>`,
-          on && signed(m, 'stack-stop', name, name, ICON.stop, 'Stop', 'danger')])}</tr>`;
-    });
-    return `<h4 class="mstacks-h">Stacks</h4>` + table([['Stack'], ['Services'], ['Running', 'num'], ['']], rows, '') + '<h4 class="mstacks-h">Containers</h4>';
+          on && signed(m, 'stack-stop', name, name, ICON.stop, 'Stop', 'danger')])}</tr>`);
+    return table([['Stack', '', 'name'], ['Services'], ['CPU', '', 'cpu'], ['Memory', '', 'mem'], ['Last ran', '', 'on'], ['']], rows, 'No Docker Compose stacks match.', 'ctr-table stk-table mstk');
   }
-
+  function containersBody(m, list, q) {
+    const rows = list.filter(c => matches(q, c.name, c.image, c.state, c.project)).map(c => {
+      const on = c.state === 'running', sp = m.ctrSpark?.[c.id] || {};
+      const name = c.project && c.name.startsWith(c.project) ? c.name.slice(c.project.length).replace(/^[-_]/, '') || c.name : c.name;
+      const stat = (text, values, color, tip) => `<td><div class="ustat" title="${esc(tip)}"><span class="code">${text}</span>${sparkline(values, { color, w: 54, h: 18 })}</div></td>`;
+      return `<tr data-key="c:${esc(c.id)}"><td class="col-name"><span class="path-cell"><span class="trunc" title="${esc(c.name)}\n${esc(c.status)}">${esc(name)}</span>${c.project ? `<span class="chip" title="Compose project">${esc(c.project)}</span>` : ''}</span></td>
+        <td><span class="code trunc" title="${esc(c.image)}">${esc(c.image)}</span></td>
+        ${on ? stat(pctText(c.cpu), sp.cpu, 'var(--accent)', `${c.cpu.toFixed(1)}% of one core`) + stat(bytes(c.mem), sp.mem, '#a78bfa', `${bytes(c.mem)}${c.limit ? ` of ${bytes(c.limit)} allowed` : ''}`)
+          + `<td><div class="unet"><span class="code${c.rx < 1 ? ' zero' : ''}">↓ ${rate(c.rx)}</span><span class="code${c.tx < 1 ? ' zero' : ''}">↑ ${rate(c.tx)}</span></div></td>` : '<td><span class="code">—</span></td>'.repeat(3)}
+        <td title="${esc(c.status)}">${on ? runChip : `<span class="code">${esc(c.state)}</span>`}</td>
+        ${rowMenu(`mc-${c.id.slice(0, 12)}`, [on && termItem(m, 'container-shell', c.id, ICON.term, 'Open a shell'), !on && signed(m, 'container-start', c.id, c.name, ICON.play, 'Start'),
+          on && signed(m, 'container-restart', c.id, c.name, ICON.redo, 'Restart'), copyItem(c.id.slice(0, 12), 'ID'), on && signed(m, 'container-stop', c.id, c.name, ICON.stop, 'Stop', 'danger')])}</tr>`;
+    });
+    return table([['Name', '', 'name'], ['Image', '', 'image'], ['CPU', '', 'cpu'], ['Memory', '', 'mem'], ['Network', '', 'net'], ['Last ran', '', 'state'], ['']], rows, 'No containers match.', 'ctr-table mctr');
+  }
   function tabBody(m, q) {
     const s = m.snap;
     if (mtab === 'overview') return overview(m);
@@ -530,6 +562,15 @@
         <td class="mspark">${sparkline(m.procSpark?.[p.pid], { color: 'var(--accent)', w: 80, h: 20 })}</td><td class="num">${bytes(p.mem)}</td>${rowMenu(`mp-${p.pid}`, [copyItem(p.pid, 'PID'), signed(m, 'process-stop', p.pid, p.name, ICON.stop, 'Stop'), signed(m, 'process-kill', p.pid, p.name, ICON.close, 'Force quit', 'danger')])}</tr>`);
       return ch.html + table([['Process', '', 'name'], ['User', '', 'user'], ['PID', 'num', 'pid'], ['CPU', 'num', 'cpu'], ['Last 15 min'], ['Memory', 'num', 'mem'], ['']], rows, 'No processes match') + '<p class="hcap mnote">The 20 busiest processes, refreshed every 3 seconds.</p>';
     }
+    if (mtab === 'agents') {
+      const rows = sorted(m.agents || []).filter(a => matches(q, a.name, a.user, a.pid, a.state.status)).map(a => `<tr data-key="g:${a.pid}">
+        <td><b>${esc(a.name)}</b></td><td>${agentStateHTML(a.state)}</td><td>${esc(a.user)}</td><td class="code dim">${a.pid}</td>
+        <td><div class="ustat"><span class="code">${pctText(a.cpu)}</span>${sparkline(m.procSpark?.[a.pid], { color: 'var(--accent)', w: 54, h: 18 })}</div></td><td class="code">${bytes(a.mem)}</td>
+        ${rowMenu(`mg-${a.pid}`, [`<button onclick="closeAllMenus();DevDockViews.machines.tab('sessions')">${ICON.term}Find its session</button>`, copyItem(a.pid, 'PID'),
+          signed(m, 'process-stop', a.pid, a.name, ICON.stop, 'Stop'), signed(m, 'process-kill', a.pid, a.name, ICON.close, 'Force quit', 'danger')])}</tr>`);
+      return table([['Agent', '', 'name'], ['State'], ['User', '', 'user'], ['PID', '', 'pid'], ['CPU', '', 'cpu'], ['Memory', '', 'mem'], ['']], rows,
+        m.agents?.length ? 'No agents match.' : 'No coding agents running here.', 'mtable magents') + '<p class="hcap mnote">Working means it\'s using CPU. Over SSH DevDock can\'t tell when one is waiting on you.</p>';
+    }
     if (mtab === 'ports') {
       const ch = chips(s.ports);
       const rows = sorted(ch.pick([...s.ports].sort((a, b) => a.port - b.port))).filter(p => matches(q, p.port, p.name, p.pid))
@@ -540,16 +581,13 @@
     }
     if (mtab === 'containers') {
       if (!s.containers) return `<div class="empty-view">${esc((s.errors || []).find(e => /docker/i.test(e)) || 'No Docker here')}</div>`;
+      const stacks = stackList(s.containers), sub = csub.tab === 'stacks' && stacks.length ? 'stacks' : 'containers', f = csub.filter;
       const ch = chips(s.containers);
-      const rows = sorted(ch.pick(s.containers)).filter(c => matches(q, c.name, c.image, c.state, c.project)).map(c => {
-        const on = c.state === 'running';
-        return `<tr data-key="c:${esc(c.id)}"><td><b>${esc(c.name)}</b>${c.project ? `<div class="dim small">${esc(c.project)}</div>` : ''}</td><td class="dim"><span class="mimg" title="${esc(c.image)}">${esc(c.image)}</span></td>
-          <td><span class="mstate ${esc(c.state)}">${esc(c.state)}</span><div class="dim small">${esc(c.status)}</div></td>
-          <td class="num">${on ? c.cpu.toFixed(1) + '%' : ''}</td><td class="num">${on ? bytes(c.mem) : ''}</td><td class="num dim">${on ? `↓ ${rate(c.rx)}<br>↑ ${rate(c.tx)}` : ''}</td>
-          ${rowMenu(`mc-${c.id.slice(0, 12)}`, [on && termItem(m, 'container-shell', c.id, ICON.term, 'Open a shell'), !on && signed(m, 'container-start', c.id, c.name, ICON.play, 'Start'),
-            on && signed(m, 'container-restart', c.id, c.name, ICON.redo, 'Restart'), copyItem(c.id.slice(0, 12), 'ID'), on && signed(m, 'container-stop', c.id, c.name, ICON.stop, 'Stop', 'danger')])}</tr>`;
-      });
-      return ch.html + stacksHTML(m, s.containers) + table([['Container', '', 'name'], ['Image', '', 'image'], ['State', '', 'state'], ['CPU', 'num', 'cpu'], ['Memory', 'num', 'mem'], ['Network', 'num', 'net'], ['']], rows, 'No containers match');
+      const keep = x => f === 'all' || (f === 'running') === (sub === 'stacks' ? x.on > 0 : x.state === 'running');
+      const bar = `<div class="subbar">${stacks.length ? `<div class="subtabs" role="tablist">${Object.entries(CSUB).map(([k, [l, icon]]) => `<button role="tab" aria-selected="${k === sub}" aria-label="${l}" title="${l}" onclick="DevDockViews.machines.csub('tab', '${k}')">${icon}<span class="tab-label">${l}</span></button>`).join('')}</div>` : ''}
+        <div class="seg">${[['all', 'All'], ['running', 'Running'], ['stopped', 'Stopped']].map(([k, l]) => `<button class="${k === f ? 'active' : ''}" onclick="DevDockViews.machines.csub('filter', '${k}')">${l}</button>`).join('')}</div>
+        ${sub === 'containers' ? ch.html.replace('patterns mpatterns', 'patterns') : ''}</div>`;
+      return bar + (sub === 'stacks' ? stacksBody(m, sorted(stacks.filter(keep)), q) : containersBody(m, sorted(ch.pick(s.containers)).filter(keep), q));
     }
     return '';
   }
@@ -605,7 +643,7 @@
     const s = m.snap, h = s?.host, q = searchInput.value.trim().toLowerCase();
     const tabs = tabsOf(m);
     if (!tabs.some(([k]) => k === mtab)) mtab = 'overview';
-    const count = { overview: live(m).filter(i => i.severity !== 'done').length || '', processes: s?.processes?.length, ports: s?.ports?.length, containers: s?.containers?.length };
+    const count = { overview: live(m).filter(i => i.severity !== 'done').length || '', processes: s?.processes?.length, agents: m.agents?.length, ports: s?.ports?.length, containers: s?.containers?.length };
     return `<div class="mpage" style="--mc:${m.color}">
       <header class="mphead">
         <button class="mback" onclick="DevDockViews.machines.back()" title="All machines  Esc">${ICON.back}Machines</button>
@@ -613,7 +651,7 @@
         <button class="btn-primary mshell" onclick="DevDockViews.machines.shell('${m.id}')" title="ssh ${esc(m.ssh || m.host)} in DevDock">${ICON.term}Open Shell</button>
       </header>
       ${m.status === 'untrusted' ? `<div class="malert">${ICON.warn}<div><b>This machine's key changed.</b> DevDock stopped talking to it. If you reinstalled the agent, run <code>sudo devdock-agent pair</code> there and paste the code in Settings. If you didn't, someone may be posing as it.</div></div>` : ''}
-      <nav class="mseg" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${k === mtab}" onclick="DevDockViews.machines.tab('${k}')">${l}${count[k] ? `<span class="${k === 'overview' ? 'malertn' : ''}">${count[k]}</span>` : ''}</button>`).join('')}</nav>
+      <nav class="subtabs mtabs" role="tablist">${tabs.map(([k, l], i) => `<button role="tab" aria-selected="${k === mtab}" aria-label="${l}" title="${l}${count[k] ? ` · ${count[k]}` : ''}" onclick="DevDockViews.machines.tab('${k}')">${TAB_ICON[k]()}<span class="tab-label">${l}</span>${count[k] ? `<span class="${k === 'overview' ? 'malertn' : 'mcount'}">${count[k]}</span>` : ''}</button>`).join('')}</nav>
       <div class="mpbody">${tabBody(m, q)}</div>
     </div>`;
   }
@@ -689,7 +727,8 @@
     pickHost(host, name) { Object.assign(adding, { host, name: adding.name || name }); renderAdd(); },
     next() { if (adding.host.trim()) { adding.step = 1; renderAdd(); } },
     back1() { adding.step = 0; renderAdd(); },
-    onlyStack(name) { searchInput.value = name; searchInput.dispatchEvent(new Event('input')); },
+    onlyStack(name) { csub.tab = 'containers'; this.csub('filter', 'all'); searchInput.value = name; searchInput.dispatchEvent(new Event('input')); },
+    csub(k, v) { csub[k] = v; try { localStorage.setItem('devdock:machine-ctr', JSON.stringify(csub)); } catch {} render(); },
     tourGo(i) { adding.tour = i; renderAdd(); },
     lookOpen(id) { look = { id, tab: 'icons', q: '' }; lookHTML(); lookLoad(); },
     lookTab(tab) { look.tab = tab; look.q = ''; lookHTML(); lookLoad(); },

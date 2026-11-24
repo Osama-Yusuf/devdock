@@ -1604,6 +1604,8 @@
 
     /* ── Machines ── */
     .madd { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; padding: 6px 12px; }
+    .view-tools:has(.madd-icon) { align-self: stretch; }
+    .madd-icon { display: inline-flex; align-items: center; justify-content: center; padding: 0; height: 100%; aspect-ratio: 1; }
     .mgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; padding: 4px 0 24px; }
     .mcard { position: relative; background: radial-gradient(140% 90% at 0 0, color-mix(in srgb, var(--mc) 8%, transparent), transparent 55%), var(--bg-card); border: 1px solid var(--border-row); border-radius: 14px; padding: 14px 16px 12px; cursor: pointer;
       display: flex; flex-direction: column; gap: 12px; overflow: hidden; transition: border-color .15s, transform .15s; }
@@ -1756,8 +1758,9 @@
     .mdisk { display: grid; grid-template-columns: 90px 1fr auto; gap: 8px; align-items: center; font-size: .76rem; margin-bottom: 6px; color: var(--text-muted); }
     .mdisk em { font-style: normal; color: var(--text-dim); font-variant-numeric: tabular-nums; }
     .mdisk .hbar i { display: block; height: 100%; border-radius: 6px; }
-    .mtable { width: 100%; border-collapse: collapse; font-size: .76rem; table-layout: auto; }
-    .mtable td { padding: 4px 6px; border-bottom: 1px solid var(--border-row); color: var(--text-muted); }
+    .mtable { table-layout: auto; }
+    .mtable th { width: auto; }
+    .mtable td { color: var(--text-muted); }
     .mtable td:first-child { color: var(--text); max-width: 280px; }
     .mtable .num { text-align: right; font-variant-numeric: tabular-nums; }
     .mstate { font-size: .68rem; padding: 1px 6px; border-radius: 99px; background: var(--bg-input); }
@@ -1836,9 +1839,6 @@
     .mfacts dd em { font-style: normal; color: var(--text-dim); margin-left: 4px; }
     .mgroup:has(.mdisk) { background: var(--bg-card); border: 1px solid var(--border-row); border-radius: 12px; padding: 12px 0 6px; }
     .mgroup:has(.mdisk) > h4 { margin-left: 14px; }
-    .mtable-wrap { background: var(--bg-card); border: 1px solid var(--border-row); border-radius: 12px; overflow: hidden; }
-    .mtable-wrap .mtable td, .mtable-wrap .mtable th { padding: 8px 12px; }
-    .mtable th { text-align: left; font-size: .7rem; font-weight: 600; color: var(--text-dim); border-bottom: 1px solid var(--border-row); background: var(--bg-group); }
     .mtable th.num { text-align: right; }
     .mtable tbody tr:last-child td { border-bottom: none; }
     .mtable tbody tr:hover { background: var(--bg-hover); }
@@ -1851,7 +1851,22 @@
     .missues { display: flex; align-items: center; gap: 6px; font-size: .74rem; font-weight: 600; padding: 6px 10px; border-radius: 8px; color: var(--red);
       background: color-mix(in srgb, var(--red) 10%, transparent); }
     .missues.sev-tidy { color: var(--yellow); background: color-mix(in srgb, var(--yellow) 10%, transparent); }
-    .mtable-wrap .mtable th:first-child { width: 34%; }
+    .mtable th:first-child { width: 34%; }
+    .mctr th:nth-child(3) { width: 112px; } .mctr th:nth-child(4) { width: 122px; } .mctr th:nth-child(5) { width: 104px; }
+    .mctr th:nth-child(6) { width: 100px; } .mctr th:nth-child(7) { width: 56px; }
+    .mstk th:nth-child(3) { width: 90px; } .mstk th:nth-child(4) { width: 100px; } .mstk th:nth-child(5) { width: 100px; } .mstk th:nth-child(6) { width: 56px; }
+    .mtabs { margin-bottom: 16px; }
+    .mtabs button { position: relative; }
+    .mtabs .mcount { font-size: .68rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+    .mtabs .malertn { font-size: .62rem; color: #fff; background: var(--red); border-radius: 99px; padding: 0 5px; line-height: 15px; }
+    html:not([data-tabs="words"]):not([data-tabs="both"]) .mtabs .mcount { display: none; }
+    html:not([data-tabs="words"]):not([data-tabs="both"]) .mtabs .malertn { position: absolute; top: 1px; right: 1px; padding: 0 4px; line-height: 13px; }
+
+    /* Tab labels (Settings → General): icons, words, or both */
+    .tab-label { display: none; }
+    html[data-tabs="words"] .tab-label, html[data-tabs="both"] .tab-label { display: inline; }
+    html[data-tabs="words"] :is(.tabs, .subtabs) button > svg { display: none; }
+    html[data-tabs="words"] :is(.tabs, .subtabs) button, html[data-tabs="both"] :is(.tabs, .subtabs) button { width: auto; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; font: inherit; font-size: .8rem; font-weight: 550; }
 
     .mkey { font: 600 15px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; text-align: center; padding: 26px 0 22px; color: var(--text); }
     .mkey.big { font-size: 26px; padding: 22px 0; margin: 6px 0 4px; border-radius: 12px; background: var(--surface-2, rgba(127,127,127,.08)); }

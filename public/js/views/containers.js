@@ -239,7 +239,7 @@
     view.innerHTML = `
       <div class="subbar">
         <div class="subtabs" role="tablist">${Object.entries(TABS).map(([k, t], i) => `
-        <button role="tab" aria-selected="${k === tab}" onclick="DevDockViews.containers.setTab('${k}')" aria-label="${t.label}" title="${t.label} \u00B7 ${meta[k]}  \u2325${i + 1}">${svg(t.icon, 16)}</button>`).join('')}
+        <button role="tab" aria-selected="${k === tab}" onclick="DevDockViews.containers.setTab('${k}')" aria-label="${t.label}" title="${t.label} \u00B7 ${meta[k]}  \u2325${i + 1}">${svg(t.icon, 16)}<span class="tab-label">${t.label}</span></button>`).join('')}
         </div>
         ${filters.length ? `<div class="seg">${filters.map(([k, label]) => `<button class="${k === f ? 'active' : ''}" onclick="DevDockViews.containers.setFilter('${k}')">${label}</button>`).join('')}</div>` : ''}
         ${patterns.length ? `<div class="patterns">${DevDockPatterns.html(scope, patterns)}</div>` : ''}

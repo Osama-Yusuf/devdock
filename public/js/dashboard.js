@@ -1026,6 +1026,7 @@
       $('groupingDepth').value = String(currentSettings.groupingDepth ?? 1);
       $('showHistoryToggle').checked = currentSettings.showHistory !== false;
       $('showExportToggle').checked = currentSettings.showExport || false;
+      $('tabLabels').value = currentSettings.tabLabels || 'icons';
       $('idleAfterHours').value = String(currentSettings.idleAfterHours ?? 24);
       $('autoKillIdle').checked = !!currentSettings.autoKillIdle;
       $('tmuxOpen').value = currentSettings.tmuxOpen || 'devdock';
@@ -1103,6 +1104,7 @@
         groupingDepth: newDepth,
         showHistory: $('showHistoryToggle').checked,
         showExport: $('showExportToggle').checked,
+        tabLabels: $('tabLabels').value,
         idleAfterHours: parseInt($('idleAfterHours').value),
         autoKillIdle: $('autoKillIdle').checked,
         editor: $('editorSelect').value,
@@ -1121,6 +1123,7 @@
 
       currentSettings = { ...currentSettings, ...body };
       updateExportVisibility(body.showExport);
+      document.documentElement.dataset.tabs = body.tabLabels;
       document.querySelectorAll('.agents-dep').forEach(r => r.classList.toggle('is-off', !body.agentsEnabled));
       lastFilteredKeys = ''; // grouping depth may have changed
       const label = typeof what === 'string' ? what : describeChange(what?.target);
@@ -1385,6 +1388,7 @@ $('settingsBtn').addEventListener('click', openSettings);
       groupingDepth = currentSettings.groupingDepth ?? 1;
       if (currentSettings.notifications) requestNotificationPermission();
       updateExportVisibility(currentSettings.showExport);
+      document.documentElement.dataset.tabs = currentSettings.tabLabels || 'icons';
 
       const params = new URLSearchParams(location.search);
       const q = params.get('q'); // ?q= deep-links a search, ?tab= a tab

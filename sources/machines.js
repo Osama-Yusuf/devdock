@@ -176,12 +176,12 @@ module.exports = function machines(ctx) {
     st.hist.push({ t: now, cpu: s.cpu?.usage || 0, mem: s.mem ? s.mem.used / s.mem.total * 100 : 0, rx: net.rx, tx: net.tx });
     while (st.hist.length && now - st.hist[0].t > KEEP) st.hist.shift();
   }
-  // per-process history for the top processes the agent reports
+  // history for the top processes and the running containers the agent reports
   function watchProcs(st, s, now) {
     st.procs ||= new Map();
     const seen = new Set();
-    for (const p of s.processes || []) {
-      const key = `${p.pid}:${p.name}`;
+    const items = [...(s.processes || []).map(p => [`${p.pid}:${p.name}`, p]), ...(s.containers || []).filter(c => c.state === 'running').map(c => [`c:${c.id}`, c])];
+    for (const [key, p] of items) {
       seen.add(key);
       const l = st.procs.get(key) || [];
       l.push({ t: now, cpu: p.cpu, mem: p.mem / 1048576 });
@@ -285,7 +285,14 @@ module.exports = function machines(ctx) {
       const online = !untrusted && st.at && now - st.at < 15000;
       const status = untrusted ? 'untrusted' : online ? 'online' : 'offline';
       const procSpark = Object.fromEntries((online ? st.snap.processes || [] : []).map(p => [p.pid, series(st.procs?.get(`${p.pid}:${p.name}`) || [], 'cpu').slice(-24)]));
-      return { items: attention(m, st, status, now), procSpark, ...base(), status, error: online ? null : st.error, lastSeen: st.at || null, snap: untrusted ? null : st.snap || null,
+      const ctrSpark = Object.fromEntries((online ? st.snap.containers || [] : []).map(c => { const l = st.procs?.get(`c:${c.id}`) || []; return [c.id, { cpu: series(l, 'cpu').slice(-24), mem: series(l, 'mem').slice(-24) }]; }));
+      const items = attention(m, st, status, now); // also refreshes st.agents
+      // coding agents, with a state read from CPU alone (a remote agent has no hooks to say "needs you")
+      const agents = (online ? st.snap.processes || [] : []).filter(p => AGENTS.has(p.name)).map(p => {
+        const a = st.agents?.get(p.pid) || {};
+        return { ...p, state: a.busySince ? { status: 'working', since: a.busySince } : { status: 'idle', since: a.finishedAt || a.idleSince || a.firstSeen } };
+      });
+      return { items, agents, procSpark, ctrSpark, ...base(), status, error: online ? null : st.error, lastSeen: st.at || null, snap: untrusted ? null : st.snap || null,
         spark: { cpu: series(st.hist, 'cpu'), mem: series(st.hist, 'mem'), rx: series(st.hist, 'rx'), tx: series(st.hist, 'tx') } };
     }));
     return { masterFp: master.fp, machines: out };

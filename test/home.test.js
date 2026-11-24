@@ -28,3 +28,17 @@ test('steady growth past 1.5 GB is a leak, a big flat process is not', async () 
   assert.deepStrictEqual(await run(m => ({ cpu: 1, mem: 1000 + m * 60 })), ['mem']);
   assert.deepStrictEqual(await run(() => ({ cpu: 1, mem: 3000 })), []);
 });
+
+test('Home counts a server once when a coding agent started it', async () => {
+  // agent 3 (200 MB) started server 5 (300 MB): the real total is 500 MB, not 800
+  const procs = { 3: { cpu: 1, rssMB: 200 }, 5: { cpu: 2, rssMB: 300 } };
+  const ctx = {
+    DEMO: false, procs: () => procs, run: async () => ({ code: 1, stdout: '' }),
+    ports: () => [{ pid: '5', port: 3000, scriptPath: '/tmp/app', cpu: 2, memMB: 300 }],
+    source: id => id === 'coding' ? { last: () => [{ pid: 3, pids: [3, 5], agent: 'Codex', cpu: 3, memMB: 500, ports: [3000], startedAt: Date.now() }] } : null,
+  };
+  const { vitals } = await require('../sources/home')(ctx).scan();
+  assert.strictEqual(vitals.mem, 500);
+  assert.strictEqual(vitals.cpu, 3);
+  assert.strictEqual(vitals.unknown, 1); // Codex doesn't report working/idle
+});

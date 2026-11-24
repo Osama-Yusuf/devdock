@@ -1373,7 +1373,9 @@ $('settingsBtn').addEventListener('click', openSettings);
     if (location.hash === '#settings') { history.replaceState(null, '', '/'); openSettings(); }
 
     // ── Init ─────────────────────────────────────────────────────────
-    (async function init() {
+    // Starts once every script has run: views and selection.js load after this file, and a
+    // fast fetch used to reach them first, throw, and leave the window without a connection
+    document.addEventListener('DOMContentLoaded', async function init() {
       const [rtRes, stRes] = await Promise.all([fetch('/api/runtimes'), fetch('/api/settings')]);
       runtimeDefs = await rtRes.json();
       currentSettings = await stRes.json();
@@ -1392,4 +1394,4 @@ $('settingsBtn').addEventListener('click', openSettings);
       setTab(TABS.includes(params.get('tab')) ? params.get('tab') : TABS.includes(savedTab) ? savedTab : 'servers');
       loadPorts();
       connectWebSocket();
-    })();
+    });

@@ -8,6 +8,7 @@
     jump: svg('<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'),
     copy: svg('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'),
     code: svg('<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>'),
+    term: svg('<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>'),
     stop: svg('<rect x="5" y="5" width="14" height="14" rx="2"/>'),
     force: svg('<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'),
   };
@@ -46,7 +47,7 @@
   function whereHTML(a) {
     const w = a.where || {};
     if (w.mux) return `<span class="chip chip-mux" title="${esc(muxLabel(w.mux))} session ${esc(w.name)}${w.target ? ', pane ' + esc(w.target) : ''}">${esc(muxLabel(w.mux))}</span><span class="trunc">${esc(w.name)}</span>`;
-    if (w.app) return `<span class="chip" title="Runs in a ${esc(w.app)} window">${esc(w.app)}</span>`;
+    if (w.app) return `<span class="chip" title="Runs in a ${esc(w.app)} window${w.background ? ', in the background of the session that started it' : ''}">${esc(w.app)}${w.background ? ' · background' : ''}</span>`;
     if (w.background) return '<span class="chip" title="A Claude Code background session, started by another session">background</span>';
     return `<span class="chip chip-orphan" title="Not in any terminal${w.parent ? `; its parent is ${esc(w.parent)}` : ''}. Often left behind by a tool that started it">no terminal</span>`;
   }
@@ -63,7 +64,8 @@
 
   function rowHTML(a, i) {
     const menu = [
-      canJump(a) && `<button onclick="DevDockViews.coding.jump('${a.pid}')">${ICON.jump}${a.where.mux ? 'Open here' : `Show in ${esc(a.where.app)}`}</button>`,
+      canJump(a) && `<button onclick="DevDockViews.coding.jump('${a.pid}')">${ICON.jump}Jump to it</button>`,
+      a.where?.mux && `<button onclick="DevDockViews.coding.openHere('${a.pid}')">${ICON.term}Open here</button>`,
       a.cwd && `<button onclick="openEditor(this.dataset.path)" data-path="${esc(a.cwd)}">${ICON.code}Open in ${esc(editorName())}</button>`,
       a.sessionId && `<button onclick="copyText(this.dataset.v, 'Resume command')" data-v="${esc(`cd ${a.cwd} && claude --resume ${a.sessionId}`)}">${ICON.copy}Copy resume command</button>`,
       '<div class="actions-divider"></div>',
@@ -117,8 +119,13 @@
     const a = byPid(pid);
     if (!a) return;
     const w = a.where || {};
-    if (w.mux) return openSession({ mux: w.mux, id: w.id, target: w.target }, `${muxLabel(w.mux)} · ${w.name}`);
-    if (w.app) sourceAction('coding', 'focus', { pid });
+    sourceAction('coding', 'focus', { pid }).then(r => r?.here && openHere(pid));
+  }
+  // a multiplexer pane, opened in DevDock's own terminal
+  function openHere(pid) {
+    closeAllMenus();
+    const w = byPid(String(pid))?.where;
+    if (w?.mux) openSession({ mux: w.mux, id: w.id, target: w.target }, `${muxLabel(w.mux)} · ${w.name}`);
   }
 
   async function stopMany(list, force) {
@@ -132,7 +139,8 @@
   }
 
   DevDockViews.coding = {
-    render, jump,
+    render, jump, openHere,
+    canJump: pid => { const a = byPid(String(pid)) || byPid(+pid); return !!a && canJump(a); },
     sort(k, num) {
       sort = k === 'state' ? null : { k, dir: sort?.k === k ? -sort.dir : num ? -1 : 1 };
       try { localStorage.setItem('devdock:coding-sort', JSON.stringify(sort)); } catch {}

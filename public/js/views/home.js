@@ -50,7 +50,9 @@
   ].filter(Boolean).join('');
   const btn = (label, onclick, icon = '', cls = '') => `<button class="hbtn ${cls}" onclick="${onclick}">${icon}${label}</button>`;
   const snoozeBtn = (it, ms = 3600000, label = 'Snooze 1h') => `<button class="hbtn ghost" title="Hide this for ${label === 'Dismiss' ? 'good' : 'an hour'}" onclick="DevDockViews.home.snooze('${esc(it.id)}', ${ms})">${label === 'Dismiss' ? '' : ICON.snooze}${label}</button>`;
-  const jumpBtn = s => (s.where?.mux || s.where?.app) ? btn('Jump to it', `DevDockViews.coding.jump('${s.pid}')`, ICON.jump, 'primary') : '';
+  const jumpBtn = s => DevDockViews.coding?.canJump(s.pid) ? btn('Jump to it', `DevDockViews.coding.jump('${s.pid}')`, ICON.jump, 'primary') : '';
+  // an agent's way to its row: a quiet link under Jump, not a second button
+  const agentLink = s => `${s.where?.mux ? `<button class="link-btn hgo" onclick="DevDockViews.coding.openHere('${s.pid}')">Open here</button>` : ''}<button class="link-btn hgo" data-key="g:${s.pid}" data-name="${esc(s.name || '')}" onclick="revealRow('coding', this.dataset.key, this.dataset.name)">Go to agents</button>`;
   // where the alert comes from, and a way there with the row lit up
   const SRC = { server: ['servers', 'Servers', s => `${s.pid}:`], agent: ['coding', 'Coding agents', s => `g:${s.pid}`], container: ['containers', 'Containers', s => `c:${s.id}`] };
   const showBtn = s => { const src = SRC[s?.kind]; return src ? `<button class="hbtn" data-tab="${src[0]}" data-key="${esc(src[2](s))}" data-name="${esc(s.name || '')}"
@@ -99,13 +101,13 @@
             <div class="hcard-title">${subjectIcon(s)}<b>${esc(s.name)}</b> is stuck until you answer</div>
             <div class="hcard-meta">${metaLine(s)}</div>
           </div>
-          <div class="hcard-side">${jumpBtn(s) || showBtn(s)}${snoozeBtn(it)}</div>
+          <div class="hcard-side">${jumpBtn(s)}${agentLink(s)}${snoozeBtn(it)}</div>
         </article>`;
       case 'finished': return `
         <div class="hrow sev-done">
           ${ICON.finished}${subjectIcon(s)}<b>${esc(s.name)}</b><span class="hrow-text">finished ${dur(Date.now() - it.since)} ago</span>
           <span class="hrow-meta">${metaLine(s)}</span>
-          <span class="hrow-actions">${jumpBtn(s) || showBtn(s)}${snoozeBtn(it, 7 * 86400000, 'Dismiss')}</span>
+          <span class="hrow-actions">${jumpBtn(s)}${agentLink(s)}${snoozeBtn(it, 7 * 86400000, 'Dismiss')}</span>
         </div>`;
       case 'forgotten': return `
         <article class="hcard sev-tidy">
@@ -179,7 +181,7 @@
           <div class="hvital"><label>Dev CPU</label><div class="hv">${((v.cpu || 0) / 100).toFixed(1)}<small> / ${v.cores || '?'} cores</small></div>${meter(cpuPct)}${sparkline(v.cpuSpark, { color: 'var(--accent)', w: 120, h: 26 })}</div>
           <div class="hvital"><label>Dev memory</label><div class="hv">${formatMem(v.mem || 0)}<small> / ${formatMem(v.totalMem || 0)}</small></div>${meter(memPct)}${sparkline(v.memSpark, { color: 'var(--accent)', w: 120, h: 26 })}</div>
           <div class="hvital"><label>Agents · servers</label><div class="hv">${v.agents || 0}<small> agents · ${v.servers || 0} servers</small></div>
-            <div class="hagents">${v.working ? `<span class="ast-working">${STATE_ICON.working}${v.working} working</span>` : ''}${v.needsYou ? `<span class="ast-needs-you">${STATE_ICON['needs-you']}${v.needsYou} waiting</span>` : ''}${!v.working && !v.needsYou ? '<span>all idle</span>' : ''}</div></div>
+            <div class="hagents">${v.working ? `<span class="ast-working">${STATE_ICON.working}${v.working} working</span>` : ''}${v.needsYou ? `<span class="ast-needs-you">${STATE_ICON['needs-you']}${v.needsYou} waiting</span>` : ''}${v.unknown ? `<span title="Only Claude Code reports whether it's working">${v.unknown} state unknown</span>` : ''}${!v.working && !v.needsYou && !v.unknown ? '<span>all idle</span>' : ''}</div></div>
           ${netTile(v.net)}
         </div>
       </section>`;

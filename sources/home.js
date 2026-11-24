@@ -99,8 +99,14 @@ module.exports = function home(ctx) {
     }
     for (const k of samples.keys()) if (!live.has(k)) samples.delete(k);
 
-    const sumCpu = [...servers.values()].reduce((n, s) => n + (s.cpu || 0), 0) + agents.reduce((n, a) => n + (a.cpu || 0), 0);
-    const sumMem = [...servers.values()].reduce((n, s) => n + (s.memMB || 0), 0) + agents.reduce((n, a) => n + (a.memMB || 0), 0);
+    // Totals count each process once: an agent's tree often holds the very servers listed above
+    let sumCpu = [...servers.values()].reduce((n, s) => n + (s.cpu || 0), 0);
+    let sumMem = [...servers.values()].reduce((n, s) => n + (s.memMB || 0), 0);
+    const counted = new Set([...servers.keys()].map(String));
+    for (const a of agents) {
+      if (!a.pids) { sumCpu += a.cpu || 0; sumMem += a.memMB || 0; continue; }
+      for (const x of a.pids) if (!counted.has(String(x))) { counted.add(String(x)); sumCpu += procs[x]?.cpu || 0; sumMem += procs[x]?.rssMB || 0; }
+    }
     totals.push({ t: now, cpu: sumCpu, mem: sumMem });
     while (totals.length && now - totals[0].t > KEEP) totals.shift();
 
@@ -164,6 +170,7 @@ module.exports = function home(ctx) {
         servers: servers.size, agents: agents.length,
         working: agents.filter(a => a.state?.status === 'working').length,
         needsYou: agents.filter(a => a.state?.status === 'needs-you').length,
+        unknown: agents.filter(a => !a.state).length, // only Claude Code reports its state
         cpu: sumCpu, mem: sumMem, cpuSpark: spark(totals, 'cpu'), memSpark: spark(totals, 'mem'),
         cores: require('os').cpus().length, totalMem: require('os').totalmem() / 1024 / 1024,
         net: await network(now),

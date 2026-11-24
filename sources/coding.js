@@ -33,13 +33,14 @@ module.exports = function coding(ctx) {
 
     last = await Promise.all(Object.keys(procs).filter(pid => isAgent(pid) && !isAgent(procs[pid].ppid)).map(async pid => {
       const p = procs[pid];
-      let where = null;
+      // Claude Code's background sessions run under its own helper app; keep climbing past it
+      // to the session that started it, so Jump lands in that session's terminal
+      let where = null, bg = false;
       for (let cur = pid, i = 0; cur && cur !== '1' && i < 40 && !where; cur = procs[cur]?.ppid, i++) {
         if (paneOf[cur]) where = paneOf[cur];
-        else { const app = ctx.appFromPath(procs[cur]?.comm); if (app && cur !== pid) where = { app, pid: cur }; }
+        else { const app = ctx.appFromPath(procs[cur]?.comm); if (app === 'ClaudeCode') bg = true; else if (app && cur !== pid) where = { app, pid: cur }; }
       }
-      // Claude Code's background sessions run under its own helper app, not a terminal
-      if (where?.app === 'ClaudeCode') where = { background: true };
+      if (bg) where = { ...where, background: true };
       // no pane, no terminal app: its parent is gone or it was started by a script
       if (!where) where = { detached: procs[p.ppid] ? false : true, parent: path.basename(procs[p.ppid]?.comm || '') || null };
       // everything it started: servers, shells, MCP servers
@@ -56,10 +57,28 @@ module.exports = function coding(ctx) {
         cpu: tree.reduce((n, x) => n + (procs[x]?.cpu || 0), 0),
         memMB: tree.reduce((n, x) => n + (procs[x]?.rssMB || 0), 0),
         processes: tree.length,
+        pids: tree,
         ports: [...new Set(tree.flatMap(x => portsByPid[x] || []))].sort((a, b) => a - b),
       };
     }));
     return { agents: last };
+  }
+
+  // A tmux pane: point the client showing its session (else any client) at the pane, then
+  // bring that client's terminal tab forward. No client anywhere -> open it here.
+  async function focusTmux(w) {
+    const tmux = ctx.findBin('tmux') || 'tmux';
+    const r = await ctx.run(tmux, ['list-clients', '-F', '#{client_pid} #{client_tty} #{session_name}']);
+    const clients = r.code === 0 ? r.stdout.trim().split('\n').filter(Boolean).map(l => l.split(' ')) : [];
+    const c = clients.find(x => x[2] === w.id) || clients[0];
+    if (!c) return { here: true };
+    await ctx.run(tmux, ['switch-client', '-c', c[1], '-t', w.target ? `${w.id}:${w.target}` : w.id]);
+    const procs = ctx.procs();
+    let app = null, host = null;
+    for (let cur = c[0], i = 0; cur && cur !== '1' && i < 40 && !app; cur = procs[cur]?.ppid, i++) { app = ctx.appFromPath(procs[cur]?.comm); host = cur; }
+    if (!app) return { here: true };
+    if (app === 'Ghostty' && await focusGhostty({ cwd: await ctx.cwdOf(c[0]), name: w.id })) return {};
+    return (await ctx.run('open', ['-a', app])).code === 0 ? {} : { here: true };
   }
 
   function sessionIdOf(pid) {
@@ -98,9 +117,14 @@ module.exports = function coding(ctx) {
     last: () => last,
     actions: {
       // not in a multiplexer: bring its terminal app to the front (the page attaches to panes itself)
+      // Jump: the terminal tab it lives in. { here: true } when there's none to go to (DevDock opens it itself)
       async focus({ pid }) {
         const a = await find(pid);
-        if (!a.where?.app) throw bad("It isn't running in a terminal app DevDock can find");
+        const w = a.where || {};
+        if (w.mux === 'herdr') return (await ctx.run('open', ['-a', 'Herdr'])).code === 0 ? {} : { here: true }; // no deep link to a Herdr tab
+        if (w.mux === 'tmux') return focusTmux(w);
+        if (w.mux) return { here: true };
+        if (!w.app) throw bad("It isn't running in a terminal app DevDock can find");
         if (a.where.app === 'Ghostty' && await focusGhostty(a)) return {};
         const r = await ctx.run('open', ['-a', a.where.app]);
         if (r.code !== 0) throw bad(`Could not bring ${a.where.app} to the front`);

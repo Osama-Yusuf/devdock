@@ -632,6 +632,10 @@
       return `<span class="ast ast-${st.status} ${compact ? 'compact' : ''}" title="${esc(tip)}">${STATE_ICON[st.status]}${compact ? '' : `<span>${LABEL[st.status]}</span>${ago ? `<em>${ago}</em>` : ''}`}</span>`;
     }
 
+    // a coding agent's own name (Claude's session name, else its folder) says more than "claude"
+    function agentNames(match) {
+      return (DevDock.sourceData.coding?.agents || []).filter(match).map(a => a.name);
+    }
     function agentHTML(name, title) {
       const ico = AGENT_ICONS[name];
       return ico
@@ -642,7 +646,7 @@
     function chipsHTML(p) {
       let html = '';
       if (p.branch) html += `<span class="branch trunc" title="git branch: ${esc(p.branch)}">\u2387 ${esc(p.branch)}</span>`;
-      if (p.launcher?.kind === 'agent') html += agentHTML(p.launcher.name, `Started by ${p.launcher.name}`);
+      if (p.launcher?.kind === 'agent') html += agentHTML(p.launcher.name, agentNames(a => a.pid == p.launcher.pid)[0] || `Started by ${p.launcher.name}`);
       if (p.tmux) html += `<span class="chip chip-tmux" data-session="${esc(p.tmux.session)}" data-target="${esc(p.tmux.target)}" onclick="attachTmux(this.dataset.session, this.dataset.target)" title="Running in tmux pane ${esc(p.tmux.target)}\nClick to open it">tmux ${esc(p.tmux.session)}</span>`;
       if (p.idle) html += `<span class="chip chip-idle" title="No real CPU activity since ${new Date(p.lastActive).toLocaleString()}">idle ${timeAgo(p.lastActive).replace(' ago', '')}</span>`;
       if (p.dupOf?.length) html += `<span class="chip chip-dup" title="Another server from this folder is running:\n${p.dupOf.map(d => `:${d.port} (pid ${d.pid})`).join('\n')}">also on :${p.dupOf[0].port}</span>`;

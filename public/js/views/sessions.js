@@ -46,7 +46,7 @@
         : `<span class="trunc">${esc(s.name)}</span>`}${s.name.startsWith('devdock-agent-') ? '<span class="chip chip-agent" title="An agent DevDock started for you">agent run</span>' : ''}${stateHTML(s)}${agentStateHTML(s.agentState, true)}</span></td>
       <td class="col-path"><span class="path-cell">${s.cwd
         ? `<span class="path-link trunc" data-path="${esc(s.cwd)}" onclick="copyText(this.dataset.path, 'Path')" title="${esc(s.cwd)}\nClick to copy">‎${esc(tildify(s.cwd))}‎</span>`
-        : '<span class="code">—</span>'}${s.branch ? `<span class="branch trunc" title="git branch: ${esc(s.branch)}">⎇ ${esc(s.branch)}</span>` : ''}${s.agents.map(a => agentHTML(a, `${a} runs in this session${s.agentStatus ? ' · ' + s.agentStatus : ''}`)).join('')}</span></td>
+        : '<span class="code">—</span>'}${s.branch ? `<span class="branch trunc" title="git branch: ${esc(s.branch)}">⎇ ${esc(s.branch)}</span>` : ''}${s.agents.map(a => agentHTML(a, agentNames(x => x.where?.mux === s.mux && x.where?.id === s.id).join('\n') || `${a} runs in this session${s.agentStatus ? ' · ' + s.agentStatus : ''}`)).join('')}</span></td>
       <td>${s.ports.map(p => `<a href="http://localhost:${p}" target="_blank" class="code port-link">${p}</a>`).join(' ') || '<span class="code">—</span>'}</td>
       <td class="col-user">${s.windows ? `<span class="code" title="${s.windows} window${s.windows > 1 ? 's' : ''}, ${s.panes} pane${s.panes > 1 ? 's' : ''}">${s.windows}</span>` : '<span class="code">—</span>'}</td>
       <td class="col-user">${s.lastActive ? `<span title="Last output ${new Date(s.lastActive).toLocaleString()}">${timeAgo(s.lastActive)}</span>` : '<span class="code">—</span>'}</td>

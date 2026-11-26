@@ -163,6 +163,7 @@ pub fn stacks_of(containers: &[Value], exists: impl Fn(&str) -> bool, located: &
             "cpu": live.iter().map(|c| num(&c["stats"]["cpu"])).sum::<f64>(),
             "mem": live.iter().map(|c| num(&c["stats"]["mem"])).sum::<f64>(),
             "lastUsed": latest(&list),
+            "createdAt": list.iter().filter_map(|c| c["createdAt"].as_i64().filter(|t| *t > 0)).min(), // its oldest container
         })
     }).collect();
     out.sort_by(|a, b| (b["running"].as_u64() > Some(0)).cmp(&(a["running"].as_u64() > Some(0))).then_with(|| locale_cmp(a.str_of("name"), b.str_of("name"))));
@@ -617,7 +618,7 @@ mod tests {
         let mk = |id: &str, svc: &str, state: &str, cpu: f64, last: Option<i64>| json!({
             "id": id, "name": format!("shop-{svc}-1"), "service": svc, "state": state, "status": "", "image": "i", "project": "shop",
             "composeDir": "/code/shop", "composeFiles": ["/code/shop/compose.yaml"], "k8s": null, "ports": [5432],
-            "lastUsed": last, "stats": if state == "running" { json!({ "cpu": cpu, "mem": 10.0 }) } else { Value::Null },
+            "lastUsed": last, "createdAt": id.parse::<i64>().unwrap() * 1000, "stats": if state == "running" { json!({ "cpu": cpu, "mem": 10.0 }) } else { Value::Null },
         });
         let list = vec![mk("1", "web", "running", 2.5, None), mk("2", "db", "exited", 9.0, Some(500)),
             json!({ "id": "3", "name": "solo", "project": "idle", "state": "exited", "ports": [], "composeFiles": ["/gone.yml"], "k8s": null, "lastUsed": null }),
@@ -626,7 +627,8 @@ mod tests {
         assert_eq!(s.iter().map(|x| x.str_of("name")).collect::<Vec<_>>(), ["shop", "idle"]); // running first
         assert_eq!((s[0]["running"].clone(), s[0]["total"].clone(), s[0]["cpu"].clone(), s[0]["mem"].clone()), (json!(1), json!(2), json!(2.5), json!(10.0)));
         assert_eq!(s[0]["services"].as_array().unwrap().iter().map(|x| x.str_of("name")).collect::<Vec<_>>(), ["db", "web"]);
-        assert_eq!((s[0]["ports"].clone(), s[0]["lastUsed"].clone()), (json!([5432]), json!(500)));
+        assert_eq!((s[0]["ports"].clone(), s[0]["lastUsed"].clone(), s[0]["createdAt"].clone()), (json!([5432]), json!(500), json!(1000)));
+        assert_eq!(s[1]["createdAt"], Value::Null); // no container says when
         assert_eq!((s[1]["filesFound"].clone(), s[1]["located"].clone(), s[1]["dir"].clone()), (json!([]), json!(false), Value::Null));
         // a compose file you pointed DevDock at after the folder moved
         let s = stacks_of(&list, |f| f == "/code/shop/compose.yaml" || f == "/new/idle.yml", &json!({ "idle": "/new/idle.yml" }));

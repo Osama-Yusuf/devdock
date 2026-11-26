@@ -1,0 +1,65 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "DevDock",
+  "mainBinaryName": "DevDock",
+  "version": "../package.json",
+  "identifier": "com.devdock.desktop",
+  "app": {
+    "windows": [],
+    "withGlobalTauri": false,
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "category": "DeveloperTool",
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
+    "resources": {
+      "../public/": "public/",
+      "../views/": "views/",
+      "../assets/trayTemplate.png": "assets/trayTemplate.png",
+      "../assets/trayTemplate@2x.png": "assets/trayTemplate@2x.png",
+      "../assets/icon.png": "assets/icon.png",
+      "../native/devdock-key": "native/devdock-key",
+      "../agent/install-agent.sh": "agent/install-agent.sh",
+      "../build.json": "build.json"
+    },
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "dmg": {
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 180,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 170
+        }
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIwQjBDM0FBRUU0M0IxRjYKUldUMnNVUHVxc093c0c4OVBIMUwycmJvNUxrWEo5Y044ZXFUMm1mQmxYa29ndnhaQTlJOExVUHMK",
+      "endpoints": [
+        "https://github.com/Osama-Yusuf/devdock/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

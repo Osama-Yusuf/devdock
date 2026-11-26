@@ -62,6 +62,7 @@
   }
   const short = id => id.replace(/^sha256:/, '').slice(0, 12);
   const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
+  const created = ts => ts ? `<span title="${new Date(ts).toLocaleString()}">${timeAgo(ts)}</span>` : '<span class="code">—</span>';
   const when = (running, ts) => running ? '<span class="chip chip-live">running</span>'
     : ts ? `<span title="${new Date(ts).toLocaleString()}">${timeAgo(ts)}</span>` : '<span class="code" title="Never ran">never</span>';
   const used = n => n ? `<span class="chip chip-agent" title="${plural(n, 'container')} use it">${n} using</span>` : '<span class="chip chip-orphan">unused</span>';
@@ -125,7 +126,7 @@
   };
 
   const BODIES = {
-    containers: (list, k8sCtx) => table('ctr-table', '<th>Name</th><th>Image</th><th>Ports</th><th title="Last 15 minutes">CPU</th><th title="Last 15 minutes">Memory</th><th title="Network in and out, per second">Network</th><th class="col-user">Last ran</th><th class="col-user">Disk</th><th></th>',
+    containers: (list, k8sCtx) => table('ctr-table', '<th>Name</th><th>Image</th><th>Ports</th><th title="Last 15 minutes">CPU</th><th title="Last 15 minutes">Memory</th><th title="Network in and out, per second">Network</th><th class="col-user">Last ran</th><th class="col-user">Created</th><th class="col-user">Disk</th><th></th>',
       list.map((c, i) => `<tr data-key="c:${esc(c.id)}">
         <td class="col-name"><span class="path-cell">${c.k8s
           ? `<span class="trunc" title="Pod ${esc(c.k8s.pod)}\nContainer ${esc(c.k8s.container)}\n${esc(c.status)}">${esc(c.k8s.pod)}</span><span class="chip chip-k8s" title="Kubernetes namespace ${esc(c.k8s.namespace)}">k8s \u00B7 ${esc(c.k8s.namespace)}</span>`
@@ -134,6 +135,7 @@
         <td>${c.ports.map(p => `<a href="http://localhost:${p}" target="_blank" class="code port-link">${p}</a>`).join(' ') || '<span class="code">—</span>'}</td>
         ${usageCells(c)}
         <td class="col-user">${stopped(c) ? `<span title="${esc(c.status)}">${when(false, c.lastUsed)}</span>` : when(true)}</td>
+        <td class="col-user">${created(c.createdAt)}</td>
         <td class="col-user code">${bytes(c.size)}</td>
         <td class="actions-cell" style="text-align:right;">${menu(`ctr-${i}`, [
           // Kubernetes owns its containers: hand over the kubectl command instead
@@ -143,7 +145,7 @@
           !c.k8s && stopped(c) && `<div class="actions-divider"></div>${item('removeContainer', c.id, ICON.trash, 'Remove', 'danger')}`,
         ])}</td></tr>`), 'No containers here.'),
     // A compose project: its services at a glance, and the stack-wide actions
-    stacks: list => table('ctr-table stk-table', '<th>Stack</th><th>Services</th><th>Ports</th><th>CPU</th><th>Memory</th><th class="col-user">Last ran</th><th></th>',
+    stacks: list => table('ctr-table stk-table', '<th>Stack</th><th>Services</th><th>Ports</th><th>CPU</th><th>Memory</th><th class="col-user">Last ran</th><th class="col-user">Created</th><th></th>',
       list.map((s, i) => `<tr data-key="s:${esc(s.name)}">
         <td class="col-name"><div class="stk-name"><b class="trunc">${esc(s.name)}</b>${s.dir ? `<span class="code trunc dim" title="${esc(s.dir)}">${esc(tildify(s.dir))}</span>` : ''}</div></td>
         <td><div class="stk-svcs">${s.services.map(x => `<span class="stk-svc ${x.state === 'running' ? 'on' : x.state === 'restarting' ? 'bad' : ''}" title="${esc(x.name)} · ${esc(x.image)}\n${esc(x.status)}"><i></i>${esc(x.name)}</span>`).join('')}</div>
@@ -152,6 +154,7 @@
         <td class="code">${s.running ? `${s.cpu < 10 ? s.cpu.toFixed(1) : Math.round(s.cpu)}%` : '—'}</td>
         <td class="code">${s.running ? formatMem(s.mem) : '—'}</td>
         <td class="col-user">${when(s.running > 0, s.lastUsed)}</td>
+        <td class="col-user">${created(s.createdAt)}</td>
         <td class="actions-cell" style="text-align:right;">${menu(`stk-${i}`, [
           s.running < s.total && stackItem('start', s.name, ICON.play, s.running ? 'Start the rest' : 'Start'),
           s.running && stackItem('restart', s.name, ICON.restart, 'Restart'),
@@ -167,7 +170,7 @@
         <td class="col-name"><span class="path-cell"><span class="trunc" title="${esc(im.id)}">${esc(im.tags[0] || `<none> ${short(im.id)}`)}</span>${im.tags.length > 1 ? `<span class="chip" title="${esc(im.tags.join('\n'))}">+${im.tags.length - 1}</span>` : ''}${!im.tags.length ? '<span class="chip" title="Untagged, usually left over from an old build">dangling</span>' : ''}</span></td>
         <td>${used(im.containers)}</td>
         <td class="col-user">${when(im.running, im.lastUsed)}</td>
-        <td class="col-user"><span title="${new Date(im.createdAt).toLocaleString()}">${timeAgo(im.createdAt)}</span></td>
+        <td class="col-user">${created(im.createdAt)}</td>
         <td class="col-user code" title="${bytes(im.unique)} not shared with other images">${bytes(im.size)}</td>
         <td class="actions-cell" style="text-align:right;">${menu(`img-${i}`, [!im.containers && item('removeImage', im.id, ICON.trash, 'Remove', 'danger')])}</td></tr>`), 'No images here.'),
     volumes: list => table('img-table', '<th>Name</th><th>Used by</th><th class="col-user">Last used</th><th class="col-user">Created</th><th class="col-user">Size</th><th></th>',
@@ -175,7 +178,7 @@
         <td class="col-name"><span class="path-cell"><span class="trunc code" title="${esc(v.name)}">${esc(v.anonymous ? short(v.name) : v.name)}</span>${v.anonymous ? '<span class="chip" title="Created by a container, no name given">anonymous</span>' : ''}${v.project ? `<span class="chip" title="Compose project">${esc(v.project)}</span>` : ''}</span></td>
         <td>${used(v.containers)}</td>
         <td class="col-user">${when(v.running, v.lastUsed)}</td>
-        <td class="col-user">${v.createdAt ? timeAgo(v.createdAt) : '—'}</td>
+        <td class="col-user">${created(v.createdAt)}</td>
         <td class="col-user code">${bytes(v.size)}</td>
         <td class="actions-cell" style="text-align:right;">${menu(`vol-${i}`, [!v.containers && item('removeVolume', v.name, ICON.trash, 'Remove', 'danger')])}</td></tr>`), 'No volumes here.'),
     build: d => `<div class="cache-card">

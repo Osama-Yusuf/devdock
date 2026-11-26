@@ -118,7 +118,7 @@
     setViewResult(list.length, base.length);
     view.innerHTML = limitsHTML() + `
       <div class="subbar">
-        <div class="subtabs" role="tablist">${FILTERS.map(([k, label], i) => `<button role="tab" aria-selected="${k === f}" aria-label="${label}" title="${label}${k === 'all' ? ` \u00B7 ${d.agents.length}` : ` \u00B7 ${count(k)}`}  \u2325${i + 1}" onclick="DevDockViews.coding.setFilter('${k}')">${k === 'all' ? STATE_ALL : STATE_ICON[k]}</button>`).join('')}</div>
+        <div class="subtabs" role="tablist">${FILTERS.map(([k, label], i) => `<button role="tab" aria-selected="${k === f}" aria-label="${label}" title="${label}${k === 'all' ? ` \u00B7 ${d.agents.length}` : ` \u00B7 ${count(k)}`}  \u2325${i + 1}" onclick="DevDockViews.coding.setFilter('${k}')">${k === 'all' ? STATE_ALL : STATE_ICON[k]}<span class="tab-label">${label}</span></button>`).join('')}</div>
         ${patterns.length ? `<div class="patterns">${DevDockPatterns.html('coding', patterns)}</div>` : ''}
       </div>
       ${list.length ? `<div class="scroll"><table class="coding-table">

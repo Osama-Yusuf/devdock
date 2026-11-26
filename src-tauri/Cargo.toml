@@ -1,0 +1,49 @@
+[package]
+name = "devdock"
+version = "1.5.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+
+[lib]
+name = "devdock"
+path = "src/lib.rs"
+
+[[bin]]
+name = "devdock"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = ["tray-icon", "image-png"] }
+tauri-plugin-updater = { version = "2.14", default-features = false, features = ["rustls-tls"] }
+tauri-plugin-single-instance = "2.4"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "net", "time", "fs", "sync", "io-util"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "ws", "tokio", "query"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+portable-pty = "0.9"
+libc = "0.2"
+libproc = "0.15"
+sha2 = "0.10"
+hmac = "0.12"
+base64 = "0.22"
+regex-lite = "0.1"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSError", "NSNotification", "NSDistributedNotificationCenter", "NSOperation", "NSBundle", "NSUUID"] }
+objc2-local-authentication = { version = "0.3", features = ["LAContext", "LAError", "block2"] }
+objc2-service-management = { version = "0.3", features = ["SMAppService"] }
+objc2-app-kit = { version = "0.3", features = ["NSWorkspace"] }
+objc2-user-notifications = { version = "0.3", default-features = false, features = ["std", "block2", "UNUserNotificationCenter", "UNNotificationRequest", "UNNotificationContent", "UNNotificationSettings", "UNNotificationTrigger"] }
+block2 = "0.6"
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

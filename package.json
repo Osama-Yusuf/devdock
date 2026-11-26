@@ -1,111 +1,20 @@
 {
   "name": "devdock-desktop",
-  "version": "1.4.3",
+  "version": "1.5.0",
   "license": "MIT",
   "description": "Everything running. One dock. Servers, sessions, containers, apps and agents on your Mac.",
-  "main": "electron/main.js",
   "scripts": {
-    "test": "node --test test/",
-    "start": "electron .",
-    "dev": "NODE_ENV=development electron .",
-    "build": "electron-builder",
-    "build:mac": "npm run build:key && npm run build:info && npm run build:pickers && electron-builder --mac",
+    "start": "npm run build:prep && cd src-tauri && cargo run",
+    "test": "cd src-tauri && cargo test",
+    "build:mac": "npm run build:prep && cd src-tauri && cargo tauri build",
+    "build:prep": "npm run -s build:key && npm run -s build:info && npm run -s build:pickers",
     "build:info": "node -e \"const x=c=>require('child_process').execSync(c).toString().trim();require('fs').writeFileSync('build.json',JSON.stringify({version:require('./package.json').version,build:x('git rev-list --count HEAD')+' ('+x('git rev-parse --short HEAD')+')'}))\"",
-    "build:win": "electron-builder --win",
-    "build:linux": "electron-builder --linux",
-    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true && npm run build:pickers",
     "build:key": "swiftc -O native/devdock-key.swift -o native/devdock-key",
     "build:pickers": "node scripts/build-pickers.js",
-    "release:mac": "APPLE_KEYCHAIN_PROFILE=devdock npm run build:mac"
-  },
-  "build": {
-    "appId": "com.devdock.desktop",
-    "productName": "DevDock",
-    "npmRebuild": false,
-    "mac": {
-      "category": "public.app-category.developer-tools",
-      "icon": "assets/icon.icns",
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "extendInfo": {
-        "NSLocalNetworkUsageDescription": "DevDock connects to the machines you add, on your network, to show their stats and open SSH sessions.",
-        "NSBonjourServices": [
-          "_ssh._tcp"
-        ]
-      }
-    },
-    "dmg": {
-      "title": "DevDock",
-      "icon": "assets/icon.icns",
-      "iconSize": 100,
-      "contents": [
-        {
-          "x": 180,
-          "y": 170
-        },
-        {
-          "x": 480,
-          "y": 170,
-          "type": "link",
-          "path": "/Applications"
-        }
-      ],
-      "window": {
-        "width": 660,
-        "height": 400
-      }
-    },
-    "win": {
-      "icon": "assets/icon.ico",
-      "target": [
-        "nsis"
-      ]
-    },
-    "linux": {
-      "icon": "assets/icon.png",
-      "target": [
-        "AppImage",
-        "deb"
-      ]
-    },
-    "asar": true,
-    "asarUnpack": [
-      "server.js",
-      "build.json",
-      "native/devdock-key",
-      "agent/install-agent.sh",
-      "sources/**/*",
-      "agents/**/*",
-      "assets/**/*",
-      "public/**/*",
-      "views/**/*",
-      "node_modules/**/*"
-    ],
-    "files": [
-      "electron/**/*",
-      "server.js",
-      "build.json",
-      "sources/**/*",
-      "agents/**/*",
-      "assets/**/*",
-      "public/**/*",
-      "views/**/*",
-      "node_modules/**/*",
-      "native/devdock-key",
-      "agent/install-agent.sh"
-    ],
-    "afterSign": "electron/sign.js"
-  },
-  "dependencies": {
-    "express": "^4.19.0",
-    "node-pty": "1.1.0",
-    "ws": "^8.20.0"
+    "postinstall": "npm run build:pickers",
+    "release:mac": "sh scripts/release.sh"
   },
   "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^25.0.0",
     "simple-icons": "16.38.1",
     "unicode-emoji-json": "0.9.0"
   }

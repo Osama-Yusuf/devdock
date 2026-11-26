@@ -35,7 +35,9 @@ fn show(app: &AppHandle) {
         .min_inner_size(800.0, 500.0)
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true)
-        .traffic_light_position(tauri::LogicalPosition::new(16.0, 12.0))
+        // y is the height of the area the buttons sit in, not their top (as Electron had it):
+        // 21 centres the 16pt buttons in the page's 38px title bar
+        .traffic_light_position(tauri::LogicalPosition::new(16.0, 21.0))
         .background_color(tauri::window::Color(11, 14, 19, 255))
         .initialization_script("window.__DEVDOCK_APP__ = true;")
         // nothing but the lock page while locked; the lock page's button asks again

@@ -368,7 +368,7 @@
 
   // ── One machine: a page with the same tabs as DevDock itself ───────
   const TABS = [
-    ['overview', 'Home'], ['ports', 'Servers', 'ports'], ['sessions', 'Sessions'], ['containers', 'Containers', 'containers'],
+    ['overview', 'Home'], ['ports', 'Ports', 'ports'], ['sessions', 'Sessions'], ['containers', 'Containers', 'containers'],
     ['agents', 'Agents', 'processes'], ['processes', 'Processes', 'processes'], ['settings', 'Settings'],
   ];
   const navIcon = sel => document.querySelector(sel)?.outerHTML || '';

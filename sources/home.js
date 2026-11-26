@@ -109,7 +109,8 @@ module.exports = function home(ctx) {
       if (!a.pids) { sumCpu += a.cpu || 0; sumMem += a.memMB || 0; continue; }
       for (const x of a.pids) if (!counted.has(String(x))) { counted.add(String(x)); sumCpu += procs[x]?.cpu || 0; sumMem += procs[x]?.memMB || 0; }
     }
-    totals.push({ t: now, cpu: sumCpu, mem: sumMem });
+    const mc = machineCpu(), mm = await machineMem(), md = machineDisk();
+    totals.push({ t: now, cpu: sumCpu, mem: sumMem, mcpu: mc ?? 0, mmem: mm?.used ?? 0 });
     while (totals.length && now - totals[0].t > KEEP) totals.shift();
 
     // Agents waiting on you, and ones that just finished a turn
@@ -183,9 +184,32 @@ module.exports = function home(ctx) {
         unknown: agents.filter(a => !a.state).length, // only Claude Code reports its state
         cpu: sumCpu, mem: sumMem, cpuSpark: spark(totals, 'cpu'), memSpark: spark(totals, 'mem'),
         cores: require('os').cpus().length, totalMem: require('os').totalmem() / 1024 / 1024,
+        // the whole Mac, like Activity Monitor: CPU load %, Memory Used, and the startup disk
+        machine: { cpu: mc, mem: mm?.used ?? null, disk: md, cpuSpark: spark(totals, 'mcpu'), memSpark: spark(totals, 'mmem') },
         net: await network(now),
       },
     };
+  }
+
+  // Whole-machine CPU: busy share of all cores' time since the last scan (os.cpus() ticks)
+  let cpuTicks = null;
+  function machineCpu() {
+    const t = require('os').cpus().reduce((a, { times: x }) => ({ busy: a.busy + x.user + x.nice + x.sys + x.irq, all: a.all + x.user + x.nice + x.sys + x.irq + x.idle }), { busy: 0, all: 0 });
+    const p = cpuTicks; cpuTicks = t;
+    return p && t.all > p.all ? Math.round((t.busy - p.busy) / (t.all - p.all) * 1000) / 10 : null;
+  }
+  // Activity Monitor's "Memory Used" = app memory (anonymous minus purgeable) + wired + compressed, in MB.
+  // Cached files aren't in it: macOS hands that memory back the moment an app asks.
+  async function machineMem() {
+    const [st, sc] = await Promise.all([ctx.run('vm_stat', [], { timeout: 3000 }), ctx.run('sysctl', ['-n', 'hw.pagesize', 'vm.page_pageable_internal_count', 'vm.page_purgeable_count'], { timeout: 3000 })]);
+    const [page, internal, purgeable] = sc.stdout.trim().split('\n').map(Number);
+    const pages = k => +(st.stdout.match(new RegExp(`${k}:\\s+(\\d+)`))?.[1] ?? NaN);
+    const used = (internal - purgeable + pages('Pages wired down') + pages('Pages occupied by compressor')) * page / 1048576;
+    return Number.isFinite(used) && used > 0 ? { used } : null;
+  }
+  // Startup disk: APFS volumes share one container, so / reports the container's size and free space
+  function machineDisk() {
+    try { const f = require('fs').statfsSync('/'); return { total: f.blocks * f.bsize / 1048576, free: f.bavail * f.bsize / 1048576 }; } catch { return null; }
   }
 
   // Network speed of the interface the default route uses, from netstat's byte counters

@@ -193,7 +193,7 @@ function demoHome() {
         srv(41388, 'next-server', [3000], 'storefront/apps/web', 'feat/checkout'), srv(52477, 'next-server', [3001], 'storefront/apps/web', 'feat/checkout'),
       ] },
     ],
-    vitals: { servers: 7, agents: 8, working: 2, needsYou: 1, cpu: 318, mem: 5940, cores: 12, totalMem: 36864,
+    vitals: { servers: 7, agents: 8, working: 2, needsYou: 1, cpu: 318, mem: 5940, cores: 12, totalMem: 36864, machine: { cpu: 34, mem: 24100, disk: { total: 948700, free: 212000 }, cpuSpark: [22, 30, 28, 41, 35, 33, 38, 34], memSpark: [23800, 23900, 24000, 24100, 24050, 24100] },
       net: { iface: 'en0', rx: 2.4e6, tx: 310e3, lan: '192.168.1.42', tailscale: '100.101.7.23',
         rxSpark: wave(24, 1.6e6, 7e5, 3e4), txSpark: wave(24, 2.6e5, 9e4, 2e3) },
       cpuSpark: [40, 42, 38, 51, 60, 140, 230, 262, 281, 300, 296, 310, 305, 298, 312, 320, 309, 315, 322, 311, 318, 314, 320, 318],

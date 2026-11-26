@@ -107,7 +107,7 @@ module.exports = function home(ctx) {
     const counted = new Set([...servers.keys()].map(String));
     for (const a of agents) {
       if (!a.pids) { sumCpu += a.cpu || 0; sumMem += a.memMB || 0; continue; }
-      for (const x of a.pids) if (!counted.has(String(x))) { counted.add(String(x)); sumCpu += procs[x]?.cpu || 0; sumMem += procs[x]?.rssMB || 0; }
+      for (const x of a.pids) if (!counted.has(String(x))) { counted.add(String(x)); sumCpu += procs[x]?.cpu || 0; sumMem += procs[x]?.memMB || 0; }
     }
     totals.push({ t: now, cpu: sumCpu, mem: sumMem });
     while (totals.length && now - totals[0].t > KEEP) totals.shift();
@@ -191,11 +191,20 @@ module.exports = function home(ctx) {
   // Network speed of the interface the default route uses, from netstat's byte counters
   // (free, unlike nettop). ponytail: one interface; traffic on a VPN that isn't the default route isn't counted.
   const netHist = [];
-  let netPrev = null, iface = null, ifaceAt = 0;
+  let netPrev = null, iface = null, ifaceAt = 0, tsIp = null;
+  // Tailscale's address, from Tailscale itself: 100.64.0.0/10 alone also means carrier NAT or another VPN
+  const TS_APP = '/Applications/Tailscale.app/Contents/MacOS/Tailscale';
+  async function tailscaleIp() {
+    const bin = ctx.findBin('tailscale') || (require('fs').existsSync(TS_APP) && TS_APP);
+    if (!bin) return null;
+    const ip = (await ctx.run(bin, ['ip', '-4'], { timeout: 3000 })).stdout.trim().split('\n')[0];
+    return /^\d+\.\d+\.\d+\.\d+$/.test(ip) ? ip : null;
+  }
   async function network(now) {
     if (!iface || now - ifaceAt > 30000) {
       iface = (await ctx.run('route', ['-n', 'get', 'default'], { timeout: 3000 })).stdout.match(/interface:\s*(\S+)/)?.[1] || null;
       ifaceAt = now;
+      tsIp = await tailscaleIp();
     }
     if (!iface) return null;
     // count from the end: lo0's link row has no address column
@@ -213,7 +222,7 @@ module.exports = function home(ctx) {
     return {
       iface, rx: last.rx, tx: last.tx, rxSpark: spark(netHist, 'rx'), txSpark: spark(netHist, 'tx'),
       lan: addrs.find(a => a.name === iface)?.ip || null,
-      tailscale: addrs.find(a => /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(a.ip))?.ip || null, // 100.64.0.0/10
+      tailscale: addrs.some(a => a.ip === tsIp) ? tsIp : null, // only while it's up on this Mac
     };
   }
 

@@ -15,7 +15,8 @@
     "build:linux": "electron-builder --linux",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true && npm run build:pickers",
     "build:key": "swiftc -O native/devdock-key.swift -o native/devdock-key",
-    "build:pickers": "node scripts/build-pickers.js"
+    "build:pickers": "node scripts/build-pickers.js",
+    "release:mac": "APPLE_KEYCHAIN_PROFILE=devdock npm run build:mac"
   },
   "build": {
     "appId": "com.devdock.desktop",

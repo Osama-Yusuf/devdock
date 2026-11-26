@@ -195,8 +195,8 @@
         <div class="horb">${sev === 'clear' ? ICON.check : `<span>${n || tidy}</span>`}</div>
         <div class="hhead"><h2>${headline}</h2><p>${esc(sub)}</p></div>
         <div class="hvitals">
-          <div class="hvital"><label>Dev CPU</label><div class="hv">${((v.cpu || 0) / 100).toFixed(1)}<small> / ${v.cores || '?'} cores</small></div>${meter(cpuPct)}${sparkline(v.cpuSpark, { color: 'var(--accent)', w: 120, h: 26 })}</div>
-          <div class="hvital"><label>Dev memory</label><div class="hv">${formatMem(v.mem || 0)}<small> / ${formatMem(v.totalMem || 0)}</small></div>${meter(memPct)}${sparkline(v.memSpark, { color: 'var(--accent)', w: 120, h: 26 })}</div>
+          <div class="hvital" title="CPU used by your servers and coding agents, including what they started"><label>CPU · servers + agents</label><div class="hv">${((v.cpu || 0) / 100).toFixed(1)}<small> / ${v.cores || '?'} cores</small></div>${meter(cpuPct)}${sparkline(v.cpuSpark, { color: 'var(--accent)', w: 120, h: 26 })}</div>
+          <div class="hvital" title="Memory used by your servers and coding agents, including what they started"><label>Memory · servers + agents</label><div class="hv">${formatMem(v.mem || 0)}<small> / ${formatMem(v.totalMem || 0)}</small></div>${meter(memPct)}${sparkline(v.memSpark, { color: 'var(--accent)', w: 120, h: 26 })}</div>
           <div class="hvital"><label>Agents · servers</label><div class="hv">${v.agents || 0}<small> agents · ${v.servers || 0} servers</small></div>
             <div class="hagents">${v.working ? `<span class="ast-working">${STATE_ICON.working}${v.working} working</span>` : ''}${v.needsYou ? `<span class="ast-needs-you">${STATE_ICON['needs-you']}${v.needsYou} waiting</span>` : ''}${v.unknown ? `<span title="Only Claude Code reports whether it's working">${v.unknown} state unknown</span>` : ''}${!v.working && !v.needsYou && !v.unknown ? '<span>all idle</span>' : ''}</div></div>
           ${netTile(v.net)}

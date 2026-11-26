@@ -22,7 +22,10 @@ module.exports = function coding(ctx) {
     if (ctx.DEMO) return require('../demo').demoAgents();
     const procs = ctx.procs();
     const kids = childrenOf(procs);
-    const isAgent = pid => procs[pid] && !procs[pid].comm.includes('.app/') && !/ bg-/.test(procs[pid].comm) && ctx.agentOf(procs[pid].comm);
+    // skip app binaries named like an agent (Claude.app itself, Claude Code's own helper app), but not the
+    // agents desktop apps bundle: Claude's under Application Support/Claude/claude-code/, Codex's in Codex.app's Resources
+    const bundled = c => c.includes('.app/') && !/\/claude-code\/[^/]+\/|\/Codex\.app\/Contents\/Resources\//.test(c);
+    const isAgent = pid => procs[pid] && !bundled(procs[pid].comm) && !/ bg-/.test(procs[pid].comm) && ctx.agentOf(procs[pid].comm);
     // shell pid of each multiplexer pane DevDock lists -> the session (and tmux pane)
     const paneOf = {};
     for (const s of ctx.source('sessions')?.last?.() || []) {
@@ -55,7 +58,7 @@ module.exports = function coding(ctx) {
         sessionId: agent === 'Claude Code' ? sessionIdOf(pid) : null,
         where, startedAt: p.startedAt,
         cpu: tree.reduce((n, x) => n + (procs[x]?.cpu || 0), 0),
-        memMB: tree.reduce((n, x) => n + (procs[x]?.rssMB || 0), 0),
+        memMB: tree.reduce((n, x) => n + (procs[x]?.memMB || 0), 0),
         processes: tree.length,
         pids: tree,
         ports: [...new Set(tree.flatMap(x => portsByPid[x] || []))].sort((a, b) => a - b),

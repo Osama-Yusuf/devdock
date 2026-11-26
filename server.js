@@ -230,25 +230,7 @@ function getVersion(runtime, exePath) {
 }
 
 // ── Who launched it ──────────────────────────────────────────────────
-const AGENTS = {
-  claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini CLI', aider: 'Aider',
-  opencode: 'opencode', 'cursor-agent': 'Cursor Agent', amp: 'Amp', goose: 'Goose',
-  droid: 'Droid', crush: 'Crush', qwen: 'Qwen Code', kiro: 'Kiro',
-};
-
-// Outermost bundle wins: ".../Visual Studio Code.app/.../Code Helper.app/..." -> "Visual Studio Code"
-function appFromPath(p) {
-  const m = p && p.match(/\/([^/]+?)\.app\//);
-  return m ? m[1] : null;
-}
-
-// Agent name for a process's ps comm, or null
-function agentOf(comm) {
-  // "claude bg-pty-host" -> "claude"; ".../claude/versions/2.1.322" -> "claude"
-  let base = path.basename(comm.split(' ')[0]).toLowerCase();
-  if (/^\d+(\.\d+)+$/.test(base)) base = path.basename(path.dirname(path.dirname(comm.split(' ')[0]))).toLowerCase();
-  return AGENTS[base] || null;
-}
+const { AGENTS, appFromPath, agentOf } = require('./sources/detect');
 
 // What a Claude Code session is doing. Two sources Claude Code writes itself (checked live, v2.1.322):
 //   ~/.claude/sessions/<pid>.json   status from the agent loop: running -> "busy",
@@ -455,6 +437,19 @@ async function loadMeta(pids, runtimeOf) {
 
 let latestProcs = {}; // full ps table from the last scan, shared with sources/
 
+// CPU like Activity Monitor: CPU time used over the last 5+ seconds, over those seconds.
+// ps's own %cpu is a decaying average that lags and overshoots. First sight of a pid: ps's.
+// ps counts CPU time in 0.01s steps, so a window under 5s can't see an agent idling at 0.4%.
+const cpuPrev = new Map();
+function cpuNow(pid, cpuSec, now, psCpu) {
+  const prev = cpuPrev.get(pid);
+  if (prev && cpuSec >= prev.cpuSec && now - prev.t < 5000) return prev.cpu; // keep measuring the same window
+  const cpu = !prev || cpuSec < prev.cpuSec ? psCpu // new pid, or a reused one
+    : Math.round((cpuSec - prev.cpuSec) / ((now - prev.t) / 1000) * 1000) / 10;
+  cpuPrev.set(pid, { cpuSec, t: now, cpu });
+  return cpu;
+}
+
 async function getAllPorts() {
   if (DEMO) {
     const ports = require('./demo').demoPorts(RUNTIMES);
@@ -472,20 +467,25 @@ async function getAllPorts() {
     if (m) panes[m[1]] = { session: m[4], target: `${m[4]}:${m[2]}.${m[3]}` };
   });
 
-  const procs = {}; // pid -> { ppid, comm, cpuSec, cpu, rssMB, startedAt }
+  const procs = {}; // pid -> { ppid, comm, cpuSec, cpu, rssMB, memMB, startedAt }
+  const now = Date.now();
   psOut.split('\n').forEach(line => {
     const m = line.match(/^\s*(\d+)\s+(\d+)\s+([\d.]+)\s+(\d+)\s+([\d:.]+)\s+(\w{3}\s+\w{3}\s+\d+\s+[\d:]+\s+\d{4})\s+(.*)$/);
     if (!m) return;
+    // time is [[hh:]mm:]ss.cc cumulative CPU
+    const cpuSec = m[5].split(':').reduce((a, v) => a * 60 + parseFloat(v), 0);
+    const rssMB = (parseInt(m[4]) || 0) / 1024;
     procs[m[1]] = {
       ppid: m[2],
-      cpu: parseFloat(m[3]) || 0,
-      rssMB: (parseInt(m[4]) || 0) / 1024,
-      // time is [[hh:]mm:]ss.cc cumulative CPU
-      cpuSec: m[5].split(':').reduce((a, v) => a * 60 + parseFloat(v), 0),
+      cpu: cpuNow(m[1], cpuSec, now, parseFloat(m[3]) || 0),
+      rssMB,
+      memMB: topMem[m[1]] ?? Math.round(rssMB * 10) / 10, // Activity Monitor's number; RSS until top's next sample
+      cpuSec,
       startedAt: Date.parse(m[6]) || null,
       comm: m[7].trim(),
     };
   });
+  for (const pid of cpuPrev.keys()) if (!procs[pid]) cpuPrev.delete(pid);
 
   const settings = loadSettings();
   const entries = [];
@@ -529,7 +529,7 @@ async function getAllPorts() {
       scriptPath: cwdPath || null,
       favorite: settings.favorites.includes(port),
       cpu: u.cpu,
-      memMB: topMem[pid] ?? Math.round(u.rssMB * 10) / 10,
+      memMB: proc.memMB ?? Math.round(u.rssMB * 10) / 10,
       startedAt: u.startedAt,
       exePath: exePath || null,
       version: version || null,

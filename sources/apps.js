@@ -88,10 +88,10 @@ module.exports = function apps(ctx) {
         version: info.version || a.build, electron: !!info.electron, hasIcon: !!info.icon,
         system: !a.path || /^\/(System|usr|Library\/Apple)\//.test(a.path) || a.path.startsWith('/Library/') && a.bundleId?.startsWith('com.apple.'),
         user: a.path?.startsWith(home) || false,
-        cpu: sum('cpu'), memMB: sum('rssMB'),
+        cpu: sum('cpu'), memMB: sum('memMB'),
         processes: pids.map(pid => ({
           pid, name: path.basename(procs[pid].comm), own: own.has(pid),
-          cpu: procs[pid].cpu, memMB: procs[pid].rssMB, startedAt: procs[pid].startedAt,
+          cpu: procs[pid].cpu, memMB: procs[pid].memMB, startedAt: procs[pid].startedAt,
         })).sort((x, y) => (y.pid === a.pid) - (x.pid === a.pid) || y.own - x.own || y.memMB - x.memMB),
         ports: [...new Set(ports.filter(p => own.has(String(p.pid))).map(p => p.port))].sort((x, y) => x - y),
       };

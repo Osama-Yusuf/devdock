@@ -18,7 +18,7 @@ test('Codex limits come from the newest rate-limit snapshot in its logs', () => 
 
 test('Home warns when under 20% of a plan window is left', async () => {
   const tools = [{ tool: 'Codex', plan: 'plus', limits: [{ label: '5-hour', used: 85, resetsAt: 1 }, { label: 'Weekly', used: 79, resetsAt: 2 }] }];
-  const ctx = { DEMO: false, procs: () => ({}), ports: () => [], run: async () => ({ code: 1, stdout: '' }),
+  const ctx = { DEMO: false, procs: () => ({}), ports: () => [], run: async () => ({ code: 1, stdout: '' }), findBin: () => null,
     source: id => id === 'limits' ? { last: () => ({ tools }) } : null };
   const { items } = await require('../sources/home')(ctx).scan();
   assert.deepStrictEqual(items.filter(i => i.type === 'limit').map(i => i.label), ['5-hour']);

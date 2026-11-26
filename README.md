@@ -40,7 +40,7 @@ Click a server's `tmux` badge and its session opens right here, splits and windo
 | Tab | What it shows |
 |---|---|
 | **Home** `⌘1` | Only what needs you: runaway CPU, memory leaks, crash loops, agents waiting or just finished, forgotten and duplicate servers. Each with its fix, nothing else. |
-| **Servers** `⌘2` | Every listening port: flat, by project, or by the agent session that started it. |
+| **Ports** `⌘2` | Every listening port: flat, by project, or by the agent session that started it. |
 | **Sessions** `⌘3` | tmux and Herdr sessions with their folders, branches and ports. Open, rename or kill them, and see which Claude Code ones are working, waiting on you, or idle. |
 | **Containers** `⌘4` | Docker containers, images, volumes and build cache, with one-click cleanup. |
 | **Apps** `⌘5` | Running Mac apps, menu bar apps and background agents, with every PID they own. Quit, force quit, or kill a single process. |

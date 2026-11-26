@@ -56,7 +56,7 @@
   // an agent's way to its row: a quiet link under Jump, not a second button
   const agentLink = s => `${s.where?.mux ? `<button class="link-btn hgo" onclick="DevDockViews.coding.openHere('${s.pid}')">Open here</button>` : ''}<button class="link-btn hgo" data-key="g:${s.pid}" data-name="${esc(s.name || '')}" onclick="revealRow('coding', this.dataset.key, this.dataset.name)">Go to agents</button>`;
   // where the alert comes from, and a way there with the row lit up
-  const SRC = { server: ['servers', 'Servers', s => `${s.pid}:`], agent: ['coding', 'Coding agents', s => `g:${s.pid}`], container: ['containers', 'Containers', s => `c:${s.id}`] };
+  const SRC = { server: ['servers', 'Ports', s => `${s.pid}:`], agent: ['coding', 'Coding agents', s => `g:${s.pid}`], container: ['containers', 'Containers', s => `c:${s.id}`] };
   const showBtn = s => { const src = SRC[s?.kind]; return src ? `<button class="hbtn" data-tab="${src[0]}" data-key="${esc(src[2](s))}" data-name="${esc(s.name || '')}"
     onclick="revealRow(this.dataset.tab, this.dataset.key, this.dataset.name)">${ICON.jump}Show in ${src[1]}</button>` : ''; };
   const stopBtn = (subjects, label = 'Stop', cls = 'danger') => btn(label, `DevDockViews.home.stop('${subjects.map(s => `${s.kind[0]}${s.pid}`).join(',')}')`, ICON.stop, cls);

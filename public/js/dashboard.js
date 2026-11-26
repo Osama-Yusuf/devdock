@@ -1030,7 +1030,7 @@
       $('groupingDepth').value = String(currentSettings.groupingDepth ?? 1);
       $('showHistoryToggle').checked = currentSettings.showHistory !== false;
       $('showExportToggle').checked = currentSettings.showExport || false;
-      $('tabLabels').value = currentSettings.tabLabels || 'icons';
+      $('tabLabels').value = currentSettings.tabLabels || 'both';
       $('idleAfterHours').value = String(currentSettings.idleAfterHours ?? 24);
       $('autoKillIdle').checked = !!currentSettings.autoKillIdle;
       $('tmuxOpen').value = currentSettings.tmuxOpen || 'devdock';
@@ -1392,7 +1392,7 @@ $('settingsBtn').addEventListener('click', openSettings);
       groupingDepth = currentSettings.groupingDepth ?? 1;
       if (currentSettings.notifications) requestNotificationPermission();
       updateExportVisibility(currentSettings.showExport);
-      document.documentElement.dataset.tabs = currentSettings.tabLabels || 'icons';
+      document.documentElement.dataset.tabs = currentSettings.tabLabels || 'both';
 
       const params = new URLSearchParams(location.search);
       const q = params.get('q'); // ?q= deep-links a search, ?tab= a tab

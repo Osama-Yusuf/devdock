@@ -149,7 +149,7 @@ function getDefaultSettings() {
     runtimes,
     showOtherProcesses: false,
     showExport: false,
-    tabLabels: 'icons', // 'icons' | 'words' | 'both'
+    tabLabels: 'both', // 'icons' | 'words' | 'both'
     favorites: [],
     theme: 'dark',
     notifications: true,

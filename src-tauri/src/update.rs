@@ -65,7 +65,11 @@ fn busy() -> bool { matches!(status().lock().unwrap().state, "checking" | "downl
 async fn find() -> ApiResult<Option<tauri_plugin_updater::Update>> {
     let app = app()?;
     set(|s| { s.state = "checking"; s.error = None; });
-    let found = match updater(app) { Ok(u) => u.check().await.map_err(|e| e.to_string()), Err(e) => Err(e.to_string()) };
+    let found = match updater(app) {
+        // the latest release answered without a latest.json (one from before the updater): nothing to update to
+        Ok(u) => match u.check().await { Err(tauri_plugin_updater::Error::ReleaseNotFound) => Ok(None), r => r.map_err(|e| e.to_string()) },
+        Err(e) => Err(e.to_string()),
+    };
     match found {
         Ok(u) => {
             set(|s| {

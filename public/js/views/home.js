@@ -150,6 +150,15 @@
     return '';
   }
 
+  // The startup disk, sizes decimal like Finder
+  const gb = mb => { const b = mb * 1048576; return b >= 1e12 ? `${(b / 1e12).toFixed(2)} TB` : `${Math.round(b / 1e9)} GB`; };
+  function diskTile(d) {
+    if (!d) return '<div class="hvital"><label>Disk</label><div class="hv">—</div></div>';
+    const used = d.total - d.free, pct = used / d.total * 100, low = d.free * 1048576 < 15e9 || pct > 95;
+    return `<div class="hvital${low ? ' hlow' : ''}" title="Startup disk. Finder may show a little more free: it counts space macOS can purge"><label>Disk</label>
+      <div class="hv">${gb(used)}<small> / ${gb(d.total)}</small></div><div class="hmeter"><i style="width:${pct.toFixed(1)}%"></i></div>
+      <div class="hvital-foot">${gb(d.free)} free</div></div>`;
+  }
   // Speeds in bytes per second, decimal like Activity Monitor
   const rate = n => { const u = ['B', 'KB', 'MB', 'GB']; let i = 0; while (n >= 1000 && i < 3) { n /= 1000; i++; } return `${n < 10 && i ? n.toFixed(1) : Math.round(n)} ${u[i]}/s`; };
   function netTile(n) {
@@ -188,15 +197,18 @@
       !crit && !wait && tidy && `${tidy} thing${tidy > 1 ? 's' : ''} to tidy up`,
     ].filter(Boolean);
     const sub = parts.length ? parts.join(' · ') : `Watching ${v.servers || 0} servers and ${v.agents || 0} agents. Nothing needs you.`;
-    const cpuPct = Math.min(100, (v.cpu || 0) / ((v.cores || 1) * 100) * 100), memPct = Math.min(100, (v.mem || 0) / (v.totalMem || 1) * 100);
+    const mc = v.machine || {}, memPct = Math.min(100, (mc.mem || 0) / (v.totalMem || 1) * 100);
     const meter = pct => `<div class="hmeter"><i style="width:${pct.toFixed(1)}%"></i></div>`;
     return `
       <section class="hhero sev-${sev}">
         <div class="horb">${sev === 'clear' ? ICON.check : `<span>${n || tidy}</span>`}</div>
         <div class="hhead"><h2>${headline}</h2><p>${esc(sub)}</p></div>
         <div class="hvitals">
-          <div class="hvital" title="CPU used by your servers and coding agents, including what they started"><label>CPU · servers + agents</label><div class="hv">${((v.cpu || 0) / 100).toFixed(1)}<small> / ${v.cores || '?'} cores</small></div>${meter(cpuPct)}${sparkline(v.cpuSpark, { color: 'var(--accent)', w: 120, h: 26 })}</div>
-          <div class="hvital" title="Memory used by your servers and coding agents, including what they started"><label>Memory · servers + agents</label><div class="hv">${formatMem(v.mem || 0)}<small> / ${formatMem(v.totalMem || 0)}</small></div>${meter(memPct)}${sparkline(v.memSpark, { color: 'var(--accent)', w: 120, h: 26 })}</div>
+          <div class="hvital" title="The whole Mac, like Activity Monitor's CPU load"><label>CPU</label><div class="hv">${mc.cpu == null ? '—' : `${Math.round(mc.cpu)}<small>% of ${v.cores || '?'} cores</small>`}</div>${meter(mc.cpu || 0)}${sparkline(mc.cpuSpark, { color: 'var(--accent)', w: 120, h: 26 })}
+            <div class="hvital-foot" title="Your servers and coding agents, including what they started">servers + agents: ${((v.cpu || 0) / 100).toFixed(1)} cores</div></div>
+          <div class="hvital" title="The whole Mac: Activity Monitor's app memory + wired + compressed. Cached files aren't counted: macOS frees them on demand"><label>Memory</label><div class="hv">${mc.mem == null ? '—' : `${formatMem(mc.mem)}<small> / ${formatMem(v.totalMem || 0)}</small>`}</div>${meter(memPct)}${sparkline(mc.memSpark, { color: 'var(--accent)', w: 120, h: 26 })}
+            <div class="hvital-foot" title="Your servers and coding agents, including what they started">servers + agents: ${formatMem(v.mem || 0)}</div></div>
+          ${diskTile(mc.disk)}
           <div class="hvital"><label>Agents · servers</label><div class="hv">${v.agents || 0}<small> agents · ${v.servers || 0} servers</small></div>
             <div class="hagents">${v.working ? `<span class="ast-working">${STATE_ICON.working}${v.working} working</span>` : ''}${v.needsYou ? `<span class="ast-needs-you">${STATE_ICON['needs-you']}${v.needsYou} waiting</span>` : ''}${v.unknown ? `<span title="Only Claude Code reports whether it's working">${v.unknown} state unknown</span>` : ''}${!v.working && !v.needsYou && !v.unknown ? '<span>all idle</span>' : ''}</div></div>
           ${netTile(v.net)}

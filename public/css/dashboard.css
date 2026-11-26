@@ -897,8 +897,9 @@
     .ctr-table th:nth-child(5) { width: 122px; }
     .ctr-table th:nth-child(6) { width: 104px; }
     .ctr-table th:nth-child(7) { width: 100px; }
-    .ctr-table th:nth-child(8) { width: 80px; }
-    .ctr-table th:nth-child(9) { width: 56px; }
+    .ctr-table th:nth-child(8) { width: 90px; }
+    .ctr-table th:nth-child(9) { width: 80px; }
+    .ctr-table th:nth-child(10) { width: 56px; }
     .ustat { display: flex; align-items: center; gap: 8px; }
     .ustat .code { min-width: 44px; }
     .ustat .hspark circle { display: none; }
@@ -1411,7 +1412,8 @@
     }
     body {
       background:
-        radial-gradient(1100px 420px at 50% -120px, var(--glow), transparent 70%) no-repeat fixed,
+        /* not fixed: a fixed background under the title bar's blur kept ~120 MB of WebKit tiles alive */
+        radial-gradient(1100px 420px at 50% -120px, var(--glow), transparent 70%) no-repeat,
         var(--bg-deep);
     }
     body::before {

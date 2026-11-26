@@ -300,14 +300,15 @@
     }
 
     function notify(title, body) {
-      if (Notification.permission === 'granted') {
+      // in the app DevDock posts these natively itself, even with the window closed
+      if (!window.__DEVDOCK_APP__ && window.Notification?.permission === 'granted') {
         new Notification(title, { body, icon: '/favicon.ico' });
       }
       showToast(`${title}: ${body}`, 'info');
     }
 
     async function requestNotificationPermission() {
-      if ('Notification' in window && Notification.permission === 'default') {
+      if (!window.__DEVDOCK_APP__ && 'Notification' in window && Notification.permission === 'default') {
         await Notification.requestPermission();
       }
     }
@@ -1003,6 +1004,7 @@
           if (data.type === 'ports') handlePortsData(data, true);
           if (data.type === 'source') handleSourceData(data);
           if (data.type?.startsWith('term-')) handleTermMessage(data);
+          if (data.type === 'update') showUpdate(data);
           if (data.type === 'reaped') {
             const ports = data.reaped.map(r => ':' + r.port).join(', ');
             notify('Idle servers stopped', `Auto-killed ${data.reaped.length}: ${ports}`);
@@ -1033,6 +1035,7 @@
       $('tabLabels').value = currentSettings.tabLabels || 'both';
       $('idleAfterHours').value = String(currentSettings.idleAfterHours ?? 24);
       $('autoKillIdle').checked = !!currentSettings.autoKillIdle;
+      $('autoUpdateToggle').checked = currentSettings.autoUpdate !== false;
       $('tmuxOpen').value = currentSettings.tmuxOpen || 'devdock';
       fillAgentSettings();
       editors = await fetch('/api/editors').then(r => r.json()).catch(() => []);
@@ -1111,6 +1114,7 @@
         tabLabels: $('tabLabels').value,
         idleAfterHours: parseInt($('idleAfterHours').value),
         autoKillIdle: $('autoKillIdle').checked,
+        autoUpdate: $('autoUpdateToggle').checked,
         editor: $('editorSelect').value,
         tmuxOpen: $('tmuxOpen').value,
         agentsEnabled: $('agentsEnabled').checked,
@@ -1288,16 +1292,37 @@ $('settingsBtn').addEventListener('click', openSettings);
     // ── Settings panes: one section at a time, last one remembered ────
     // Version, build, and a check against the newest GitHub release
     fetch('/api/version').then(r => r.json()).then(v => { $('appVersion').textContent = v.version; $('appBuild').textContent = v.build; }).catch(() => {});
+    // The app downloads and verifies updates itself; a browser tab only links to the release
+    let update = null;
+    function showUpdate(u) {
+      update = u;
+      const b = $('updateCheck'), st = $('updateStatus'), pill = $('updateBadge');
+      const ready = u.state === 'ready';
+      pill.style.display = ready ? '' : 'none';
+      pill.textContent = `Restart to update to ${u.latest}`;
+      $('autoUpdateRow').style.display = u.canInstall ? '' : 'none';
+      b.disabled = u.state === 'checking' || u.state === 'downloading';
+      b.textContent = { checking: 'Checking…', downloading: `Downloading${u.progress ? ` ${u.progress}%` : '…'}`, ready: 'Restart to update' }[u.state]
+        || (u.available && u.canInstall ? `Install ${u.latest}` : 'Check for updates');
+      st.innerHTML = u.state === 'error' ? ' · ' + esc(u.error)
+        : !u.checkedAt && !u.available ? ''
+        : ' · ' + (!u.available ? "You're on the latest version"
+          : u.canInstall ? `<b>${esc(u.latest)}</b> ${ready ? 'is ready' : 'is out'}. <a href="${esc(u.url)}" target="_blank">What's new</a>`
+          : `<b>${esc(u.latest)}</b> is out. <a href="${esc(u.url)}" target="_blank">Download it</a>`);
+    }
+    async function installUpdate() {
+      $('updateBadge').disabled = $('updateCheck').disabled = true;
+      $('updateBadge').textContent = $('updateCheck').textContent = update?.state === 'ready' ? 'Restarting…' : 'Downloading…';
+      const r = await fetch('/api/update/install', { method: 'POST' }).then(r => r.json()).catch(() => ({ error: 'DevDock stopped answering' }));
+      if (r.error) { showToast(r.error, 'warn'); $('updateBadge').disabled = false; fetch('/api/update').then(r => r.json()).then(showUpdate).catch(() => {}); }
+    }
+    $('updateBadge').addEventListener('click', installUpdate);
     $('updateCheck').addEventListener('click', async () => {
-      const b = $('updateCheck'), st = $('updateStatus');
-      b.disabled = true; b.textContent = 'Checking…';
-      try {
-        const u = await fetch('/api/update').then(r => r.json());
-        if (u.error) throw new Error(u.error);
-        st.innerHTML = ' · ' + (u.available ? `<b>${esc(u.latest)}</b> is out. <a href="${esc(u.url)}" target="_blank">Download it</a>` : `You're on the latest version`);
-        b.textContent = u.available ? 'Check again' : 'Check for updates';
-      } catch (e) { st.textContent = ' · ' + e.message; b.textContent = 'Try again'; }
-      b.disabled = false;
+      if (update?.canInstall && (update.state === 'ready' || update.available)) return installUpdate();
+      $('updateCheck').disabled = true; $('updateCheck').textContent = 'Checking…';
+      const u = await fetch('/api/update').then(r => r.json()).catch(e => ({ error: e.message }));
+      if (u.error && !u.state) { $('updateStatus').textContent = ' · ' + u.error; $('updateCheck').textContent = 'Try again'; $('updateCheck').disabled = false; }
+      else showUpdate(u.state ? u : { ...update, state: 'error', error: u.error });
     });
     const PANE_KEY = 'devdock:settings-pane';
     function showPane(name) {
@@ -1375,6 +1400,7 @@ $('settingsBtn').addEventListener('click', openSettings);
         case 'export': if ($('exportBtn').offsetParent) $('exportBtn').click(); else showToast('Turn on the export button in Settings', 'info'); break;
         case 'theme': $('themeToggle').click(); break;
         case 'help': $('helpModal').style.display = 'flex'; break;
+        case 'update': openSettings().then(() => { showPane('general'); $('updateCheck').click(); }); break;
       }
     };
     if (location.hash === '#settings') { history.replaceState(null, '', '/'); openSettings(); }

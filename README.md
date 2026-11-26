@@ -115,11 +115,12 @@ Requires macOS on Apple Silicon.
 ```bash
 git clone https://github.com/Osama-Yusuf/devdock.git
 cd devdock
-npm install
-npm start           # run the app
-npm run build:mac   # build the .dmg into dist/
+npm install          # builds the icon and emoji pickers
+npm start            # run the app (needs Rust and Xcode's command line tools)
+npm test             # cargo test
+npm run build:mac    # build DevDock.app and the .dmg into src-tauri/target/release/bundle
 ```
 
-The screenshots come from demo mode, which runs the real UI on seeded data: `DEVDOCK_DEMO=1 PORT=4010 node server.js`.
+The screenshots come from demo mode, which runs the real UI on seeded data: `DEVDOCK_DEMO=1 DEVDOCK_PORT=4010 cargo run -- serve` in `src-tauri`.
 
-Express and WebSocket on the backend, plain HTML, CSS and JavaScript on the front, in an Electron shell.
+A Rust backend (axum, reading processes straight from macOS) in a Tauri shell, plain HTML, CSS and JavaScript on the front. Releases are built with `scripts/release.sh`; the app updates itself from the `latest.json` on the latest GitHub release.

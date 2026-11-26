@@ -8,8 +8,8 @@
   <link rel="stylesheet" href="/vendor/xterm/xterm.css" />
 </head>
 <body>
-  <div class="titlebar"></div>
-  <script>/Electron/.test(navigator.userAgent) && document.documentElement.classList.add('electron')</script>
+  <div class="titlebar" data-tauri-drag-region></div>
+  <script>window.__DEVDOCK_APP__ && document.documentElement.classList.add('app')</script>
   <div class="card">
     <div class="inner">
       <!-- Header -->
@@ -45,6 +45,7 @@
           <div class="stats-left" id="viewStats" data-view="sessions containers apps coding machines"></div>
         </div>
         <div class="header-actions">
+          <button class="badge badge-update" id="updateBadge" style="display:none;" title="The update is downloaded and verified. DevDock restarts in a second."></button>
           <div class="badge badge-offline" id="offlineBadge" style="display:none;" title="Lost connection to the DevDock server. Retrying every 2s."><span class="badge-dot"></span> Reconnecting…</div>
 
 
@@ -111,9 +112,9 @@
       <section data-view="servers">
       <div class="subbar" id="serverPatterns">
         <div class="subtabs" role="tablist" id="groupTabs">
-          <button role="tab" data-g="none" aria-label="Flat" title="Flat list  ⌥1"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></button>
-          <button role="tab" data-g="project" aria-label="By project" title="Group by project  ⌥2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
-          <button role="tab" data-g="session" aria-label="By agent session" title="Group by agent session  ⌥3"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg></button>
+          <button role="tab" data-g="none" aria-label="Flat" title="Flat list  ⌥1"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span class="tab-label">Flat</span></button>
+          <button role="tab" data-g="project" aria-label="By project" title="Group by project  ⌥2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><span class="tab-label">Projects</span></button>
+          <button role="tab" data-g="session" aria-label="By agent session" title="Group by agent session  ⌥3"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg><span class="tab-label">Sessions</span></button>
         </div>
         <div class="patterns"></div>
       </div>
@@ -256,6 +257,10 @@
               <div class="settings-row">
                 <div><label>DevDock <span id="appVersion"></span></label><div class="sub">Build <span id="appBuild">…</span><span id="updateStatus"></span></div></div>
                 <button class="hbtn" id="updateCheck">Check for updates</button>
+              </div>
+              <div class="settings-row" id="autoUpdateRow">
+                <div><label>Install updates automatically</label><div class="sub">Downloads and verifies new versions in the background; they apply when DevDock restarts</div></div>
+                <label class="toggle"><input type="checkbox" id="autoUpdateToggle" /><span class="toggle-slider"></span></label>
               </div>
             </div>
           </section>

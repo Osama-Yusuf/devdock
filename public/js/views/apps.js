@@ -118,7 +118,7 @@
     const th = (k, label, cls = '') => `<th class="${cls} sortable ${state.sort === k ? 'sorted' : ''}" onclick="DevDockViews.apps.sort('${k}')">${label}</th>`;
     view.innerHTML = `
       <div class="subbar">
-        <div class="subtabs" role="tablist">${FILTERS.map(([k, label, tip], i) => `<button role="tab" aria-selected="${k === f}" aria-label="${label}" title="${label} \u00B7 ${tip}  \u2325${i + 1}" onclick="DevDockViews.apps.setFilter('${k}')">${KIND_SVG[k]}</button>`).join('')}</div>
+        <div class="subtabs" role="tablist">${FILTERS.map(([k, label, tip], i) => `<button role="tab" aria-selected="${k === f}" aria-label="${label}" title="${label} \u00B7 ${tip}  \u2325${i + 1}" onclick="DevDockViews.apps.setFilter('${k}')">${KIND_SVG[k]}<span class="tab-label">${label}</span></button>`).join('')}</div>
         ${patterns.length ? `<div class="patterns">${DevDockPatterns.html('apps', patterns)}</div>` : ''}
         <button class="pattern subbar-action ${state.allPids ? 'active' : ''}" onclick="DevDockViews.apps.allPids()" title="Open every row to its processes">${state.allPids ? 'Hide' : 'Show'} all PIDs</button>
       </div>

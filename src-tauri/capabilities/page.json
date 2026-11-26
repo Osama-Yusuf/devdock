@@ -1,0 +1,7 @@
+{
+  "identifier": "page",
+  "description": "DevDock's own page (served on localhost) may move its window by the title bar, and nothing else",
+  "windows": ["main"],
+  "remote": { "urls": ["http://localhost:*/*", "http://127.0.0.1:*/*"] },
+  "permissions": ["core:window:allow-start-dragging"]
+}

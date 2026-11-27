@@ -386,7 +386,10 @@ impl Home {
             "kill" | "reveal" => Self::process(c, name, p).await,
             // the usage history (see usage.rs), for the panels' periods and Settings
             "usage" => {
-                let mut v = c.usage.query(&c.data, match p.str_of("by") { b @ ("mem" | "disk" | "net") => b, _ => "cpu" }, p["mins"].as_i64().unwrap_or(60).clamp(5, 7 * 1440));
+                let (by, mins) = (match p.str_of("by") { "mem" => "mem", "disk" => "disk", "net" => "net", _ => "cpu" }, p["mins"].as_i64().unwrap_or(60).clamp(5, 7 * 1440));
+                // a 7-day file is tens of MB: read it off the async threads
+                let s = crate::state::ctx();
+                let mut v = tokio::task::spawn_blocking(move || s.usage.query(&s.data, by, mins)).await.unwrap_or(Value::Null);
                 let st = c.settings.get();
                 (v["on"], v["days"]) = (json!(st["usageHistory"] != json!(false) && !c.demo), st["usageDays"].clone());
                 Ok(v)

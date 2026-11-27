@@ -7,6 +7,7 @@
   const PERIODS = [['live', 'Live'], [5, '5 min'], [60, '1 hour'], [1440, '24 hours'], [10080, '7 days']];
   let period = 'live';
   try { period = JSON.parse(localStorage.getItem('devdock:vitals-period')) ?? 'live'; } catch {}
+  if (!PERIODS.some(p => p[0] === period)) period = 'live';
   const live = () => period === 'live';
   const rate = n => { const u = ['B', 'KB', 'MB', 'GB']; let i = 0; while (n >= 1000 && i < 3) { n /= 1000; i++; } return `${n < 10 && i ? n.toFixed(1) : Math.round(n)} ${u[i]}/s`; };
   const METRIC = {
@@ -47,7 +48,9 @@
       const r = await fetch(`/api/sources/home/${live() ? 'top' : 'usage'}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ by, mins: period }) })
         .then(x => x.ok ? x.json() : null).catch(() => null);
       inflight = false;
-      if (r && open === by && period === at) { data = r; if (live()) remember(); render(); }
+      // switched while it loaded: ask again for what's shown now, rather than wait a whole interval
+      if (open !== by || period !== at) return poll();
+      if (r) { data = r; if (live()) remember(); render(); }
     }
     timer = setTimeout(poll, live() ? EVERY : EVERY_PAST);
   }

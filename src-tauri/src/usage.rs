@@ -22,7 +22,7 @@ const KEEP: usize = 25; // groups kept a minute, per measure
 const SPARK: usize = 30;
 
 #[derive(Default)]
-pub struct Usage { prev: Mutex<Option<Snap>>, keys: Mutex<Option<Map<String, Value>>>, pruned: Mutex<(i64, u64)> }
+pub struct Usage { prev: Mutex<Option<Snap>>, keys: Mutex<Option<Map<String, Value>>>, pruned: Mutex<(i64, u64)>, file: Mutex<()> }
 
 struct Snap { at: i64, ps: Ps, ticks: Option<CpuTicks>, disk: HashMap<i32, (Option<i64>, (u64, u64))>, iface: Option<(u64, u64)> }
 
@@ -30,7 +30,7 @@ struct Snap { at: i64, ps: Ps, ticks: Option<CpuTicks>, disk: HashMap<i32, (Opti
 fn hkey(g: &Value) -> String {
     match g.str_of("kind") {
         "server" => format!("srv:{}", Some(g.str_of("cwd")).filter(|c| !c.is_empty()).unwrap_or(g.str_of("name"))),
-        "agent" => format!("agent:{}:{}", g.str_of("agent"), g.str_of("cwd")),
+        "agent" => format!("agent:{}:{}", g.str_of("agent"), Some(g.str_of("cwd")).filter(|c| !c.is_empty()).unwrap_or(g.str_of("key"))),
         _ => g.str_of("key").to_string(),
     }
 }
@@ -105,12 +105,25 @@ impl Usage {
         k.get_or_insert_with(|| std::fs::read(dir.join(KEYS)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default())
     }
 
-    /// Once a minute, from housekeeping
-    pub async fn record(&self, c: &Ctx) {
+    /// Once a minute, from housekeeping. The file work runs off the async threads.
+    pub async fn record(&'static self, c: &'static Ctx) {
+        let (net, net_secs) = c.sources.home.top.net.take(); // always, so nothing piles up while it's off
+        if c.demo { return; }
         let s = c.settings.get();
-        if c.demo || s["usageHistory"] == json!(false) { *self.prev.lock().unwrap() = None; return; }
+        let days = s["usageDays"].as_u64().unwrap_or(1).clamp(1, 7);
+        let entry = if s["usageHistory"] == json!(false) { *self.prev.lock().unwrap() = None; None } else { self.minute(c, net, net_secs).await };
+        // the retention holds while it's off too
+        let dir = c.data.clone();
+        match tokio::task::spawn_blocking(move || self.store(&dir, entry, days)).await {
+            Ok(Err(e)) => eprintln!("usage history: {e}"),
+            Err(e) => eprintln!("usage history: {e}"),
+            _ => {}
+        }
+    }
+
+    async fn minute(&self, c: &Ctx, net: HashMap<i32, (String, (u64, u64))>, net_secs: f64) -> Option<(Value, Vec<(String, Value)>)> {
         let ps = top::parse_ps(&crate::util::run("/bin/ps", &["-A", "-o", "pid=,uid=,time=,rss=,comm="], crate::util::secs(5)).await.stdout);
-        if ps.is_empty() { return; }
+        if ps.is_empty() { return None; }
         let iface = match crate::sources::home::default_iface().await { Some(i) => sys::iface_bytes(&i), None => None };
         let t = c.table();
         let cur = Snap {
@@ -119,27 +132,39 @@ impl Usage {
         };
         // with no page open the app and agent lists aren't kept up: refresh them for the grouping
         if c.hub.clients() == 0 { for id in ["apps", "coding"] { c.sources.poll(c, id).await; } }
-        let (net, net_secs) = c.sources.home.top.net.take();
         let prev = self.prev.lock().unwrap().replace(cur);
-        let Some(p) = prev else { return };
-        let line = {
-            let g = self.prev.lock().unwrap();
-            let s = &c.sources;
-            minute(&p, g.as_ref().unwrap(), &t, unsafe { libc::getuid() }, &net, net_secs, &c.ports(), &s.coding.last(), &s.apps.last())
-        };
-        let Some((line, who)) = line else { return };
-        let days = s["usageDays"].as_u64().unwrap_or(1).clamp(1, 7);
-        if let Err(e) = self.write(&c.data, &line, who, days) { eprintln!("usage history: {e}"); }
+        let p = prev?;
+        let g = self.prev.lock().unwrap();
+        let s = &c.sources;
+        minute(&p, g.as_ref().unwrap(), &t, unsafe { libc::getuid() }, &net, net_secs, &c.ports(), &s.coding.last(), &s.apps.last())
     }
 
-    fn write(&self, dir: &Path, line: &Value, who: Vec<(String, Value)>, days: u64) -> std::io::Result<()> {
-        std::fs::create_dir_all(dir)?;
-        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(dir.join(FILE))?;
-        writeln!(f, "{line}")?;
+    /// Appends a minute, if there is one, and keeps to the retention. One lock with `clear`, so a
+    /// prune can't bring back what was just deleted.
+    fn store(&self, dir: &Path, entry: Option<(Value, Vec<(String, Value)>)>, days: u64) -> std::io::Result<()> {
+        let _file = self.file.lock().unwrap();
+        let path = dir.join(FILE);
+        let mut new = false;
         let mut k = self.keys.lock().unwrap();
+        if let Some((line, who)) = entry {
+            std::fs::create_dir_all(dir)?;
+            let mut f = std::fs::OpenOptions::new().create(true).append(true).read(true).open(&path)?;
+            // a line cut short (a crash, a full disk) stays on its own, not glued to this one
+            let len = f.metadata()?.len();
+            if len > 0 {
+                use std::io::{Read, Seek, SeekFrom};
+                let mut last = [0u8];
+                f.seek(SeekFrom::Start(len - 1))?;
+                f.read_exact(&mut last)?;
+                if last[0] != b'\n' { writeln!(f)?; }
+            }
+            writeln!(f, "{line}")?;
+            let keys = Self::keys(dir, &mut k);
+            new = who.iter().any(|(key, _)| !keys.contains_key(key));
+            for (key, meta) in who { keys.insert(key, meta); }
+        }
+        if !path.exists() { return Ok(()); }
         let keys = Self::keys(dir, &mut k);
-        let new = who.iter().any(|(key, _)| !keys.contains_key(key));
-        for (key, meta) in who { keys.insert(key, meta); }
         // the retention, hourly, or as soon as it's shortened
         let now = now_ms();
         let mut pr = self.pruned.lock().unwrap();
@@ -186,7 +211,8 @@ impl Usage {
         let mut agg: HashMap<String, ([f64; 6], f64, [f64; SPARK])> = HashMap::new();
         for l in &lines {
             let (t, s, ns) = (l["t"].as_i64().unwrap_or(0), l.f64_of("s"), l.f64_of("ns"));
-            since = Some(since.map_or(t, |x| x.min(t - (s * 1000.0) as i64)));
+            let start = t - (s * 1000.0) as i64;
+            since = Some(since.map_or(start, |x| x.min(start)));
             covered += s; net_covered += ns;
             tot_cpu += l.f64_of("cpu") * s;
             if l["rx"].is_number() { tot_rx += l.f64_of("rx") * s; tot_tx += l.f64_of("tx") * s; if_secs += s; }
@@ -199,7 +225,7 @@ impl Usage {
                 let a = agg.entry(k.to_string()).or_insert(([0.0; 6], 0.0, [0.0; SPARK]));
                 for i in 0..6 { a.0[i] += v[i] * if i >= 4 { ns } else { s }; }
                 let m = match by { "mem" => v[1], "disk" => v[2] + v[3], "net" => v[4] + v[5], _ => v[0] };
-                a.1 = a.1.max(m);
+                if !net || ns >= 30.0 { a.1 = a.1.max(m); } // a busiest "minute" of a few watched seconds isn't one
                 a.2[b] += m * w;
             }
         }
@@ -231,6 +257,7 @@ impl Usage {
     }
 
     pub fn clear(&self, dir: &Path) {
+        let _file = self.file.lock().unwrap();
         let _ = std::fs::remove_file(dir.join(FILE));
         let _ = std::fs::remove_file(dir.join(KEYS));
         *self.keys.lock().unwrap() = None;
@@ -269,9 +296,11 @@ mod tests {
         let line = |ago: i64, cpu: f64, ns: f64, rx: f64| json!({ "t": now - ago * 60_000, "s": 60.0, "ns": ns, "cpu": 100.0, "rx": 1000.0, "tx": 0.0,
             "g": [["a:chrome", cpu, 500.0, 0.0, 0.0, rx, 0.0]] });
         let who = || vec![("a:chrome".to_string(), json!({ "kind": "app", "name": "Chrome" }))];
-        u.write(&dir, &line(90, 99.0, 0.0, 0.0), who(), 1).unwrap(); // outside the hour
-        u.write(&dir, &line(2, 80.0, 30.0, 2000.0), who(), 1).unwrap();
-        u.write(&dir, &line(1, 20.0, 0.0, 0.0), who(), 1).unwrap();
+        u.store(&dir, Some((line(90, 99.0, 0.0, 0.0), who())), 1).unwrap(); // outside the hour
+        u.store(&dir, Some((line(2, 80.0, 30.0, 2000.0), who())), 1).unwrap();
+        // a line cut short by a crash stays apart from the next one
+        std::fs::OpenOptions::new().append(true).open(dir.join(FILE)).unwrap().write_all(br#"{"t":1,"s":6"#).unwrap();
+        u.store(&dir, Some((line(1, 20.0, 0.0, 0.0), who())), 1).unwrap();
         let q = u.query(&dir, "cpu", 60);
         let g = &q["groups"][0];
         assert_eq!((g["name"].clone(), g["cpu"].clone(), g["peak"].clone()), (json!("Chrome"), json!(50.0), json!(80.0)));
@@ -282,6 +311,8 @@ mod tests {
         assert_eq!(u.info(&dir)["since"].as_i64(), Some(now - 2 * 60_000), "older than the retention is gone");
         u.clear(&dir);
         assert_eq!(u.info(&dir)["bytes"], json!(0));
+        u.store(&dir, None, 1).unwrap();
+        assert!(!dir.join(KEYS).exists(), "with nothing recorded, nothing is written");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -1358,8 +1358,13 @@ $('settingsBtn').addEventListener('click', openSettings);
       const i = await sourceAction('home', 'usageInfo');
       if (!i) return;
       const size = i.bytes >= 1e6 ? `${(i.bytes / 1e6).toFixed(1)} MB` : `${Math.ceil(i.bytes / 1e3)} KB`;
-      $('usageInfo').textContent = i.bytes ? `${size} since ${new Date(i.since).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })} · ${tildify(i.path)}` : `Nothing yet · ${tildify(i.path)}`;
+      const keep = +$('usageDays').value * 24, h = i.bytes ? Math.min(keep, (Date.now() - i.since) / 36e5) : 0;
+      const dur = h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : `${Math.round(h)} h`;
+      $('usageFill').style.width = `${h / keep * 100}%`;
+      $('usageInfo').textContent = i.bytes ? `${dur} of ${keep} h · ${size}` : 'Nothing yet';
+      $('usageReveal').title = tildify(i.path);
     }
+    $('usageDays').addEventListener('change', usageInfo);
     $('usageReveal').addEventListener('click', () => sourceAction('home', 'usageReveal'));
     $('clearUsage').addEventListener('click', async () => {
       if (!await confirmDialog('Delete all recorded app usage?', 'This can\'t be undone. Recording carries on if it\'s on.', 'Delete')) return;

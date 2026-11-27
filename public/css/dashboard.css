@@ -822,6 +822,14 @@
     .pane-title { font-size: 1rem; font-weight: 600; color: var(--text); margin: 4px 0 6px; }
     .pane-desc { font-size: 0.78rem; color: var(--text-dim); margin: 0 0 18px; max-width: 46ch; }
     .pane-title + .settings-list { margin-top: 18px; }
+    .usage-facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 14px; }
+    .usage-facts span { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 0.72rem; color: var(--text-dim); background: var(--bg-hover, rgba(255,255,255,.04)); border: 1px solid var(--border-row); }
+    .usage-facts svg { color: var(--accent, #60a5fa); }
+    .usage-stored { flex: 1; min-width: 0; }
+    .usage-meter { height: 4px; margin: 7px 0 5px; max-width: 220px; border-radius: 2px; background: var(--border-row); overflow: hidden; }
+    .usage-meter i { display: block; height: 100%; width: 0; background: var(--accent, #60a5fa); border-radius: 2px; transition: width .4s ease; }
+    .usage-btns { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .usage-btns .bulk-btn { height: 28px; }
     /* rows read as one grouped list instead of separate boxes */
     .settings-list { border: 1px solid var(--border-row); border-radius: 12px; overflow: hidden; margin-bottom: 18px; }
     .settings-list .settings-row { border: none; border-radius: 0; margin: 0; padding: 13px 16px; gap: 20px; }

@@ -121,6 +121,6 @@ npm test             # cargo test
 npm run build:mac    # build DevDock.app and the .dmg into src-tauri/target/release/bundle
 ```
 
-The screenshots come from demo mode, which runs the real UI on seeded data: `DEVDOCK_DEMO=1 DEVDOCK_PORT=4010 cargo run -- serve` in `src-tauri`, then open the link it prints (it carries the key the API needs).
+The screenshots come from demo mode, which runs the real UI on seeded data: `DEVDOCK_DEMO=1 DEVDOCK_PORT=4010 cargo run -- serve` in `src-tauri`, then open the link it prints (it carries the key the API needs). Use `serve` only for that: in a browser, every other server on 127.0.0.1 is sent the key cookie too.
 
 A Rust backend (axum, reading processes straight from macOS) in a Tauri shell, plain HTML, CSS and JavaScript on the front. Releases are built with `scripts/release.sh`; the app updates itself from the `latest.json` on the latest GitHub release.

@@ -38,7 +38,11 @@ fn own(headers: &HeaderMap) -> bool {
 
 async fn guard(req: Request, next: Next) -> Response {
     if !own(req.headers()) { return StatusCode::FORBIDDEN.into_response(); }
-    if !crate::auth::allows(req.uri().path(), req.headers()) { return (StatusCode::UNAUTHORIZED, "DevDock is locked").into_response(); }
+    if !crate::auth::allows(req.uri().path(), req.headers()) {
+        // a page goes to the lock screen, whose button gets the key again; the API just says no
+        let page = matches!(req.uri().path(), "/" | "/history") && !req.headers().contains_key(header::UPGRADE);
+        return if page { Redirect::to("/lock").into_response() } else { (StatusCode::UNAUTHORIZED, "DevDock is locked").into_response() };
+    }
     // demo pids are made up and may match real processes: never act on them
     let p = req.uri().path();
     if ctx().demo && (["/api/kill", "/api/restart", "/api/logs", "/api/start-server"].iter().any(|x| p.starts_with(x))

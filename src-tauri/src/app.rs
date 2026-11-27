@@ -16,7 +16,9 @@ static LOCKED: AtomicBool = AtomicBool::new(true);
 static ASKING: AtomicBool = AtomicBool::new(false);
 static QUITTING: AtomicBool = AtomicBool::new(false);
 
-fn url(path: &str) -> tauri::Url { format!("http://localhost:{}{path}", crate::server::port()).parse().unwrap() }
+/// 127.0.0.1, never localhost: macOS tries ::1 first, where any local process could listen and
+/// take the key from the unlock navigation
+fn url(path: &str) -> tauri::Url { format!("http://127.0.0.1:{}{path}", crate::server::port()).parse().unwrap() }
 
 /// Show the window, making it if it's gone
 fn show(app: &AppHandle) {
@@ -49,7 +51,11 @@ fn show(app: &AppHandle) {
             // links away from DevDock open in the browser, not in this window
             let ours = matches!(u.host_str(), Some("localhost" | "127.0.0.1")) && u.port() == Some(crate::server::port());
             if !ours { open_in_browser(u); return false; }
-            if u.path() == "/__unlock" { unlock(&handle); return false; }
+            if u.path() == "/__unlock" {
+                // unlocked but the page lost its cookie (the server sent it to /lock): hand it the key again
+                if LOCKED.load(Ordering::SeqCst) { unlock(&handle) } else { let h = handle.clone(); std::thread::spawn(move || enter(&h)); }
+                return false;
+            }
             !LOCKED.load(Ordering::SeqCst) || u.path() == "/lock" || u.path().starts_with("/lock/")
         })
         // links that open a new window go to the browser
@@ -74,13 +80,18 @@ fn unlock(app: &AppHandle) {
         ASKING.store(false, Ordering::SeqCst);
         let Some(w) = app.get_webview_window("main") else { return };
         if ok {
-            let k = crate::auth::issue();
+            crate::auth::issue();
             LOCKED.store(false, Ordering::SeqCst);
-            let _ = w.navigate(url(&format!("/__auth/{k}")));
+            enter(&app);
         } else {
             let _ = w.eval("document.querySelectorAll('button').forEach(b => b.disabled = false)");
         }
     });
+}
+
+/// The window shows the key once and gets it back as a cookie
+fn enter(app: &AppHandle) {
+    if let (Some(w), Some(k)) = (app.get_webview_window("main"), crate::auth::current()) { let _ = w.navigate(url(&format!("/__auth/{k}"))); }
 }
 
 fn lock(app: &AppHandle) {
@@ -201,7 +212,7 @@ fn start(res: std::path::PathBuf) -> &'static crate::state::Ctx {
 /// here: whoever started it gets the key on stdout.
 pub fn serve() {
     let res = std::env::var_os("DEVDOCK_RES").map(Into::into).unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf());
-    println!("DevDock: open http://localhost:{}/__auth/{}", crate::server::port(), crate::auth::issue());
+    println!("DevDock: open http://127.0.0.1:{}/__auth/{}", crate::server::port(), crate::auth::issue());
     tauri::async_runtime::block_on(async move { start(res); crate::server::serve().await });
 }
 

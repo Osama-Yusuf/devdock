@@ -1,6 +1,6 @@
 {
   "name": "devdock-desktop",
-  "version": "1.5.3",
+  "version": "1.5.4",
   "license": "MIT",
   "description": "Everything running. One dock. Servers, sessions, containers, apps and agents on your Mac.",
   "scripts": {

@@ -51,6 +51,8 @@ pub struct Ctx {
     /// HTTPS to GitHub and the plan-usage services
     pub http: reqwest::Client,
     pub sources: crate::sources::Sources,
+    /// what used the Mac each minute, for averages over an hour or a day
+    pub usage: crate::usage::Usage,
 }
 
 static CTX: OnceLock<Ctx> = OnceLock::new();
@@ -97,6 +99,7 @@ pub fn init(res: PathBuf, data: PathBuf, settings_file: PathBuf, demo: bool) -> 
         local_http: reqwest::Client::builder().no_proxy().redirect(reqwest::redirect::Policy::none()).build().expect("http client"),
         http: reqwest::Client::builder().user_agent("DevDock").timeout(Duration::from_secs(10)).build().expect("https client"),
         sources: crate::sources::Sources::default(),
+        usage: Default::default(),
     })
 }
 
@@ -195,7 +198,7 @@ impl Ctx {
             tokio::time::sleep(Duration::from_secs(10)).await;
             tick += 1;
             self.scanner.reprobe(&self.live(), self.hub.clients() > 0); // a probe GETs the dev server's page
-            if tick % 6 == 0 { self.reap_idle(); }
+            if tick % 6 == 0 { self.reap_idle(); self.usage.record(self).await; }
         }
     }
 

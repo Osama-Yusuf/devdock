@@ -371,6 +371,32 @@
                 <button class="bulk-btn danger" id="clearHistory">Clear</button>
               </div>
             </div>
+            <h3 class="pane-title">App usage</h3>
+            <div class="usage-facts">
+              <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Every minute</span>
+              <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Never leaves this Mac</span>
+              <span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>0.05% CPU</span>
+            </div>
+            <div class="settings-list">
+              <div class="settings-row">
+                <div><label>Record app usage</label><div class="sub">Calm averages on Home. Network only while its view is open.</div></div>
+                <label class="toggle"><input type="checkbox" id="usageHistoryToggle" /><span class="toggle-slider"></span></label>
+              </div>
+              <div class="settings-row">
+                <div><label>Keep it for</label></div>
+                <select class="refresh-select" id="usageDays">
+                  <option value="1">24 hours</option>
+                  <option value="7">7 days</option>
+                </select>
+              </div>
+              <div class="settings-row">
+                <div class="usage-stored"><label>Stored</label><div class="usage-meter"><i id="usageFill"></i></div><div class="sub" id="usageInfo">…</div></div>
+                <div class="usage-btns">
+                  <button class="hbtn" id="usageReveal">Show in Finder</button>
+                  <button class="bulk-btn danger" id="clearUsage">Clear</button>
+                </div>
+              </div>
+            </div>
           </section>
         </div>
       </div>

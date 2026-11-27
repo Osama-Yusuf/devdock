@@ -1,8 +1,14 @@
-// Home's CPU, Memory and Disk panels: what's using each, grouped by dev server, coding agent or
-// app (home source action "top"), refreshed every 2 s while open and Home is in view. Rows slide
-// to their new rank instead of jumping, and hold still while the pointer is over the list.
+// Home's CPU, Memory, Disk and Network panels: what's using each, grouped by dev server, coding
+// agent or app (home source action "top"), refreshed every 2 s while open and Home is in view. Rows
+// slide to their new rank instead of jumping, and hold still while the pointer is over the list.
+// A period other than Live ranks by the average over it, from the usage history (action "usage").
 (function () {
-  const EVERY = 2000, SHOWN = 10;
+  const EVERY = 2000, EVERY_PAST = 30000, SHOWN = 10;
+  const PERIODS = [['live', 'Live'], [5, '5 min'], [60, '1 hour'], [1440, '24 hours'], [10080, '7 days']];
+  let period = 'live';
+  try { period = JSON.parse(localStorage.getItem('devdock:vitals-period')) ?? 'live'; } catch {}
+  if (!PERIODS.some(p => p[0] === period)) period = 'live';
+  const live = () => period === 'live';
   const rate = n => { const u = ['B', 'KB', 'MB', 'GB']; let i = 0; while (n >= 1000 && i < 3) { n /= 1000; i++; } return `${n < 10 && i ? n.toFixed(1) : Math.round(n)} ${u[i]}/s`; };
   const METRIC = {
     cpu: { label: 'CPU', of: g => g.cpu, show: v => `${v >= 10 ? Math.round(v) : v.toFixed(1)}%`, color: 'var(--accent)' },
@@ -38,13 +44,15 @@
     if (!open) return;
     if (homeShown() && !inflight) {
       inflight = true;
-      const by = open;
-      const r = await fetch('/api/sources/home/top', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ by }) })
+      const by = open, at = period;
+      const r = await fetch(`/api/sources/home/${live() ? 'top' : 'usage'}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ by, mins: period }) })
         .then(x => x.ok ? x.json() : null).catch(() => null);
       inflight = false;
-      if (r && open === by) { data = r; remember(); render(); }
+      // switched while it loaded: ask again for what's shown now, rather than wait a whole interval
+      if (open !== by || period !== at) return poll();
+      if (r) { data = r; if (live()) remember(); render(); }
     }
-    timer = setTimeout(poll, EVERY);
+    timer = setTimeout(poll, live() ? EVERY : EVERY_PAST);
   }
   // the last minute of each group, for its sparkline
   function remember() {
@@ -54,7 +62,9 @@
   }
 
   function icon(g) {
-    if (g.kind === 'app' && g.hasIcon) return `<img class="tp-icon" src="/api/app-icon/${esc(g.pid)}" alt="">`;
+    // a period's app may not run now: its icon comes from the running copy, if any
+    const pid = g.pid ?? (DevDock.sourceData.apps?.apps || []).find(a => a.path === g.path)?.pid;
+    if (g.kind === 'app' && g.hasIcon && pid) return `<img class="tp-icon" src="/api/app-icon/${esc(pid)}" alt="">`;
     if (g.kind === 'server') return `<span class="tp-icon">${runtimeIconHTML(g.runtime, g.runtimeColor, '', 18)}</span>`;
     if (g.kind === 'agent') return `<span class="tp-icon">${agentHTML(g.agent, g.agent)}</span>`;
     return `<span class="tp-icon tp-glyph">${GLYPH[g.kind === 'process' && macOS(g.path) ? 'system' : g.kind] || GLYPH.process}</span>`;
@@ -71,11 +81,14 @@
       system: ['macOS'],
       rest: ['the kernel, and processes that started and ended between two readings'],
     }[g.kind] || [];
-    return [...parts, n].filter(Boolean).join(' · ');
+    // the busiest minute, so a short burst isn't hidden by the average
+    const peak = !live() && g.peak > value(g) * 1.2 ? `busiest minute ${METRIC[open].show(g.peak)}` : '';
+    return [...parts, live() ? n : '', peak].filter(Boolean).join(' · ');
   }
 
   const item = (label, onclick, cls = '') => `<button class="${cls}" onclick="${onclick}">${label}</button>`;
   function menu(g) {
+    if (!live()) return '<span></span>'; // a period's groups are who, not which processes now
     const name = js(g.name), key = js(g.key);
     const V = 'DevDockViews.vitals';
     const list = {
@@ -112,6 +125,14 @@
 
   function summary() {
     const v = DevDock.sourceData.home?.vitals || {}, mc = v.machine || {};
+    if (!live()) {
+      const t = data?.total || {};
+      if (!data?.groups?.length) return '';
+      if (open === 'cpu') return `<b>${Math.round(t.cpu / (v.cores || 1))}%</b> of ${v.cores} cores busy on average`;
+      if (open === 'mem') return 'Average of each minute';
+      if (open === 'disk') return `<b>${rate(t.diskR + t.diskW)}</b> on average · read ${rate(t.diskR)} · write ${rate(t.diskW)}`;
+      return `<b>↓ ${rate(t.rx)}</b> · <b>↑ ${rate(t.tx)}</b> whole Mac, on average`;
+    }
     // the list's own window (kernel included), so the header and the rows add up
     const cpu = data?.total ? data.total.cpu / (v.cores || 1) : mc.cpu;
     if (open === 'cpu') return cpu == null ? '' : `<b>${Math.round(cpu)}%</b> of ${v.cores} cores busy`;
@@ -126,6 +147,23 @@
     disk: 'Reads and writes by your processes. macOS doesn\'t share other users\' disk use, so its own services aren\'t listed.',
     net: 'Traffic on every interface but loopback, so not DevDock talking to your dev servers. From macOS\'s nettop, which runs only while this is open.',
   };
+
+  // how much of the period is recorded, said plainly
+  const span = s => s >= 5400 ? `${Math.round(s / 3600)} h` : `${Math.round(s / 60)} min`;
+  function coverage() {
+    if (live() || !data?.groups?.length) return '';
+    const of = PERIODS.find(p => p[0] === period)[1];
+    const gap = data.covered < period * 60 * 0.9 ? `Recorded ${span(data.covered)} of the last ${of}: DevDock records only while it runs. ` : '';
+    const net = open === 'net' ? `Per-app traffic covers ${span(data.netCovered)}, the time this view was open; the total above is the whole Mac. ` : '';
+    return gap + net;
+  }
+  function empty(m) {
+    if (!data || data.by !== open) return 'Measuring…';
+    if (live()) return `Nothing is using the ${m.label.toLowerCase()} right now.`;
+    if (!data.on) return 'App usage isn\'t being recorded. <button class="link-btn" onclick="DevDockViews.vitals.settings()">Turn it on in Settings</button>';
+    if (open === 'net' && !data.netCovered) return 'No per-app traffic recorded yet: it\'s measured only while the Network view is open.';
+    return data.covered ? `Nothing used the ${m.label.toLowerCase()} in this period.` : 'Nothing recorded yet. DevDock records once a minute: check back in a couple of minutes.';
+  }
 
   function render() {
     if (!open) return;
@@ -142,26 +180,27 @@
       <header class="tp-head">
         <div class="subtabs" role="tablist">${Object.entries(METRIC).map(([k, x]) => `<button role="tab" aria-selected="${k === open}" onclick="DevDockViews.vitals.show('${k}')">${x.label}</button>`).join('')}</div>
         <span class="tp-sum">${summary()}</span>
-        <span class="tp-live" title="Refreshes every 2 seconds while you're on Home"><i></i>Live</span>
+        <span class="tp-periods" role="radiogroup" aria-label="Period">${PERIODS.filter(([p]) => p !== 10080 || data?.days === 7 || period === 10080)
+          .map(([p, label]) => `<button role="radio" aria-checked="${p === period}" onclick="DevDockViews.vitals.period(${JSON.stringify(p).replace(/"/g, "'")})" title="${p === 'live' ? 'The last 2 seconds, refreshed every 2' : `Average over the last ${label}, from the usage history`}">${p === 'live' ? '<i></i>' : ''}${label}</button>`).join('')}</span>
         <button class="tp-x" title="Close (Esc)" onclick="DevDockViews.vitals.close()">${GLYPH.close}</button>
       </header>
-      ${!data || data.by !== open ? '<div class="tp-empty">Measuring…</div>' : !gs.length ? `<div class="tp-empty">Nothing is using the ${m.label.toLowerCase()} right now.</div>` : `
+      ${!data || data.by !== open || !gs.length ? `<div class="tp-empty">${empty(m)}</div>` : `
       <div class="tp-list">${list.map(g => {
         const v = value(g), w = (v / max * 100).toFixed(1), was = widths[g.key] ?? 0, isOpen = expanded.has(g.key);
         widths[g.key] = w;
         return `<div class="tp-row kind-${g.kind}${isOpen ? ' is-open' : ''}" data-key="${esc(g.key)}">
-          <button class="tp-main" onclick="DevDockViews.vitals.toggle(${js(g.key)})" title="${isOpen ? 'Hide' : 'Show'} its processes">
-            <span class="tp-chev">${g.count > 1 || g.kind !== 'rest' ? GLYPH.chev : ''}</span>${icon(g)}
+          <button class="tp-main" ${live() ? `onclick="DevDockViews.vitals.toggle(${js(g.key)})" title="${isOpen ? 'Hide' : 'Show'} its processes"` : 'tabindex="-1"'}>
+            <span class="tp-chev">${live() && (g.count > 1 || g.kind !== 'rest') ? GLYPH.chev : ''}</span>${icon(g)}
             <span class="tp-name"><b class="trunc">${esc(g.name)}</b><small class="trunc">${esc(sub(g))}</small></span>
           </button>
           <span class="tp-bar"><i style="width:${was}%" data-w="${w}"></i></span>
-          <span class="tp-spark">${sparkline(hist[g.key], { color: m.color, w: 72, h: 22 })}</span>
+          <span class="tp-spark">${sparkline(live() ? hist[g.key] : g.spark, { color: m.color, w: 72, h: 22 })}</span>
           <span class="tp-val">${m.io ? `<span title="${m.io[2]}">↓ ${rate(g[m.io[0]])}</span> <span title="${m.io[3]}">↑ ${rate(g[m.io[1]])}</span>` : m.show(v)}</span>
           ${menu(g)}
-        </div>${isOpen && g.kind !== 'rest' ? procs(g) : ''}`;
+        </div>${live() && isOpen && g.kind !== 'rest' ? procs(g) : ''}`;
       }).join('')}</div>
       ${gs.length > SHOWN ? `<button class="link-btn tp-all" onclick="DevDockViews.vitals.all()">${all ? 'Show fewer' : data.count > gs.length ? `Show top ${gs.length} of ${data.count}` : `Show all ${gs.length}`}</button>` : ''}`}
-      <p class="tp-note">${NOTE[open]}</p>`;
+      <p class="tp-note">${coverage()}${NOTE[open]}</p>`;
     // slide rows from where they were (FLIP), then grow the bars to their new size
     for (const r of el.querySelectorAll('.tp-row')) {
       const top = before.get(r.dataset.key);
@@ -196,6 +235,13 @@
   const after = async ok => { if (ok) setTimeout(poll, 400); };
   DevDockViews.vitals = {
     show, close,
+    period(p) {
+      if (p === period) return;
+      period = p; data = null; all = false; order = [];
+      try { localStorage.setItem('devdock:vitals-period', JSON.stringify(p)); } catch {}
+      render(); poll();
+    },
+    settings() { document.getElementById('settingsBtn').click(); document.querySelector('#settingsNav [data-pane=history]')?.click(); },
     toggle: key => { expanded.has(key) ? expanded.delete(key) : expanded.add(key); render(); },
     tile: metric => open === metric ? close() : show(metric),
     all: () => { all = !all; render(); },

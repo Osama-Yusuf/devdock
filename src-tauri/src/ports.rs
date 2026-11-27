@@ -38,7 +38,7 @@ pub struct Scanner {
     health: Mutex<HashMap<u16, String>>,
     probing: Mutex<HashSet<u16>>,
     users: Mutex<HashMap<u32, String>>,
-    history: Mutex<(String, i64)>,
+    history: Mutex<(Vec<String>, i64)>, // the running ports' keys at the last write, and when
 }
 
 /// What the scan produced: every listener, and the confirmed ones the page shows
@@ -292,13 +292,14 @@ impl Scanner {
         let key = |p: &Value| format!("{}:{}", p["port"], p["scriptPath"].as_str().map(String::from).unwrap_or_else(|| "null".into()));
         let mut keys: Vec<String> = ports.iter().map(key).collect();
         keys.sort();
-        let keys = keys.join(",");
         let mut h = self.history.lock().unwrap();
         if keys == h.0 && now - h.1 < 300_000 { return; }
-        *h = (keys, now);
+        let before = std::mem::replace(&mut *h, (keys, now)).0;
         let seen = iso(now);
         settings.update(|s| {
             let mut map: Vec<(String, Value)> = s["history"].as_array().cloned().unwrap_or_default().into_iter().map(|e| (key(&e), e)).collect();
+            // ports that stopped since the last write were last seen now, not then
+            for (k, e) in map.iter_mut() { if before.contains(k) && !h.0.contains(k) { e["lastSeen"] = json!(seen); } }
             for p in ports {
                 let e = json!({ "port": p["port"], "command": p["command"], "user": p["user"], "runtime": p["runtime"],
                     "runtimeName": p["runtimeName"], "runtimeColor": p["runtimeColor"], "runtimeIcon": p["runtimeIcon"],
@@ -406,5 +407,25 @@ mod tests {
         s.reprobe(&[3000], false); // no probe: probing needs the app's state, which a test doesn't have
         assert_eq!(s.health().keys().collect::<Vec<_>>(), vec![&3000]);
         assert!(s.probing.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn history_marks_a_stopped_port_as_seen_when_it_stopped() {
+        let f = std::env::temp_dir().join(format!("dd-history-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&f);
+        let settings = Settings::load(f.clone());
+        let s = Scanner::default();
+        let p = |port: u16| json!({ "port": port, "scriptPath": format!("/a,b/{port}") }); // a comma in the path
+        let seen = |port: u64| settings.get()["history"].as_array().unwrap().iter().find(|e| e["port"] == port).unwrap()["lastSeen"].clone();
+        s.record_history(&[p(3000), p(3001)], &settings, 0);
+        s.record_history(&[p(3000), p(3001)], &settings, 60_000);
+        assert_eq!(seen(3000), json!(iso(0)), "unchanged: no rewrite within 5 min");
+        s.record_history(&[p(3000)], &settings, 120_000);
+        assert_eq!(seen(3000), json!(iso(120_000)));
+        assert_eq!(seen(3001), json!(iso(120_000)), "stopped just now, not at the last write");
+        s.record_history(&[p(3000)], &settings, 500_000);
+        assert_eq!(seen(3000), json!(iso(500_000)), "refreshed after 5 min");
+        assert_eq!(seen(3001), json!(iso(120_000)), "gone stays put");
+        let _ = std::fs::remove_file(&f);
     }
 }

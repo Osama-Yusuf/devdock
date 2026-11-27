@@ -194,11 +194,12 @@ impl Ctx {
         loop {
             tokio::time::sleep(Duration::from_secs(10)).await;
             tick += 1;
-            let live: Vec<u16> = self.ports().iter().filter_map(|p| p["port"].as_u64().map(|x| x as u16)).collect();
-            self.scanner.reprobe(&live, self.hub.clients() > 0); // a probe GETs the dev server's page
+            self.scanner.reprobe(&self.live(), self.hub.clients() > 0); // a probe GETs the dev server's page
             if tick % 6 == 0 { self.reap_idle(); }
         }
     }
+
+    pub fn live(&self) -> Vec<u16> { self.ports().iter().filter_map(|p| p["port"].as_u64().map(|x| x as u16)).collect() }
 
     /// Opt-in idle reaper. Never touches favorites, apps, or processes without a project dir.
     fn reap_idle(&self) {

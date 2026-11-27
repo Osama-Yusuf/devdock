@@ -19,7 +19,7 @@ type Rates = HashMap<i32, (f64, f64)>;
 
 /// The last ps reading and the Mac's CPU ticks with it, so each refresh needs one spawn, not two
 #[derive(Default)]
-pub struct Top { last: Mutex<Option<(Instant, Ps, Option<CpuTicks>)>>, net: Net }
+pub struct Top { last: Mutex<Vec<(Instant, Ps, Option<CpuTicks>)>>, net: Net }
 
 impl Top {
     pub async fn scan(&self, c: &crate::state::Ctx, by: &str) -> Value {
@@ -29,7 +29,13 @@ impl Top {
         if !c.demo {
             let read = || async { parse_ps(&crate::util::run("/bin/ps", &["-A", "-o", "pid=,uid=,time=,rss=,comm="], crate::util::secs(5)).await.stdout) };
             // a rate needs two readings: the one from the last refresh, or one taken just now
-            let prev = self.last.lock().unwrap().take().filter(|(at, _, _)| at.elapsed() < Duration::from_secs(10));
+            // the newest reading at least a second old: two pages polling a moment apart would
+            // otherwise measure over a sliver, where ps's 10 ms CPU ticks are a big share
+            let prev = {
+                let last = self.last.lock().unwrap();
+                last.iter().rev().find(|r| r.0.elapsed() >= MIN_WINDOW).or(last.last()).filter(|r| r.0.elapsed() < Duration::from_secs(10)).cloned()
+            };
+            if let Some(young) = prev.as_ref().and_then(|r| MIN_WINDOW.checked_sub(r.0.elapsed())) { tokio::time::sleep(young).await; }
             let (at, before, t0) = match prev {
                 Some(p) => p,
                 None => { let p = read().await; let r = (Instant::now(), p, sys::cpu_ticks()); tokio::time::sleep(Duration::from_millis(700)).await; r }
@@ -40,7 +46,7 @@ impl Top {
             rows.extend(others(&now, &rates, me));
             let total = t0.zip(t1).and_then(|(a, b)| sys::cpu_percent(a, b)).map(|p| p * sys::cores() as f64);
             rows.extend(total.and_then(|t| kernel(t, &rows)));
-            *self.last.lock().unwrap() = Some((Instant::now(), now, t1));
+            { let mut last = self.last.lock().unwrap(); last.push((Instant::now(), now, t1)); let n = last.len(); last.drain(..n.saturating_sub(3)); }
             if by == "net" {
                 let rates = self.net.rates().await;
                 for r in &mut rows { if let Some(&(rx, tx)) = rates.get(&r.pid) { (r.rx, r.tx) = (rx, tx); } }
@@ -134,6 +140,7 @@ pub struct Net { st: std::sync::Arc<Mutex<NetState>> }
 #[derive(Default)]
 struct NetState { running: bool, asked: Option<Instant>, rates: Rates, at: Option<Instant>, failed: Option<Instant> }
 
+const MIN_WINDOW: Duration = Duration::from_secs(1);
 const NET_IDLE: Duration = Duration::from_secs(10);
 
 impl Net {

@@ -1,6 +1,7 @@
 //! The page's API on 127.0.0.1:4003: the same routes and messages the Node server had, so the
 //! page is unchanged. Only this Mac and only DevDock's own page: the Host check stops DNS
-//! rebinding, the Origin check stops other websites (a form POST or a WebSocket needs no CORS).
+//! rebinding, the Origin check stops other websites (a form POST or a WebSocket needs no CORS),
+//! and the key (auth.rs) stops other processes on this Mac.
 use crate::state::ctx;
 use crate::util::{find_bin, pid_of, run, secs, shq, ApiErr, Get};
 use axum::body::{Body, Bytes};
@@ -8,7 +9,7 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{FromRequestParts, Path, Request};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use serde_json::{json, Value};
@@ -37,6 +38,7 @@ fn own(headers: &HeaderMap) -> bool {
 
 async fn guard(req: Request, next: Next) -> Response {
     if !own(req.headers()) { return StatusCode::FORBIDDEN.into_response(); }
+    if !crate::auth::allows(req.uri().path(), req.headers()) { return (StatusCode::UNAUTHORIZED, "DevDock is locked").into_response(); }
     // demo pids are made up and may match real processes: never act on them
     let p = req.uri().path();
     if ctx().demo && (["/api/kill", "/api/restart", "/api/logs", "/api/start-server"].iter().any(|x| p.starts_with(x))
@@ -57,6 +59,7 @@ pub fn router() -> Router {
         .route("/history", get(|| file(ctx().res.join("views/history.html"))))
         .route("/lock", get(|| file(ctx().res.join("views/lock.html"))))
         .route("/lock/icon.png", get(|| file(ctx().res.join("assets/icon.png"))))
+        .route("/__auth/{key}", get(enter))
         .route("/api/ping", get(|| async { Json(json!({ "ok": true })) }))
         .route("/api/ports", get(ports))
         .route("/api/version", get(|| async { let c = ctx(); Json(json!({ "version": c.version, "build": c.build })) }))
@@ -91,6 +94,12 @@ pub async fn serve() {
         Err(e) => { eprintln!("DevDock: port {} is taken ({e})", port()); return; }
     };
     let _ = axum::serve(listener, router()).await;
+}
+
+/// The window, just unlocked, shows the key once and gets it back as a cookie
+async fn enter(Path(k): Path<String>) -> Response {
+    if !crate::auth::valid(&k) { return Redirect::to("/lock").into_response(); }
+    ([(header::SET_COOKIE, crate::auth::cookie(&k))], Redirect::to("/")).into_response()
 }
 
 // ── static files ─────────────────────────────────────────────────────
@@ -366,6 +375,8 @@ async fn socket(ws: WebSocket) {
     let (mut tx, mut rx) = ws.split();
     let (out, mut outq) = tokio::sync::mpsc::unbounded_channel::<String>();
     let mut sub = c.hub.subscribe();
+    let mut revoked = crate::auth::revoked();
+    if crate::auth::current().is_none() { return; } // locked between the check and here
     c.hub.connect();
     // what's known right now, so the page doesn't wait for a change
     if !c.ports().is_empty() || !c.table().is_empty() { let mut p = c.payload(); p["type"] = json!("ports"); let _ = out.send(p.to_string()); }
@@ -387,7 +398,11 @@ async fn socket(ws: WebSocket) {
         }
     });
     let mut term: Option<crate::term::Term> = None;
-    while let Some(Ok(m)) = rx.next().await {
+    loop {
+        let m = tokio::select! {
+            m = rx.next() => match m { Some(Ok(m)) => m, _ => break },
+            _ = revoked.changed() => break, // locked: the page goes, and so does this
+        };
         let Message::Text(t) = m else { continue };
         let Ok(m) = serde_json::from_str::<Value>(&t) else { continue };
         match m.str_of("type") {

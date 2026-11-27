@@ -1,4 +1,5 @@
 pub mod app;
+pub mod auth;
 pub mod demo;
 pub mod detect;
 pub mod fds;

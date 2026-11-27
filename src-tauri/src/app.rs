@@ -4,8 +4,9 @@
 //!
 //! DevDock holds the keys to your machines, so it opens with Touch ID (or the login password)
 //! and locks again when the Mac does. Fails closed: the window shows the lock page and the
-//! dashboard only loads after Touch ID says yes. ponytail: gates this window only; a browser on
-//! localhost:4003 isn't asked, and remote actions still need their own Touch ID.
+//! dashboard only loads after Touch ID says yes. Touch ID is also what hands the window the API's
+//! key (auth.rs), and locking takes it back, so nothing else on this Mac can use the API either.
+//! Remote actions still need their own Touch ID.
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
@@ -27,9 +28,12 @@ fn show(app: &AppHandle) {
         unlock(app);
         return;
     }
-    let locked = LOCKED.load(Ordering::SeqCst);
+    let start = match crate::auth::current() {
+        Some(k) if !LOCKED.load(Ordering::SeqCst) => format!("/__auth/{k}"),
+        _ => "/lock?asking=1".into(),
+    };
     let handle = app.clone();
-    let built = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url(if locked { "/lock?asking=1" } else { "/" })))
+    let built = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url(&start)))
         .title("DevDock")
         .inner_size(1400.0, 850.0)
         .min_inner_size(800.0, 500.0)
@@ -70,8 +74,9 @@ fn unlock(app: &AppHandle) {
         ASKING.store(false, Ordering::SeqCst);
         let Some(w) = app.get_webview_window("main") else { return };
         if ok {
+            let k = crate::auth::issue();
             LOCKED.store(false, Ordering::SeqCst);
-            let _ = w.navigate(url("/"));
+            let _ = w.navigate(url(&format!("/__auth/{k}")));
         } else {
             let _ = w.eval("document.querySelectorAll('button').forEach(b => b.disabled = false)");
         }
@@ -80,6 +85,7 @@ fn unlock(app: &AppHandle) {
 
 fn lock(app: &AppHandle) {
     if LOCKED.swap(true, Ordering::SeqCst) { return; }
+    crate::auth::revoke();
     // the dashboard is gone from the window, not just hidden
     if let Some(w) = app.get_webview_window("main") { let _ = w.navigate(url("/lock")); }
 }
@@ -191,9 +197,11 @@ fn start(res: std::path::PathBuf) -> &'static crate::state::Ctx {
     c
 }
 
-/// `DevDock serve`: the backend alone, no window (tests, and a browser on localhost)
+/// `DevDock serve`: the backend alone, no window (tests, and a browser on localhost). No Touch ID
+/// here: whoever started it gets the key on stdout.
 pub fn serve() {
     let res = std::env::var_os("DEVDOCK_RES").map(Into::into).unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf());
+    println!("DevDock: open http://localhost:{}/__auth/{}", crate::server::port(), crate::auth::issue());
     tauri::async_runtime::block_on(async move { start(res); crate::server::serve().await });
 }
 

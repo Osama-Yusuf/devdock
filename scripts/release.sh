@@ -7,8 +7,12 @@
 #
 # Needs the updater key (~/.config/devdock/updater.key, or $TAURI_SIGNING_PRIVATE_KEY): without
 # it no installed DevDock would accept the update. Keep it off GitHub and backed up.
-# Optional: DEVDOCK_SIGN_IDENTITY="Developer ID Application: ..." signs the app, and a
-# notarytool keychain profile named "devdock" notarizes and staples the dmg.
+# Signing: DEVDOCK_SIGN_IDENTITY, else this Mac's "Developer ID Application" certificate, else the
+# self-made "DevDock Local Signing" one. A stable identity is what keeps macOS permissions (Local
+# Network, Automation) across updates; ad-hoc signing ties them to one build. With a Developer ID,
+# set APPLE_API_KEY, APPLE_API_ISSUER and APPLE_API_KEY_PATH (or APPLE_ID, APPLE_PASSWORD and
+# APPLE_TEAM_ID): Tauri notarizes and staples the app, so the updater's copy is stapled too, and
+# this script does the same for the dmg.
 set -eu
 cd "$(dirname "$0")/.."
 V=$(node -p "require('./package.json').version")
@@ -17,9 +21,17 @@ T=src-tauri/target/release/bundle
 
 KEY=${TAURI_SIGNING_PRIVATE_KEY:-$(cat "$HOME/.config/devdock/updater.key")}
 export TAURI_SIGNING_PRIVATE_KEY="$KEY" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
-[ -n "${DEVDOCK_SIGN_IDENTITY:-}" ] && export APPLE_SIGNING_IDENTITY="$DEVDOCK_SIGN_IDENTITY"
+ID=${DEVDOCK_SIGN_IDENTITY:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)}
+if [ -z "$ID" ] && security find-identity -p codesigning | grep -q '"DevDock Local Signing"'; then ID="DevDock Local Signing"; fi
+[ -n "$ID" ] || echo "warning: no signing identity, so the app stays ad-hoc signed and macOS forgets its permissions on every update"
 
 npm run -s build:prep
+if [ -n "$ID" ]; then
+  export APPLE_SIGNING_IDENTITY="$ID"
+  # Tauri signs the app and its main binary but not this helper in Resources; notarization needs it signed too
+  case "$ID" in "Developer ID"*) TS=--timestamp;; *) TS=--timestamp=none;; esac # Apple timestamps only its own certificates
+  codesign --force --options runtime "$TS" -s "$ID" native/devdock-key
+fi
 [ "$(uname -m)" = arm64 ] || { echo "Build on Apple silicon: the release is arm64"; exit 1; }
 (cd src-tauri && cargo tauri build --bundles app,dmg)
 
@@ -28,10 +40,12 @@ cp "$T/dmg/DevDock_${V}_aarch64.dmg" "$OUT/DevDock-$V-arm64.dmg"
 cp "$T/macos/DevDock.app.tar.gz" "$OUT/DevDock-$V-arm64.app.tar.gz"
 cp "$T/macos/DevDock.app.tar.gz.sig" "$OUT/DevDock-$V-arm64.app.tar.gz.sig"
 
-if [ -n "${DEVDOCK_SIGN_IDENTITY:-}" ]; then
-  xcrun notarytool submit "$OUT/DevDock-$V-arm64.dmg" --keychain-profile devdock --wait
-  xcrun stapler staple "$OUT/DevDock-$V-arm64.dmg"
-fi
+case "$ID" in "Developer ID Application"*)
+  if [ -n "${APPLE_API_KEY:-}" ]; then set -- --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER"
+  else set -- --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID"; fi
+  xcrun notarytool submit "$OUT/DevDock-$V-arm64.dmg" "$@" --wait
+  xcrun stapler staple "$OUT/DevDock-$V-arm64.dmg";;
+esac
 
 # notes: the release's text, filled in on GitHub; the app shows a link to it
 node -e '

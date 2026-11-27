@@ -150,12 +150,14 @@
     return '';
   }
 
+  // A vital you can open: its panel (views/vitals.js) lists what's using it
+  const tile = metric => `data-metric="${metric}" role="button" tabindex="0" onclick="DevDockViews.vitals.tile('${metric}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}"`;
   // The startup disk, sizes decimal like Finder
   const gb = mb => { const b = mb * 1048576; return b >= 1e12 ? `${(b / 1e12).toFixed(2)} TB` : `${Math.round(b / 1e9)} GB`; };
   function diskTile(d) {
     if (!d) return '<div class="hvital"><label>Disk</label><div class="hv">—</div></div>';
     const used = d.total - d.free, pct = used / d.total * 100, low = d.free * 1048576 < 15e9 || pct > 95;
-    return `<div class="hvital${low ? ' hlow' : ''}" title="Startup disk. Finder may show a little more free: it counts space macOS can purge"><label>Disk</label>
+    return `<div class="hvital${low ? ' hlow' : ''}" ${tile('disk')} title="Startup disk. Finder may show a little more free: it counts space macOS can purge. Click for what's reading and writing it"><label>Disk</label>
       <div class="hv">${gb(used)}<small> / ${gb(d.total)}</small></div><div class="hmeter"><i style="width:${pct.toFixed(1)}%"></i></div>
       <div class="hvital-foot">${gb(d.free)} free</div></div>`;
   }
@@ -204,9 +206,9 @@
         <div class="horb">${sev === 'clear' ? ICON.check : `<span>${n || tidy}</span>`}</div>
         <div class="hhead"><h2>${headline}</h2><p>${esc(sub)}</p></div>
         <div class="hvitals">
-          <div class="hvital" title="The whole Mac, like Activity Monitor's CPU load"><label>CPU</label><div class="hv">${mc.cpu == null ? '—' : `${Math.round(mc.cpu)}<small>% of ${v.cores || '?'} cores</small>`}</div>${meter(mc.cpu || 0)}${sparkline(mc.cpuSpark, { color: 'var(--accent)', w: 120, h: 26 })}
+          <div class="hvital" ${tile('cpu')} title="The whole Mac, like Activity Monitor's CPU load. Click for what's using it"><label>CPU</label><div class="hv">${mc.cpu == null ? '—' : `${Math.round(mc.cpu)}<small>% of ${v.cores || '?'} cores</small>`}</div>${meter(mc.cpu || 0)}${sparkline(mc.cpuSpark, { color: 'var(--accent)', w: 120, h: 26 })}
             <div class="hvital-foot" title="Your servers and coding agents, including what they started">servers + agents: ${((v.cpu || 0) / 100).toFixed(1)} cores</div></div>
-          <div class="hvital" title="The whole Mac: Activity Monitor's app memory + wired + compressed. Cached files aren't counted: macOS frees them on demand"><label>Memory</label><div class="hv">${mc.mem == null ? '—' : `${formatMem(mc.mem)}<small> / ${formatMem(v.totalMem || 0)}</small>`}</div>${meter(memPct)}${sparkline(mc.memSpark, { color: 'var(--accent)', w: 120, h: 26 })}
+          <div class="hvital" ${tile('mem')} title="The whole Mac: Activity Monitor's app memory + wired + compressed. Cached files aren't counted: macOS frees them on demand. Click for what's using it"><label>Memory</label><div class="hv">${mc.mem == null ? '—' : `${formatMem(mc.mem)}<small> / ${formatMem(v.totalMem || 0)}</small>`}</div>${meter(memPct)}${sparkline(mc.memSpark, { color: 'var(--accent)', w: 120, h: 26 })}
             <div class="hvital-foot" title="Your servers and coding agents, including what they started">servers + agents: ${formatMem(v.mem || 0)}</div></div>
           ${diskTile(mc.disk)}
           <div class="hvital"><label>Agents · servers</label><div class="hv">${v.agents || 0}<small> agents · ${v.servers || 0} servers</small></div>
@@ -228,6 +230,7 @@
     const snoozedCount = (d.items || []).length - all.length;
     view.innerHTML = `<div class="home">
       ${hero(all)}
+      <div id="hpanelSlot"></div>
       ${talkersHTML()}
       ${SECTIONS.map(([sev, title, hint]) => {
         const list = items.filter(it => it.severity === sev);
@@ -236,6 +239,7 @@
       }).join('')}
       ${snoozedCount ? `<div class="hfoot">${snoozedCount} snoozed · <button class="link-btn" onclick="DevDockViews.home.unsnooze()">show them</button></div>` : ''}
     </div>`;
+    DevDockViews.vitals?.mount();
   }
 
   // The Home tab's dot: red for critical, amber for waiting, nothing otherwise

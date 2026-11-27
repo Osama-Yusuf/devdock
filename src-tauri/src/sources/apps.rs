@@ -210,6 +210,8 @@ impl Apps {
         Ok(json!({ "apps": out }))
     }
 
+    pub fn last(&self) -> Vec<Value> { self.last.lock().unwrap().clone() }
+
     // the list may be older than what was clicked: rescan once before saying it's gone
     async fn fresh<T>(&self, c: &Ctx, test: impl Fn(&[Value]) -> Option<T>) -> Option<T> {
         if let Some(x) = test(&self.last.lock().unwrap()) { return Some(x); }

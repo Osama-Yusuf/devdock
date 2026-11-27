@@ -14,6 +14,7 @@ pub mod state;
 pub mod sys;
 pub mod table;
 pub mod term;
+pub mod top;
 pub mod update;
 pub mod util;
 

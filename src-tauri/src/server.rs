@@ -92,11 +92,15 @@ pub fn router() -> Router {
         .layer(middleware::from_fn(guard))
 }
 
-pub async fn serve() {
-    let listener = match tokio::net::TcpListener::bind(("127.0.0.1", port())).await {
-        Ok(l) => l,
-        Err(e) => { eprintln!("DevDock: port {} is taken ({e})", port()); return; }
-    };
+/// Taken before anything starts, so the window never loads whatever else answers on the port
+pub fn bind() -> std::io::Result<std::net::TcpListener> {
+    let l = std::net::TcpListener::bind(("127.0.0.1", port()))?;
+    l.set_nonblocking(true)?;
+    Ok(l)
+}
+
+pub async fn serve(l: std::net::TcpListener) {
+    let Ok(listener) = tokio::net::TcpListener::from_std(l) else { return };
     let _ = axum::serve(listener, router()).await;
 }
 

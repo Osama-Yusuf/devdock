@@ -37,7 +37,7 @@
       "../build.json": "build.json"
     },
     "macOS": {
-      "minimumSystemVersion": "12.0",
+      "minimumSystemVersion": "13.0",
       "dmg": {
         "windowSize": {
           "width": 660,

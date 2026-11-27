@@ -188,14 +188,14 @@ impl Ctx {
         }
     }
 
-    /// Health of every live port again every 10s; the opt-in idle reaper every minute
+    /// Health of every live port again every 10s while the page is open; the opt-in idle reaper every minute
     pub async fn housekeeping(&'static self) {
         let mut tick = 0u64;
         loop {
             tokio::time::sleep(Duration::from_secs(10)).await;
             tick += 1;
             let live: Vec<u16> = self.ports().iter().filter_map(|p| p["port"].as_u64().map(|x| x as u16)).collect();
-            self.scanner.reprobe(&live);
+            self.scanner.reprobe(&live, self.hub.clients() > 0); // a probe GETs the dev server's page
             if tick % 6 == 0 { self.reap_idle(); }
         }
     }

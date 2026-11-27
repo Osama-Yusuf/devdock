@@ -136,7 +136,8 @@ impl Scanner {
 
         // the shell pid of each tmux pane -> where it lives
         let mut panes: HashMap<i32, Value> = HashMap::new();
-        if !found.is_empty() {
+        // a spawn per scan otherwise: only when a listener runs inside tmux
+        if found.iter().any(|(pid, _)| under_tmux(*pid, t)) {
             if let Some(tmux) = find_bin("tmux") {
                 let o = run(&tmux, &["list-panes", "-a", "-F", "#{pane_pid}:#{window_index}:#{pane_index}:#{session_name}"], secs(3)).await;
                 for l in o.stdout.lines() {
@@ -279,21 +280,21 @@ impl Scanner {
         });
     }
 
-    /// Drop health for ports that are gone; probe the rest again
-    pub fn reprobe(&self, live: &[u16]) {
+    /// Drop health for ports that are gone; probe the rest again when someone's looking
+    pub fn reprobe(&self, live: &[u16], looking: bool) {
         self.health.lock().unwrap().retain(|p, _| live.contains(p));
-        for &p in live { self.probe(p); }
+        if looking { for &p in live { self.probe(p); } }
     }
 
     /// History lives in the settings file; written when the set of running ports changes,
-    /// and otherwise at most every 30s to refresh lastSeen
+    /// and otherwise every 5 minutes to refresh lastSeen
     fn record_history(&self, ports: &[Value], settings: &Settings, now: i64) {
         let key = |p: &Value| format!("{}:{}", p["port"], p["scriptPath"].as_str().map(String::from).unwrap_or_else(|| "null".into()));
         let mut keys: Vec<String> = ports.iter().map(key).collect();
         keys.sort();
         let keys = keys.join(",");
         let mut h = self.history.lock().unwrap();
-        if keys == h.0 && now - h.1 < 30000 { return; }
+        if keys == h.0 && now - h.1 < 300_000 { return; }
         *h = (keys, now);
         let seen = iso(now);
         settings.update(|s| {
@@ -311,6 +312,18 @@ impl Scanner {
             s["history"] = json!(list);
         });
     }
+}
+
+/// A tmux server among its ancestors
+fn under_tmux(pid: i32, t: &Table) -> bool {
+    let mut cur = pid;
+    for _ in 0..40 {
+        let Some(p) = t.get(&cur) else { return false };
+        if p.name == "tmux" || p.comm.rsplit('/').next() == Some("tmux") { return true; }
+        if p.ppid <= 1 { return false; }
+        cur = p.ppid;
+    }
+    false
 }
 
 /// GET http://localhost:<port>/: healthy under 500, unhealthy at 500+, unreachable, unknown on timeout
@@ -372,5 +385,26 @@ mod tests {
         assert_eq!(find_launcher(8, &t), Some(("agent", "Claude Code".into(), 7)));
         assert_eq!(find_launcher(9, &t), Some(("app", "Ghostty".into(), 5)));
         assert_eq!(find_launcher(5, &t), None);
+    }
+
+    #[test]
+    fn tmux_only_when_a_listener_is_inside_it() {
+        let mut t = Table::new();
+        for (pid, ppid, comm) in [(1, 0, "/sbin/launchd"), (5, 1, "/Applications/Ghostty.app/Contents/MacOS/ghostty"), (6, 5, "-zsh"), (9, 6, "node"),
+                                  (10, 1, "/opt/homebrew/bin/tmux"), (11, 10, "-zsh"), (12, 11, "node")] {
+            t.insert(pid, Proc { pid, ppid, comm: comm.into(), ..Default::default() });
+        }
+        assert!(under_tmux(12, &t));
+        assert!(!under_tmux(9, &t));
+        assert!(!under_tmux(99, &t), "gone");
+    }
+
+    #[test]
+    fn health_is_dropped_for_gone_ports_without_probing() {
+        let s = Scanner::default();
+        s.health.lock().unwrap().extend([(3000, "healthy".to_string()), (3001, "healthy".to_string())]);
+        s.reprobe(&[3000], false); // no probe: probing needs the app's state, which a test doesn't have
+        assert_eq!(s.health().keys().collect::<Vec<_>>(), vec![&3000]);
+        assert!(s.probing.lock().unwrap().is_empty());
     }
 }

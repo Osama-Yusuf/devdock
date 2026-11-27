@@ -25,6 +25,7 @@ impl Top {
     pub async fn scan(&self, c: &crate::state::Ctx, by: &str) -> Value {
         let me = unsafe { libc::getuid() };
         let mut rows = mine(&c.table(), me, &HashMap::new());
+        if by == "net" && !c.demo { self.net.start(); } // its first rates take two samples: start before ps's warm-up
         if !c.demo {
             let read = || async { parse_ps(&crate::util::run("/bin/ps", &["-A", "-o", "pid=,uid=,time=,rss=,comm="], crate::util::secs(5)).await.stdout) };
             // a rate needs two readings: the one from the last refresh, or one taken just now
@@ -113,11 +114,13 @@ pub fn sample<S: AsRef<str>>(lines: &[S]) -> Bytes {
     }).collect()
 }
 
-/// Bytes a second in and out, for processes in both samples
+/// Bytes a second in and out. nettop lists every process with a socket, idle ones too, so one
+/// missing from the last sample opened its first socket since: all its bytes are new.
 pub fn net_rates(prev: &Bytes, cur: &Bytes, secs: f64) -> Rates {
+    if secs <= 0.0 { return Rates::new(); }
     cur.iter().filter_map(|(pid, &(rx, tx))| {
-        let &(prx, ptx) = prev.get(pid)?;
-        (rx >= prx && tx >= ptx && secs > 0.0).then(|| (*pid, (((rx - prx) as f64 / secs).round(), ((tx - ptx) as f64 / secs).round())))
+        let (prx, ptx) = prev.get(pid).copied().unwrap_or((0, 0));
+        (rx >= prx && tx >= ptx).then(|| (*pid, (((rx - prx) as f64 / secs).round(), ((tx - ptx) as f64 / secs).round())))
     }).collect()
 }
 
@@ -129,28 +132,33 @@ pub fn net_rates(prev: &Bytes, cur: &Bytes, secs: f64) -> Rates {
 pub struct Net { st: std::sync::Arc<Mutex<NetState>> }
 
 #[derive(Default)]
-struct NetState { running: bool, asked: Option<Instant>, rates: Rates, at: Option<Instant> }
+struct NetState { running: bool, asked: Option<Instant>, rates: Rates, at: Option<Instant>, failed: Option<Instant> }
 
 const NET_IDLE: Duration = Duration::from_secs(10);
 
 impl Net {
-    /// The latest rates, starting nettop if it isn't running; the first ones take two samples
+    /// Starts nettop if it isn't running, unless it failed in the last 30 s
+    pub fn start(&self) {
+        let mut st = self.st.lock().unwrap();
+        st.asked = Some(Instant::now());
+        if st.running || st.failed.is_some_and(|f| f.elapsed() < Duration::from_secs(30)) { return; }
+        st.running = true;
+        let st = self.st.clone();
+        std::thread::spawn(move || {
+            let r = watch(&st);
+            let mut s = st.lock().unwrap();
+            // ending before it measured anything is a failure: don't respawn it every poll
+            if r.is_err() || s.at.is_none() { eprintln!("nettop: {}", r.err().map_or("ended early".into(), |e| e.to_string())); s.failed = Some(Instant::now()); }
+            (s.running, s.at) = (false, None);
+            s.rates.clear();
+        });
+    }
+
+    /// The latest rates; the first ones take two samples
     pub async fn rates(&self) -> Rates {
-        let start = {
-            let mut st = self.st.lock().unwrap();
-            st.asked = Some(Instant::now());
-            !std::mem::replace(&mut st.running, true)
-        };
-        if start {
-            let st = self.st.clone();
-            std::thread::spawn(move || {
-                if let Err(e) = watch(&st) { eprintln!("nettop: {e}"); }
-                let mut s = st.lock().unwrap();
-                (s.running, s.at) = (false, None);
-                s.rates.clear();
-            });
-        }
+        self.start();
         for _ in 0..30 {
+            if self.st.lock().unwrap().failed.is_some_and(|f| f.elapsed() < Duration::from_secs(30)) { break; }
             if let Some(r) = { let st = self.st.lock().unwrap(); st.at.map(|_| st.rates.clone()) } { return r; }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
@@ -160,32 +168,39 @@ impl Net {
 
 fn watch(st: &Mutex<NetState>) -> Result<(), Box<dyn std::error::Error>> {
     use portable_pty::{native_pty_system, CommandBuilder, PtySize};
-    use std::io::BufRead;
     let pair = native_pty_system().openpty(PtySize { rows: 24, cols: 512, ..Default::default() })?;
     let mut cmd = CommandBuilder::new("/usr/bin/nettop");
     cmd.args(["-P", "-L", "0", "-s", "1", "-x", "-t", "external", "-J", "bytes_in,bytes_out"]);
     let mut child = pair.slave.spawn_command(cmd)?;
     drop(pair.slave);
-    let lines = std::io::BufReader::new(pair.master.try_clone_reader()?).lines();
+    let r = pair.master.try_clone_reader().map_err(Into::into).and_then(|r| read(st, std::io::BufReader::new(r)));
+    // always reaped, whatever ended the reading
+    let _ = child.kill();
+    let _ = child.wait();
+    r
+}
+
+fn read(st: &Mutex<NetState>, mut out: impl std::io::BufRead) -> Result<(), Box<dyn std::error::Error>> {
     // a header starts each sample, so a sample is whole when the next header comes
     let (mut block, mut began, mut prev): (Vec<String>, Option<Instant>, Option<(Instant, Bytes)>) = (vec![], None, None);
-    for line in lines {
-        let line = line?;
+    let mut buf = vec![];
+    loop {
+        buf.clear();
+        if out.read_until(b'\n', &mut buf)? == 0 { return Ok(()); }
+        // names are cut at 15 bytes, which can split a character
+        let line = String::from_utf8_lossy(&buf).into_owned();
         if line.trim_end() != ",bytes_in,bytes_out," { block.push(line); continue; }
         if let Some(at) = began {
             let cur = sample(&block);
             let mut s = st.lock().unwrap();
             if let Some((pat, p)) = &prev { s.rates = net_rates(p, &cur, at.duration_since(*pat).as_secs_f64()); s.at = Some(at); }
-            if s.asked.is_none_or(|a| a.elapsed() > NET_IDLE) { break; }
+            if s.asked.is_none_or(|a| a.elapsed() > NET_IDLE) { return Ok(()); }
             drop(s);
             prev = Some((at, cur));
         }
         block.clear();
         began = Some(Instant::now());
     }
-    let _ = child.kill();
-    let _ = child.wait();
-    Ok(())
 }
 
 fn pid(v: &Value) -> Option<i32> { v.as_str().and_then(|s| s.parse().ok()).or_else(|| v.as_i64().map(|n| n as i32)) }
@@ -306,7 +321,19 @@ mod tests {
         let r = net_rates(&a, &b, 2.0);
         assert_eq!(r.get(&385), Some(&(1000.0, 0.0)));
         assert_eq!(r.get(&5428), None, "a counter that went back is a reused pid: wait for the next sample");
-        assert_eq!(r.get(&9), None, "first sight: its total so far isn't a rate");
+        assert_eq!(r.get(&9), Some(&(250.0, 0.0)), "new since the last sample: all its bytes are new");
+        assert_eq!(r.get(&7), None, "gone from this sample");
+    }
+
+    #[test]
+    fn a_name_cut_mid_character_doesnt_stop_the_reading() {
+        let st = Mutex::new(NetState { asked: Some(Instant::now()), ..Default::default() });
+        let mut out = b",bytes_in,bytes_out,\r\nCaf\xc3.7,5,6,\r\n".to_vec();
+        out.extend_from_slice(b",bytes_in,bytes_out,\r\nCaf\xc3.7,5,6,\r\n,bytes_in,bytes_out,\r\n");
+        read(&st, &out[..]).unwrap();
+        let s = st.lock().unwrap();
+        assert!(s.at.is_some(), "two whole samples make rates");
+        assert_eq!(s.rates.get(&7), Some(&(0.0, 0.0)));
     }
 
     #[test]

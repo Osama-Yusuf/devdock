@@ -95,7 +95,7 @@ struct State {
 }
 
 #[derive(Default)]
-pub struct Home { st: Mutex<State>, top: crate::top::Top }
+pub struct Home { st: Mutex<State>, pub top: crate::top::Top }
 
 /// What the rules found and the sums for the vitals
 struct Found { items: Vec<Value>, servers: usize, sum_cpu: f64, sum_mem: f64 }
@@ -310,7 +310,7 @@ async fn tailscale_ip() -> Option<String> {
 }
 
 /// The interface the default route uses
-async fn default_iface() -> Option<String> {
+pub(crate) async fn default_iface() -> Option<String> {
     let out = run("/sbin/route", &["-n", "get", "default"], Duration::from_secs(3)).await.stdout;
     out.lines().find_map(|l| l.trim().strip_prefix("interface:")).map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
@@ -384,6 +384,16 @@ impl Home {
             // what's using the CPU, memory, disk or network, for the panels under Home's vitals
             "top" => Ok(self.top.scan(c, match p.str_of("by") { b @ ("mem" | "disk" | "net") => b, _ => "cpu" }).await),
             "kill" | "reveal" => Self::process(c, name, p).await,
+            // the usage history (see usage.rs), for the panels' periods and Settings
+            "usage" => {
+                let mut v = c.usage.query(&c.data, match p.str_of("by") { b @ ("mem" | "disk" | "net") => b, _ => "cpu" }, p["mins"].as_i64().unwrap_or(60).clamp(5, 7 * 1440));
+                let st = c.settings.get();
+                (v["on"], v["days"]) = (json!(st["usageHistory"] != json!(false) && !c.demo), st["usageDays"].clone());
+                Ok(v)
+            }
+            "usageInfo" => Ok(c.usage.info(&c.data)),
+            "usageClear" => { c.usage.clear(&c.data); Ok(json!({ "ok": true })) }
+            "usageReveal" => { let _ = std::process::Command::new("/usr/bin/open").arg("-R").arg(c.data.join("usage.jsonl")).spawn(); Ok(json!({ "ok": true })) }
             _ => Err(crate::sources::unknown()),
         }
     }

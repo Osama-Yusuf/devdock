@@ -13,13 +13,13 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-type Ps = HashMap<i32, (u32, f64, f64, String)>;
-type Bytes = HashMap<i32, (u64, u64)>;
+pub type Ps = HashMap<i32, (u32, f64, f64, String)>;
+pub type Bytes = HashMap<i32, (u64, u64)>;
 type Rates = HashMap<i32, (f64, f64)>;
 
 /// The last ps reading and the Mac's CPU ticks with it, so each refresh needs one spawn, not two
 #[derive(Default)]
-pub struct Top { last: Mutex<Vec<(Instant, Ps, Option<CpuTicks>)>>, net: Net }
+pub struct Top { last: Mutex<Vec<(Instant, Ps, Option<CpuTicks>)>>, pub net: Net }
 
 impl Top {
     pub async fn scan(&self, c: &crate::state::Ctx, by: &str) -> Value {
@@ -111,12 +111,16 @@ pub fn kernel(total: f64, rows: &[Row]) -> Option<Row> {
 
 /// One nettop sample, "<name>.<pid>,<bytes in>,<bytes out>," per process: totals since nettop
 /// began watching it, closed connections included. The name may hold dots; the pid is after the last.
-pub fn sample<S: AsRef<str>>(lines: &[S]) -> Bytes {
+pub fn sample<S: AsRef<str>>(lines: &[S]) -> Bytes { named(lines).into_iter().map(|(pid, (_, b))| (pid, b)).collect() }
+
+/// The same, with the name nettop gives each (cut at 15 bytes)
+pub fn named<S: AsRef<str>>(lines: &[S]) -> HashMap<i32, (String, (u64, u64))> {
     lines.iter().filter_map(|l| {
         let body = l.as_ref().trim_end().strip_suffix(',')?;
         let mut f = body.rsplitn(3, ',');
         let (tx, rx, who) = (f.next()?.parse().ok()?, f.next()?.parse().ok()?, f.next()?);
-        Some((who.rsplit_once('.')?.1.parse().ok()?, (rx, tx)))
+        let (name, pid) = who.rsplit_once('.')?;
+        Some((pid.parse().ok()?, (name.to_string(), (rx, tx))))
     }).collect()
 }
 
@@ -138,7 +142,7 @@ pub fn net_rates(prev: &Bytes, cur: &Bytes, secs: f64) -> Rates {
 pub struct Net { st: std::sync::Arc<Mutex<NetState>> }
 
 #[derive(Default)]
-struct NetState { running: bool, asked: Option<Instant>, rates: Rates, at: Option<Instant>, failed: Option<Instant> }
+struct NetState { running: bool, asked: Option<Instant>, rates: Rates, at: Option<Instant>, failed: Option<Instant>, bytes: HashMap<i32, (String, (u64, u64))>, secs: f64 }
 
 const MIN_WINDOW: Duration = Duration::from_secs(1);
 const NET_IDLE: Duration = Duration::from_secs(10);
@@ -159,6 +163,13 @@ impl Net {
             (s.running, s.at) = (false, None);
             s.rates.clear();
         });
+    }
+
+    /// Bytes per process (with nettop's name for it, for one that has ended since), and the
+    /// seconds watched, since the last call: the usage history's network
+    pub fn take(&self) -> (HashMap<i32, (String, (u64, u64))>, f64) {
+        let mut st = self.st.lock().unwrap();
+        (std::mem::take(&mut st.bytes), std::mem::take(&mut st.secs))
     }
 
     /// The latest rates; the first ones take two samples
@@ -198,9 +209,19 @@ fn read(st: &Mutex<NetState>, mut out: impl std::io::BufRead) -> Result<(), Box<
         let line = String::from_utf8_lossy(&buf).into_owned();
         if line.trim_end() != ",bytes_in,bytes_out," { block.push(line); continue; }
         if let Some(at) = began {
-            let cur = sample(&block);
+            let names = named(&block);
+            let cur: Bytes = names.iter().map(|(p, (_, b))| (*p, *b)).collect();
             let mut s = st.lock().unwrap();
-            if let Some((pat, p)) = &prev { s.rates = net_rates(p, &cur, at.duration_since(*pat).as_secs_f64()); s.at = Some(at); }
+            if let Some((pat, p)) = &prev {
+                let secs = at.duration_since(*pat).as_secs_f64();
+                s.rates = net_rates(p, &cur, secs);
+                for (pid, &(rx, tx)) in &s.rates.clone() {
+                    let b = s.bytes.entry(*pid).or_insert_with(|| (names[pid].0.clone(), (0, 0)));
+                    b.1.0 += (rx * secs) as u64; b.1.1 += (tx * secs) as u64;
+                }
+                s.secs += secs;
+                s.at = Some(at);
+            }
             if s.asked.is_none_or(|a| a.elapsed() > NET_IDLE) { return Ok(()); }
             drop(s);
             prev = Some((at, cur));
@@ -261,7 +282,8 @@ pub fn group(rows: &[Row], ports: &[Value], agents: &[Value], apps: &[Value], by
         out.push((json!({ "key": format!("{}:{name}", &kind[..1]), "kind": kind, "pid": pids[0].to_string(), "name": name, "path": path }), pids));
     }
 
-    let val = |r: &Row| match by { "mem" => r.mem, "disk" => r.dr + r.dw, "net" => r.rx + r.tx, _ => r.cpu };
+    // "any": every group that used anything, for the usage history to rank by each in turn
+    let val = |r: &Row| match by { "mem" => r.mem, "disk" => r.dr + r.dw, "net" => r.rx + r.tx, "any" => r.cpu + r.mem + r.dr + r.dw + r.rx + r.tx, _ => r.cpu };
     let mut groups: Vec<(f64, Value)> = out.into_iter().map(|(mut g, mut pids)| {
         let rs: Vec<&Row> = pids.iter().map(|p| by_pid[p]).collect();
         let sum = |f: fn(&Row) -> f64| round1(rs.iter().map(|r| f(r)).sum());

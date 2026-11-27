@@ -72,6 +72,8 @@ pub fn defaults() -> Value {
         "agentsEnabled": false,
         "agent": "",
         "agentReadOnly": false,
+        "usageHistory": true,
+        "usageDays": 1,
     })
 }
 

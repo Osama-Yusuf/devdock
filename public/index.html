@@ -371,6 +371,31 @@
                 <button class="bulk-btn danger" id="clearHistory">Clear</button>
               </div>
             </div>
+            <h3 class="pane-title">App usage</h3>
+            <p class="pane-desc">What each app used, once a minute, so Home's CPU, Memory, Disk and Network views can show the average over 5 minutes, an hour or a day instead of jumping around. CPU, memory and disk always; per-app network only while the Network view is open. It stays on this Mac and is never sent anywhere.</p>
+            <div class="settings-list">
+              <div class="settings-row">
+                <div><label>Record app usage</label><div class="sub">One reading a minute, about 0.05% of a core</div></div>
+                <label class="toggle"><input type="checkbox" id="usageHistoryToggle" /><span class="toggle-slider"></span></label>
+              </div>
+              <div class="settings-row">
+                <div><label>Keep it for</label><div class="sub">Older minutes are deleted every hour</div></div>
+                <select class="refresh-select" id="usageDays">
+                  <option value="1">24 hours</option>
+                  <option value="7">7 days</option>
+                </select>
+              </div>
+              <div class="settings-row">
+                <div><label>Stored</label><div class="sub" id="usageInfo">…</div></div>
+                <button class="hbtn" id="usageReveal">Show in Finder</button>
+              </div>
+            </div>
+            <div class="settings-list danger-zone">
+              <div class="settings-row">
+                <div><label>Clear app usage</label><div class="sub">Delete every recorded minute now</div></div>
+                <button class="bulk-btn danger" id="clearUsage">Clear</button>
+              </div>
+            </div>
           </section>
         </div>
       </div>

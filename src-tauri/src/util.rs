@@ -97,10 +97,12 @@ pub fn dirname(p: &str) -> &str {
 pub trait Get {
     fn str_of(&self, k: &str) -> &str;
     fn bool_of(&self, k: &str) -> bool;
+    fn f64_of(&self, k: &str) -> f64;
 }
 impl Get for serde_json::Value {
     fn str_of(&self, k: &str) -> &str { self.get(k).and_then(|v| v.as_str()).unwrap_or("") }
     fn bool_of(&self, k: &str) -> bool { self.get(k).and_then(|v| v.as_bool()).unwrap_or(false) }
+    fn f64_of(&self, k: &str) -> f64 { self.get(k).and_then(|v| v.as_f64()).unwrap_or(0.0) }
 }
 
 /// A pid the page sent, as a number or a string of digits

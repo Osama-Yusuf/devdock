@@ -22,6 +22,8 @@ pub struct Proc {
     /// disk bytes read and written per second; 0 for another user's process (not readable)
     pub disk_r: f64,
     pub disk_w: f64,
+    /// bytes read and written since it started, for averages over longer windows (usage history)
+    pub disk_total: Option<(u64, u64)>,
     pub cpu_sec: Option<f64>,
     /// ms since the epoch
     pub started_at: Option<i64>,
@@ -73,7 +75,7 @@ impl Sampler {
                 pid, ppid: p.ppid, uid: p.uid, nfiles: p.nfiles,
                 cpu,
                 mem_mb: crate::util::round1(p.footprint.or(p.rss).map(|b| b as f64 / 1048576.0).unwrap_or(0.0)),
-                rss_mb, disk_r, disk_w,
+                rss_mb, disk_r, disk_w, disk_total: p.disk,
                 cpu_sec: p.cpu_ns.map(|n| n as f64 / 1e9),
                 started_at: p.started.map(|s| s as i64 * 1000),
                 comm: p.comm, name: p.name,

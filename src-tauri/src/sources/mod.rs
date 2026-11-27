@@ -76,7 +76,7 @@ impl Sources {
             _ => Err(ApiErr::gone("Unknown action")),
         };
         // show the effect right away; reading what's using the Mac changes nothing
-        if !(id == "home" && name == "top") { self.poke(id); }
+        if !(id == "home" && matches!(name, "top" | "usage" | "usageInfo")) { self.poke(id); }
         r
     }
 
@@ -106,7 +106,7 @@ impl Sources {
     /// The latest message of every source, for a page that just connected
     pub fn latest(&self) -> Vec<Arc<str>> { self.latest.lock().unwrap().values().map(|(_, m)| m.clone()).collect() }
 
-    async fn poll(&self, c: &Ctx, id: &'static str) {
+    pub(crate) async fn poll(&self, c: &Ctx, id: &'static str) {
         match self.scan(c, id).await {
             Ok(data) => {
                 let sig = data.to_string();

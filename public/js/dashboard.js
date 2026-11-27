@@ -1032,6 +1032,9 @@
       $('groupingDepth').value = String(currentSettings.groupingDepth ?? 1);
       $('showHistoryToggle').checked = currentSettings.showHistory !== false;
       $('showExportToggle').checked = currentSettings.showExport || false;
+      $('usageHistoryToggle').checked = currentSettings.usageHistory !== false;
+      $('usageDays').value = String(currentSettings.usageDays ?? 1);
+      usageInfo();
       $('tabLabels').value = currentSettings.tabLabels || 'both';
       $('idleAfterHours').value = String(currentSettings.idleAfterHours ?? 24);
       $('autoKillIdle').checked = !!currentSettings.autoKillIdle;
@@ -1111,6 +1114,8 @@
         groupingDepth: newDepth,
         showHistory: $('showHistoryToggle').checked,
         showExport: $('showExportToggle').checked,
+        usageHistory: $('usageHistoryToggle').checked,
+        usageDays: parseInt($('usageDays').value),
         tabLabels: $('tabLabels').value,
         idleAfterHours: parseInt($('idleAfterHours').value),
         autoKillIdle: $('autoKillIdle').checked,
@@ -1346,6 +1351,19 @@ $('settingsBtn').addEventListener('click', openSettings);
       const btns = [...$('settingsNav').querySelectorAll('button[data-pane]')];
       const i = btns.findIndex(b => b.classList.contains('active'));
       showPane(btns[(i + (e.key === 'ArrowDown' ? 1 : btns.length - 1)) % btns.length].dataset.pane);
+    });
+
+    // what the usage history holds, in plain words (usage.rs)
+    async function usageInfo() {
+      const i = await sourceAction('home', 'usageInfo');
+      if (!i) return;
+      const size = i.bytes >= 1e6 ? `${(i.bytes / 1e6).toFixed(1)} MB` : `${Math.ceil(i.bytes / 1e3)} KB`;
+      $('usageInfo').textContent = i.bytes ? `${size} since ${new Date(i.since).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })} · ${tildify(i.path)}` : `Nothing yet · ${tildify(i.path)}`;
+    }
+    $('usageReveal').addEventListener('click', () => sourceAction('home', 'usageReveal'));
+    $('clearUsage').addEventListener('click', async () => {
+      if (!await confirmDialog('Delete all recorded app usage?', 'This can\'t be undone. Recording carries on if it\'s on.', 'Delete')) return;
+      if (await sourceAction('home', 'usageClear')) { showToast('App usage deleted'); usageInfo(); }
     });
 
     $('clearHistory').addEventListener('click', async () => {

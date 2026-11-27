@@ -25,6 +25,7 @@ const PINNED_API: f64 = 1.47; // stable /system/df shape; older daemons get thei
 const SOCKETS: [&str; 5] = ["~/.orbstack/run/docker.sock", "~/.docker/run/docker.sock", "/var/run/docker.sock", "~/.colima/default/docker.sock", "~/.rd/docker.sock"];
 const SHELL: &str = "command -v bash >/dev/null 2>&1 && exec bash || exec sh";
 const KEEP_MS: i64 = 15 * 60_000;
+const DF_EVERY_MS: i64 = 60_000;
 
 /// The daemon we talk to: its socket, the API version prefix, and a client bound to the socket
 #[derive(Clone)]
@@ -46,6 +47,7 @@ pub struct Containers {
     inspect: Mutex<HashMap<String, (String, Option<i64>)>>, // id -> (state, when it last ran)
     usage: Mutex<HashMap<String, Vec<Usage>>>,              // running id -> the last 15 min
     raw: Mutex<HashMap<String, Reading>>,                    // id -> previous reading
+    df: Mutex<Option<(i64, Value)>>,                         // when /system/df was read, and what it said
 }
 
 fn err(status: u16, msg: impl Into<String>) -> ApiErr { ApiErr::new(status, msg) }
@@ -85,7 +87,20 @@ pub fn prefix(api_version: &str) -> String {
 /// RFC 3339 from Docker; the zero time means never
 fn docker_time(v: &Value) -> Option<i64> { v.as_str().filter(|s| !s.starts_with("0001-")).and_then(parse_time) }
 
-/// One container from /system/df, as the page gets it (lastUsed and stats come after)
+/// /system/df walks every image layer and volume (36 ms against 4 for the plain list, with 4
+/// images here), so it's read once a minute, or sooner when a container comes or goes
+fn df_stale(df: Option<&(i64, Value)>, list: &[Value], now: i64) -> bool {
+    let ids = |v: &[Value]| v.iter().map(|c| c.str_of("Id").to_string()).collect::<HashSet<_>>();
+    df.is_none_or(|(at, d)| now - at >= DF_EVERY_MS || ids(d["Containers"].as_array().map_or(&[][..], |v| v)) != ids(list))
+}
+
+/// The plain container list has no sizes; /system/df has them
+fn with_sizes(list: &mut [Value], d: &Value) {
+    let sizes: HashMap<&str, &Value> = d["Containers"].as_array().into_iter().flatten().map(|c| (c.str_of("Id"), &c["SizeRw"])).collect();
+    for c in list { if let Some(s) = sizes.get(c.str_of("Id")) { c["SizeRw"] = (*s).clone(); } }
+}
+
+/// One container from the Engine API, as the page gets it (lastUsed and stats come after)
 pub fn container(c: &Value) -> Value {
     let id = c.str_of("Id");
     let labels = &c["Labels"];
@@ -299,12 +314,24 @@ impl Containers {
             return Ok(d);
         }
         let Some(conn) = self.connect().await else { return Ok(json!({ "available": false, "reason": "Docker isn't running" })) };
-        let (status, d) = api(&conn, "GET", "/system/df", 30).await;
-        if status != 200 {
+        let down = |d: &Value| {
             *self.conn.lock().unwrap() = None;
-            return Ok(json!({ "available": false, "reason": d["message"].as_str().unwrap_or("Docker isn't answering") }));
-        }
-        let raw = d["Containers"].as_array().cloned().unwrap_or_default();
+            Ok(json!({ "available": false, "reason": d["message"].as_str().unwrap_or("Docker isn't answering") }))
+        };
+        let (status, list) = api(&conn, "GET", "/containers/json?all=1", 30).await;
+        if status != 200 { return down(&list); }
+        let mut raw = list.as_array().cloned().unwrap_or_default();
+        let cached = self.df.lock().unwrap().clone().filter(|df| !df_stale(Some(df), &raw, now_ms()));
+        let d = match cached {
+            Some((_, d)) => d,
+            None => {
+                let (status, d) = api(&conn, "GET", "/system/df", 30).await;
+                if status != 200 { return down(&d); }
+                *self.df.lock().unwrap() = Some((now_ms(), d.clone()));
+                d
+            }
+        };
+        with_sizes(&mut raw, &d);
         let mut containers: Vec<Value> = raw.iter().map(container).collect();
         let last_runs = futures_util::future::join_all(raw.iter().map(|r| self.last_run(&conn, r))).await;
         for (c, l) in containers.iter_mut().zip(last_runs) { c["lastUsed"] = json!(l); }
@@ -472,7 +499,14 @@ impl Containers {
         Err(err(if status == 409 { 409 } else { 500 }, msg))
     }
 
+    /// Anything an action changes shows up in the next scan, sizes included
     pub async fn action(&self, c: &Ctx, name: &str, p: &Value) -> ApiResult<Value> {
+        let r = self.act(c, name, p).await;
+        *self.df.lock().unwrap() = None;
+        r
+    }
+
+    async fn act(&self, c: &Ctx, name: &str, p: &Value) -> ApiResult<Value> {
         let id = p.str_of("id");
         match name {
             // compose up/down/start/stop for a whole stack; down keeps volumes
@@ -584,6 +618,26 @@ mod tests {
         json!({ "Id": id, "Names": [format!("/{id}")], "Image": "img", "ImageID": "sha256:i1", "State": state, "Status": "Up", "Created": 100,
             "SizeRw": 10, "Labels": labels, "Ports": [{ "PublicPort": 8080 }, { "PublicPort": 8080 }, { "PrivatePort": 1 }, { "PublicPort": 80 }],
             "Mounts": [{ "Type": "volume", "Name": "data" }, { "Type": "bind", "Name": "x" }] })
+    }
+
+    #[test]
+    fn disk_usage_is_reused_until_a_minute_passes_or_containers_change() {
+        let list = vec![df_container("a", "running", json!({})), df_container("b", "exited", json!({}))];
+        let df = (1_000, json!({ "Containers": list.clone() }));
+        assert!(df_stale(None, &list, 1_000), "nothing fetched yet");
+        assert!(!df_stale(Some(&df), &list, 60_999), "within the minute");
+        assert!(df_stale(Some(&df), &list, 61_000), "a minute on");
+        assert!(df_stale(Some(&df), &list[..1], 2_000), "one was removed");
+        let more = [list.clone(), vec![df_container("c", "created", json!({}))]].concat();
+        assert!(df_stale(Some(&df), &more, 2_000), "one was created");
+    }
+
+    #[test]
+    fn sizes_come_from_disk_usage() {
+        let mut list = vec![json!({ "Id": "a" }), json!({ "Id": "new" })];
+        with_sizes(&mut list, &json!({ "Containers": [{ "Id": "a", "SizeRw": 42 }] }));
+        assert_eq!(container(&list[0])["size"], 42);
+        assert_eq!(container(&list[1])["size"], 0);
     }
 
     #[test]

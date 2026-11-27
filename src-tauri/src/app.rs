@@ -212,8 +212,17 @@ fn start(res: std::path::PathBuf) -> &'static crate::state::Ctx {
 /// here: whoever started it gets the key on stdout.
 pub fn serve() {
     let res = std::env::var_os("DEVDOCK_RES").map(Into::into).unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf());
+    let l = crate::server::bind().unwrap_or_else(|e| { eprintln!("DevDock: port {} is taken ({e})", crate::server::port()); std::process::exit(1) });
     println!("DevDock: open http://127.0.0.1:{}/__auth/{}", crate::server::port(), crate::auth::issue());
-    tauri::async_runtime::block_on(async move { start(res); crate::server::serve().await });
+    tauri::async_runtime::block_on(async move { start(res); crate::server::serve(l).await });
+}
+
+/// Another program has DevDock's port (an old DevDock still in the menu bar, say): say so and stop
+fn taken(e: std::io::Error) -> ! {
+    let msg = format!("Port {} is in use ({e}). Quit whatever is using it, maybe an older DevDock in the menu bar, then open DevDock again.", crate::server::port());
+    let _ = std::process::Command::new("/usr/bin/osascript")
+        .args(["-e", "on run argv", "-e", "display alert \"DevDock can't start\" message (item 1 of argv) as critical", "-e", "end run", &msg]).status();
+    std::process::exit(1)
 }
 
 pub fn run() {
@@ -227,11 +236,12 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _, _| show(app)))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            let listener = crate::server::bind().unwrap_or_else(|e| taken(e));
             let h = app.handle().clone();
             start(resources(&h));
             crate::update::start(h.clone());
             crate::state::set_notifier(crate::mac::notify);
-            tauri::async_runtime::spawn(crate::server::serve());
+            tauri::async_runtime::spawn(crate::server::serve(listener));
             app.set_menu(app_menu(&h)?)?;
             app.on_menu_event(|app, e| on_menu(app, e.id().as_ref()));
             tray(&h)?;

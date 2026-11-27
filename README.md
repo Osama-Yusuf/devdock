@@ -88,7 +88,7 @@ Drag across rows to select them. `⇧` or `⌘` while dragging adds or removes r
 
    Or open it, then allow it under System Settings → Privacy & Security → Open Anyway.
 
-Requires macOS on Apple Silicon.
+Requires macOS 13 or later on Apple Silicon.
 
 ## Why
 

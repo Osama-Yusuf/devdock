@@ -92,11 +92,22 @@ pub fn router() -> Router {
         .layer(middleware::from_fn(guard))
 }
 
-pub async fn serve() {
-    let listener = match tokio::net::TcpListener::bind(("127.0.0.1", port())).await {
-        Ok(l) => l,
-        Err(e) => { eprintln!("DevDock: port {} is taken ({e})", port()); return; }
+/// Taken before anything starts, so the window never loads whatever else answers on the port
+/// Retries for 2s: on "Restart to update" the old copy may still be letting go of it
+pub fn bind() -> std::io::Result<std::net::TcpListener> {
+    let mut tries = 0;
+    let l = loop {
+        match std::net::TcpListener::bind(("127.0.0.1", port())) {
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse && tries < 20 => { tries += 1; std::thread::sleep(std::time::Duration::from_millis(100)); }
+            r => break r?,
+        }
     };
+    l.set_nonblocking(true)?;
+    Ok(l)
+}
+
+pub async fn serve(l: std::net::TcpListener) {
+    let Ok(listener) = tokio::net::TcpListener::from_std(l) else { return };
     let _ = axum::serve(listener, router()).await;
 }
 
@@ -382,6 +393,7 @@ async fn socket(ws: WebSocket) {
     let mut revoked = crate::auth::revoked();
     if crate::auth::current().is_none() { return; } // locked between the check and here
     c.hub.connect();
+    if c.hub.clients() == 1 { c.scanner.reprobe(&c.live(), true); } // health went unchecked while nobody looked
     // what's known right now, so the page doesn't wait for a change
     if !c.ports().is_empty() || !c.table().is_empty() { let mut p = c.payload(); p["type"] = json!("ports"); let _ = out.send(p.to_string()); }
     for m in c.sources.latest() { let _ = out.send(m.to_string()); }

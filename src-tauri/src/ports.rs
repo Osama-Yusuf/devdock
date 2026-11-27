@@ -38,7 +38,7 @@ pub struct Scanner {
     health: Mutex<HashMap<u16, String>>,
     probing: Mutex<HashSet<u16>>,
     users: Mutex<HashMap<u32, String>>,
-    history: Mutex<(String, i64)>,
+    history: Mutex<(Vec<String>, i64)>, // the running ports' keys at the last write, and when
 }
 
 /// What the scan produced: every listener, and the confirmed ones the page shows
@@ -136,7 +136,8 @@ impl Scanner {
 
         // the shell pid of each tmux pane -> where it lives
         let mut panes: HashMap<i32, Value> = HashMap::new();
-        if !found.is_empty() {
+        // a spawn per scan otherwise: only when a listener runs inside tmux
+        if found.iter().any(|(pid, _)| under_tmux(*pid, t)) {
             if let Some(tmux) = find_bin("tmux") {
                 let o = run(&tmux, &["list-panes", "-a", "-F", "#{pane_pid}:#{window_index}:#{pane_index}:#{session_name}"], secs(3)).await;
                 for l in o.stdout.lines() {
@@ -279,25 +280,26 @@ impl Scanner {
         });
     }
 
-    /// Drop health for ports that are gone; probe the rest again
-    pub fn reprobe(&self, live: &[u16]) {
+    /// Drop health for ports that are gone; probe the rest again when someone's looking
+    pub fn reprobe(&self, live: &[u16], looking: bool) {
         self.health.lock().unwrap().retain(|p, _| live.contains(p));
-        for &p in live { self.probe(p); }
+        if looking { for &p in live { self.probe(p); } }
     }
 
     /// History lives in the settings file; written when the set of running ports changes,
-    /// and otherwise at most every 30s to refresh lastSeen
+    /// and otherwise every 5 minutes to refresh lastSeen
     fn record_history(&self, ports: &[Value], settings: &Settings, now: i64) {
         let key = |p: &Value| format!("{}:{}", p["port"], p["scriptPath"].as_str().map(String::from).unwrap_or_else(|| "null".into()));
         let mut keys: Vec<String> = ports.iter().map(key).collect();
         keys.sort();
-        let keys = keys.join(",");
         let mut h = self.history.lock().unwrap();
-        if keys == h.0 && now - h.1 < 30000 { return; }
-        *h = (keys, now);
+        if keys == h.0 && now - h.1 < 300_000 { return; }
+        let before = std::mem::replace(&mut *h, (keys, now)).0;
         let seen = iso(now);
         settings.update(|s| {
             let mut map: Vec<(String, Value)> = s["history"].as_array().cloned().unwrap_or_default().into_iter().map(|e| (key(&e), e)).collect();
+            // ports that stopped since the last write were last seen now, not then
+            for (k, e) in map.iter_mut() { if before.contains(k) && !h.0.contains(k) { e["lastSeen"] = json!(seen); } }
             for p in ports {
                 let e = json!({ "port": p["port"], "command": p["command"], "user": p["user"], "runtime": p["runtime"],
                     "runtimeName": p["runtimeName"], "runtimeColor": p["runtimeColor"], "runtimeIcon": p["runtimeIcon"],
@@ -311,6 +313,18 @@ impl Scanner {
             s["history"] = json!(list);
         });
     }
+}
+
+/// A tmux server among its ancestors
+fn under_tmux(pid: i32, t: &Table) -> bool {
+    let mut cur = pid;
+    for _ in 0..40 {
+        let Some(p) = t.get(&cur) else { return false };
+        if p.name == "tmux" || p.comm.rsplit('/').next() == Some("tmux") { return true; }
+        if p.ppid <= 1 { return false; }
+        cur = p.ppid;
+    }
+    false
 }
 
 /// GET http://localhost:<port>/: healthy under 500, unhealthy at 500+, unreachable, unknown on timeout
@@ -372,5 +386,46 @@ mod tests {
         assert_eq!(find_launcher(8, &t), Some(("agent", "Claude Code".into(), 7)));
         assert_eq!(find_launcher(9, &t), Some(("app", "Ghostty".into(), 5)));
         assert_eq!(find_launcher(5, &t), None);
+    }
+
+    #[test]
+    fn tmux_only_when_a_listener_is_inside_it() {
+        let mut t = Table::new();
+        for (pid, ppid, comm) in [(1, 0, "/sbin/launchd"), (5, 1, "/Applications/Ghostty.app/Contents/MacOS/ghostty"), (6, 5, "-zsh"), (9, 6, "node"),
+                                  (10, 1, "/opt/homebrew/bin/tmux"), (11, 10, "-zsh"), (12, 11, "node")] {
+            t.insert(pid, Proc { pid, ppid, comm: comm.into(), ..Default::default() });
+        }
+        assert!(under_tmux(12, &t));
+        assert!(!under_tmux(9, &t));
+        assert!(!under_tmux(99, &t), "gone");
+    }
+
+    #[test]
+    fn health_is_dropped_for_gone_ports_without_probing() {
+        let s = Scanner::default();
+        s.health.lock().unwrap().extend([(3000, "healthy".to_string()), (3001, "healthy".to_string())]);
+        s.reprobe(&[3000], false); // no probe: probing needs the app's state, which a test doesn't have
+        assert_eq!(s.health().keys().collect::<Vec<_>>(), vec![&3000]);
+        assert!(s.probing.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn history_marks_a_stopped_port_as_seen_when_it_stopped() {
+        let f = std::env::temp_dir().join(format!("dd-history-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&f);
+        let settings = Settings::load(f.clone());
+        let s = Scanner::default();
+        let p = |port: u16| json!({ "port": port, "scriptPath": format!("/a,b/{port}") }); // a comma in the path
+        let seen = |port: u64| settings.get()["history"].as_array().unwrap().iter().find(|e| e["port"] == port).unwrap()["lastSeen"].clone();
+        s.record_history(&[p(3000), p(3001)], &settings, 0);
+        s.record_history(&[p(3000), p(3001)], &settings, 60_000);
+        assert_eq!(seen(3000), json!(iso(0)), "unchanged: no rewrite within 5 min");
+        s.record_history(&[p(3000)], &settings, 120_000);
+        assert_eq!(seen(3000), json!(iso(120_000)));
+        assert_eq!(seen(3001), json!(iso(120_000)), "stopped just now, not at the last write");
+        s.record_history(&[p(3000)], &settings, 500_000);
+        assert_eq!(seen(3000), json!(iso(500_000)), "refreshed after 5 min");
+        assert_eq!(seen(3001), json!(iso(120_000)), "gone stays put");
+        let _ = std::fs::remove_file(&f);
     }
 }

@@ -7,7 +7,8 @@
   const METRIC = {
     cpu: { label: 'CPU', of: g => g.cpu, show: v => `${v >= 10 ? Math.round(v) : v.toFixed(1)}%`, color: 'var(--accent)' },
     mem: { label: 'Memory', of: g => g.mem, show: v => formatMem(v), color: 'var(--accent)' },
-    disk: { label: 'Disk', of: g => g.diskR + g.diskW, show: v => rate(v), color: 'var(--yellow)' },
+    disk: { label: 'Disk', of: g => g.diskR + g.diskW, show: v => rate(v), color: 'var(--yellow)', io: ['diskR', 'diskW', 'read', 'written'] },
+    net: { label: 'Network', of: g => g.rx + g.tx, show: v => rate(v), color: 'var(--green)', io: ['rx', 'tx', 'received', 'sent'] },
   };
   const svg = d => `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
   const GLYPH = {
@@ -115,13 +116,15 @@
     const cpu = data?.total ? data.total.cpu / (v.cores || 1) : mc.cpu;
     if (open === 'cpu') return cpu == null ? '' : `<b>${Math.round(cpu)}%</b> of ${v.cores} cores busy`;
     if (open === 'mem') return mc.mem == null ? '' : `<b>${formatMem(mc.mem)}</b> of ${formatMem(v.totalMem || 0)} in use`;
-    const { diskR: r = 0, diskW: w = 0 } = data?.total || {}; // every process, not just the groups listed
-    return `<b>${rate(r + w)}</b> · read ${rate(r)} · write ${rate(w)}`;
+    // every process, not just the groups listed
+    const [a, b] = METRIC[open].io, r = data?.total?.[a] || 0, w = data?.total?.[b] || 0;
+    return open === 'net' ? `<b>↓ ${rate(r)}</b> · <b>↑ ${rate(w)}</b>` : `<b>${rate(r + w)}</b> · read ${rate(r)} · write ${rate(w)}`;
   }
   const NOTE = {
     cpu: '% of one core, like Activity Monitor. Grouped by what started it: a dev server or agent owns everything it launched.',
     mem: 'Memory like Activity Monitor. macOS processes show resident memory: macOS doesn\'t share their exact footprint.',
     disk: 'Reads and writes by your processes. macOS doesn\'t share other users\' disk use, so its own services aren\'t listed.',
+    net: 'Traffic on every interface but loopback, so not DevDock talking to your dev servers. From macOS\'s nettop, which runs only while this is open.',
   };
 
   function render() {
@@ -153,7 +156,7 @@
           </button>
           <span class="tp-bar"><i style="width:${was}%" data-w="${w}"></i></span>
           <span class="tp-spark">${sparkline(hist[g.key], { color: m.color, w: 72, h: 22 })}</span>
-          <span class="tp-val">${open === 'disk' ? `<span title="read">↓ ${rate(g.diskR)}</span> <span title="written">↑ ${rate(g.diskW)}</span>` : m.show(v)}</span>
+          <span class="tp-val">${m.io ? `<span title="${m.io[2]}">↓ ${rate(g[m.io[0]])}</span> <span title="${m.io[3]}">↑ ${rate(g[m.io[1]])}</span>` : m.show(v)}</span>
           ${menu(g)}
         </div>${isOpen && g.kind !== 'rest' ? procs(g) : ''}`;
       }).join('')}</div>

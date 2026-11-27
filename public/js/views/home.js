@@ -166,21 +166,10 @@
   function netTile(n) {
     if (!n) return '<div class="hvital"><label>Network</label><div class="hv">—</div></div>';
     const ips = [n.lan && `LAN ${n.lan}`, n.tailscale && `Tailscale ${n.tailscale}`].filter(Boolean).join(' · ');
-    return `<div class="hvital hnet"><label>Network · ${esc(n.iface)}</label>
+    return `<div class="hvital hnet" ${tile('net')} title="Click for who's using it"><label>Network · ${esc(n.iface)}</label>
       <div class="hv"><span class="down">↓ ${rate(n.rx)}</span><small> ↑ ${rate(n.tx)}</small></div>
-      <div class="hnet-foot"><span class="trunc" title="${esc(ips)}">${esc(ips)}</span><button class="link-btn" onclick="DevDockViews.home.talkers()">Who's using it</button></div>
+      <div class="hnet-foot"><span class="trunc" title="${esc(ips)}">${esc(ips)}</span></div>
       ${sparkline(n.rxSpark, { color: 'var(--green)', w: 120, h: 26 })}</div>`;
-  }
-  // One nettop sample, on demand (see sources/home.js talkers)
-  let talk = null, talkBusy = false;
-  function talkersHTML() {
-    if (!talk && !talkBusy) return '';
-    if (!talk) return '<section class="htalk"><header><h3>Who\'s using the network</h3><span>Measuring for a second…</span></header></section>';
-    const max = Math.max(1, ...talk.apps.map(a => a.rx + a.tx));
-    return `<section class="htalk"><header><h3>Who's using the network</h3><span>right now · ${talkBusy ? 'measuring…' : `<button class="link-btn" onclick="DevDockViews.home.talkers()">measure again</button>`} · <button class="link-btn" onclick="DevDockViews.home.talkers(false)">close</button></span></header>
-      ${talk.apps.length ? `<ul>${talk.apps.map(a => `<li><b class="trunc" title="PID ${esc(a.pids.join(', '))}">${esc(a.name)}</b>
-        <span class="hbar"><i class="rx" style="width:${(a.rx / max * 100).toFixed(1)}%"></i><i class="tx" style="width:${(a.tx / max * 100).toFixed(1)}%"></i></span>
-        <em><span class="down">↓ ${rate(a.rx)}</span> ↑ ${rate(a.tx)}</em></li>`).join('')}</ul>` : '<p class="hcap">Nothing is using the network right now.</p>'}</section>`;
   }
 
   function hero(items) {
@@ -231,7 +220,6 @@
     view.innerHTML = `<div class="home">
       ${hero(all)}
       <div id="hpanelSlot"></div>
-      ${talkersHTML()}
       ${SECTIONS.map(([sev, title, hint]) => {
         const list = items.filter(it => it.severity === sev);
         return list.length ? `<section class="hsec sev-${sev}"><header><h3>${title}</h3><span>${hint}</span></header>
@@ -279,12 +267,6 @@
 
   DevDockViews.home = {
     render, snooze, stop,
-    async talkers(open = true) {
-      if (!open) { talk = null; return render(); }
-      talkBusy = true; render();
-      const r = await sourceAction('home', 'talkers');
-      talkBusy = false; if (r) talk = r; render();
-    },
     unsnooze() { snoozed = {}; try { localStorage.removeItem('devdock:home-snooze'); } catch {} render(); badge(); },
     async stopContainer(id, name) {
       if (!await confirmDialog(`Stop container ${name}?`, 'It stays on disk; start it again from Containers.', 'Stop')) return;

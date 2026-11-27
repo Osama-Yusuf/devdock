@@ -1588,21 +1588,9 @@
     .hrow-actions { display: flex; gap: 6px; margin-left: auto; }
     .hfoot { margin-top: 18px; text-align: center; font-size: .78rem; color: var(--text-dim); }
     @media (max-width: 900px) { .hvitals { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hgrid { grid-template-columns: 1fr; } }
-    .hnet .hv .down, .htalk .down { color: var(--green); }
+    .hnet .hv .down { color: var(--green); }
     .hnet-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: .72rem; color: var(--text-dim); position: relative; z-index: 1; }
-    .hnet-foot .link-btn { font-size: .72rem; white-space: nowrap; }
-    .htalk { margin-top: 12px; padding: 14px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card); }
-    .htalk header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
-    .htalk h3 { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); font-weight: 650; }
-    .htalk header span { font-size: .74rem; color: var(--text-dim); }
-    .htalk ul { list-style: none; padding: 0; display: grid; gap: 7px; }
-    .htalk li { display: grid; grid-template-columns: 170px 1fr 170px; align-items: center; gap: 12px; font-size: .82rem; }
-    .htalk li b { font-weight: 600; color: var(--text); }
-    .htalk li em { font-style: normal; text-align: right; color: var(--text-dim); font-variant-numeric: tabular-nums; font-size: .76rem; }
     .hbar { display: flex; height: 6px; border-radius: 6px; background: var(--border-row); overflow: hidden; }
-    .hbar .rx { background: var(--green); }
-    .hbar .tx { background: var(--accent); }
-    .hnet-foot .link-btn, .htalk .link-btn { color: var(--accent); }
     .unet .zero { opacity: .4; }
 
     /* ── Machines ── */
@@ -2075,6 +2063,7 @@
     .tp-empty { padding: 18px 4px; font-size: .82rem; color: var(--text-dim); }
     .tp-all { margin: 6px 4px 0; font-size: .76rem; color: var(--accent); }
     .tp-note { margin: 8px 4px 0; font-size: .7rem; color: var(--text-dim); }
-    .hpanel.by-disk { --tp-val: 184px; }
+    .hpanel.by-disk, .hpanel.by-net { --tp-val: 184px; }
+    .hpanel.by-net .tp-bar i { background: var(--green); }
     @media (max-width: 900px) { .tp-row { grid-template-columns: minmax(0, 1fr) 60px var(--tp-val, 110px) 28px; } .tp-spark { display: none; } }
     @media (prefers-reduced-motion: reduce) { .hpanel, .tp-procs { animation: none; } .tp-bar i { transition: none; } }

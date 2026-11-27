@@ -1,7 +1,6 @@
 //! Home tab: only what needs attention right now. Every rule waits for a condition to hold
 //! for a while (a build pinning the CPU for 20s is normal), and every item has a fix next to it.
 //! Reads the other sources' latest scans; keeps 15 minutes of CPU and memory per process.
-use crate::detect::{agent_of, app_from_path};
 use crate::state::Ctx;
 use crate::sys::{self, CpuTicks};
 use crate::table::Table;
@@ -316,36 +315,6 @@ async fn default_iface() -> Option<String> {
     out.lines().find_map(|l| l.trim().strip_prefix("interface:")).map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
-/// Which processes use the network, from one nettop sample. The second block is the 1 s delta.
-/// Grouped by app, so Chrome's helpers count as Chrome.
-pub fn talkers_from(out: &str, procs: &Table, now: i64) -> Value {
-    let mut headers = 0;
-    let mut apps: Vec<(String, f64, f64, Vec<String>)> = vec![];
-    for line in out.split('\n') {
-        if line == ",bytes_in,bytes_out," { headers += 1; continue; }
-        if headers != 2 { continue; }
-        // "<name>.<pid>,<in>,<out>," : the name may hold dots, the pid is after the last one
-        let Some(body) = line.strip_suffix(',') else { continue };
-        let f: Vec<&str> = body.rsplitn(3, ',').collect();
-        if f.len() != 3 { continue; }
-        let (tx, rx, who) = (f[0], f[1], f[2]);
-        let Some((name, pid)) = who.rsplit_once('.') else { continue };
-        let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
-        if !digits(pid) || !digits(rx) || !digits(tx) { continue; }
-        let (rx, tx): (f64, f64) = (rx.parse().unwrap(), tx.parse().unwrap());
-        if rx + tx == 0.0 { continue; }
-        let comm = pid.parse::<i32>().ok().and_then(|p| procs.get(&p)).map(|p| p.comm.as_str()).unwrap_or("");
-        let label = app_from_path(comm).map(String::from).or_else(|| agent_of(comm).map(String::from))
-            .or_else(|| Some(basename(comm).to_string()).filter(|b| !b.is_empty())).unwrap_or_else(|| name.to_string());
-        match apps.iter_mut().find(|a| a.0 == label) {
-            Some(a) => { a.1 += rx; a.2 += tx; a.3.push(pid.into()); }
-            None => apps.push((label, rx, tx, vec![pid.into()])),
-        }
-    }
-    apps.sort_by(|x, y| (y.1 + y.2).total_cmp(&(x.1 + x.2)));
-    json!({ "at": now, "apps": apps.into_iter().take(8).map(|(name, rx, tx, pids)| json!({ "name": name, "rx": rx, "tx": tx, "pids": pids })).collect::<Vec<_>>() })
-}
-
 impl Home {
     pub async fn scan(&self, c: &Ctx) -> ApiResult<Value> {
         if c.demo { return Ok(crate::demo::get("home")); }
@@ -412,17 +381,11 @@ impl Home {
 
     pub async fn action(&self, c: &Ctx, name: &str, p: &Value) -> ApiResult<Value> {
         match name {
-            // what's using the CPU, memory or disk, for the panels under Home's vitals
-            "top" => return Ok(self.top.scan(c, match p.str_of("by") { b @ ("mem" | "disk") => b, _ => "cpu" }).await),
-            "kill" | "reveal" => return Self::process(c, name, p).await,
-            "talkers" => {}
-            _ => return Err(crate::sources::unknown()),
+            // what's using the CPU, memory, disk or network, for the panels under Home's vitals
+            "top" => Ok(self.top.scan(c, match p.str_of("by") { b @ ("mem" | "disk" | "net") => b, _ => "cpu" }).await),
+            "kill" | "reveal" => Self::process(c, name, p).await,
+            _ => Err(crate::sources::unknown()),
         }
-        // On demand only: nettop costs about a CPU second per sample.
-        // External interfaces only: localhost traffic (DevDock talking to your dev servers) isn't network use.
-        if c.demo { return Ok(crate::demo::get("talkers")); }
-        let out = run("/usr/bin/nettop", &["-P", "-L", "2", "-d", "-s", "1", "-x", "-t", "external", "-J", "bytes_in,bytes_out"], Duration::from_secs(8)).await.stdout;
-        Ok(talkers_from(&out, &c.table(), now_ms()))
     }
 }
 
@@ -514,21 +477,6 @@ mod tests {
         assert_eq!(f.items[0]["value"], 5);
         assert_eq!(f.items[1]["value"], 4);
         assert!(f.items[0]["subject"].get("pod").is_none());
-    }
-
-    #[test]
-    fn nettop_talkers_group_by_app() {
-        let out = ",bytes_in,bytes_out,\nmDNSResponder.495,9999,9999,\n,bytes_in,bytes_out,\nGoogle Chrome H.3101,100,5,\nGoogle Chrome H.3102,50,0,\n2.1.322.5428,7,3,\nidle.9,0,0,\n";
-        let mut procs = Table::new();
-        let p = |pid, comm: &str| crate::table::Proc { pid, comm: comm.into(), ..Default::default() };
-        procs.insert(3101, p(3101, "/Applications/Google Chrome.app/Contents/Frameworks/x/Google Chrome Helper"));
-        procs.insert(3102, p(3102, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"));
-        procs.insert(5428, p(5428, "/Users/me/.local/share/claude/versions/2.1.322"));
-        let v = talkers_from(out, &procs, 5);
-        assert_eq!(v, json!({ "at": 5, "apps": [
-            { "name": "Google Chrome", "rx": 150.0, "tx": 5.0, "pids": ["3101", "3102"] },
-            { "name": "Claude Code", "rx": 7.0, "tx": 3.0, "pids": ["5428"] },
-        ] }));
     }
 
     #[test]

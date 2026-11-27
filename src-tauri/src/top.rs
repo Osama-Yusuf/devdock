@@ -14,19 +14,28 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 type Ps = HashMap<i32, (u32, f64, f64, String)>;
+type Bytes = HashMap<i32, (u64, u64)>;
+type Rates = HashMap<i32, (f64, f64)>;
 
 /// The last ps reading and the Mac's CPU ticks with it, so each refresh needs one spawn, not two
 #[derive(Default)]
-pub struct Top { last: Mutex<Option<(Instant, Ps, Option<CpuTicks>)>> }
+pub struct Top { last: Mutex<Vec<(Instant, Ps, Option<CpuTicks>)>>, net: Net }
 
 impl Top {
     pub async fn scan(&self, c: &crate::state::Ctx, by: &str) -> Value {
         let me = unsafe { libc::getuid() };
         let mut rows = mine(&c.table(), me, &HashMap::new());
+        if by == "net" && !c.demo { self.net.start(); } // its first rates take two samples: start before ps's warm-up
         if !c.demo {
             let read = || async { parse_ps(&crate::util::run("/bin/ps", &["-A", "-o", "pid=,uid=,time=,rss=,comm="], crate::util::secs(5)).await.stdout) };
             // a rate needs two readings: the one from the last refresh, or one taken just now
-            let prev = self.last.lock().unwrap().take().filter(|(at, _, _)| at.elapsed() < Duration::from_secs(10));
+            // the newest reading at least a second old: two pages polling a moment apart would
+            // otherwise measure over a sliver, where ps's 10 ms CPU ticks are a big share
+            let prev = {
+                let last = self.last.lock().unwrap();
+                last.iter().rev().find(|r| r.0.elapsed() >= MIN_WINDOW).or(last.last()).filter(|r| r.0.elapsed() < Duration::from_secs(10)).cloned()
+            };
+            if let Some(young) = prev.as_ref().and_then(|r| MIN_WINDOW.checked_sub(r.0.elapsed())) { tokio::time::sleep(young).await; }
             let (at, before, t0) = match prev {
                 Some(p) => p,
                 None => { let p = read().await; let r = (Instant::now(), p, sys::cpu_ticks()); tokio::time::sleep(Duration::from_millis(700)).await; r }
@@ -37,7 +46,11 @@ impl Top {
             rows.extend(others(&now, &rates, me));
             let total = t0.zip(t1).and_then(|(a, b)| sys::cpu_percent(a, b)).map(|p| p * sys::cores() as f64);
             rows.extend(total.and_then(|t| kernel(t, &rows)));
-            *self.last.lock().unwrap() = Some((Instant::now(), now, t1));
+            { let mut last = self.last.lock().unwrap(); last.push((Instant::now(), now, t1)); let n = last.len(); last.drain(..n.saturating_sub(3)); }
+            if by == "net" {
+                let rates = self.net.rates().await;
+                for r in &mut rows { if let Some(&(rx, tx)) = rates.get(&r.pid) { (r.rx, r.tx) = (rx, tx); } }
+            }
         }
         let s = &c.sources;
         let mut groups = group(&rows, &c.ports(), &s.coding.last(), &s.apps.last(), by);
@@ -45,13 +58,13 @@ impl Top {
         groups.truncate(40);
         let sum = |f: fn(&Row) -> f64| round1(rows.iter().map(f).sum());
         json!({ "by": by, "groups": groups, "count": count,
-            "total": { "cpu": sum(|r| r.cpu), "mem": sum(|r| r.mem), "diskR": sum(|r| r.dr), "diskW": sum(|r| r.dw) } })
+            "total": { "cpu": sum(|r| r.cpu), "mem": sum(|r| r.mem), "diskR": sum(|r| r.dr), "diskW": sum(|r| r.dw), "rx": sum(|r| r.rx), "tx": sum(|r| r.tx) } })
     }
 }
 
 /// One process, whoever owns it
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct Row { pub pid: i32, pub ppid: i32, pub mine: bool, pub name: String, pub path: String, pub cpu: f64, pub mem: f64, pub dr: f64, pub dw: f64, pub started: Option<i64> }
+pub struct Row { pub pid: i32, pub ppid: i32, pub mine: bool, pub name: String, pub path: String, pub cpu: f64, pub mem: f64, pub dr: f64, pub dw: f64, pub rx: f64, pub tx: f64, pub started: Option<i64> }
 
 /// "8188:32.45" (minutes:seconds, as macOS ps prints TIME) in seconds
 pub fn cpu_time(s: &str) -> Option<f64> {
@@ -86,7 +99,7 @@ pub fn others(cur: &Ps, rates: &HashMap<i32, f64>, me: u32) -> Vec<Row> {
 pub fn mine(t: &Table, me: u32, rates: &HashMap<i32, f64>) -> Vec<Row> {
     t.values().filter(|p| p.uid == me).map(|p| Row {
         pid: p.pid, ppid: p.ppid, mine: true, name: basename(&p.comm).to_string(), path: p.comm.clone(),
-        cpu: rates.get(&p.pid).copied().unwrap_or(p.cpu), mem: p.mem_mb, dr: p.disk_r, dw: p.disk_w, started: p.started_at,
+        cpu: rates.get(&p.pid).copied().unwrap_or(p.cpu), mem: p.mem_mb, dr: p.disk_r, dw: p.disk_w, rx: 0.0, tx: 0.0, started: p.started_at,
     }).collect()
 }
 
@@ -94,6 +107,107 @@ pub fn mine(t: &Table, me: u32, rates: &HashMap<i32, f64>) -> Vec<Row> {
 pub fn kernel(total: f64, rows: &[Row]) -> Option<Row> {
     let left = round1(total - rows.iter().map(|r| r.cpu).sum::<f64>());
     (left >= 1.0).then(|| Row { pid: 0, name: "Kernel and short-lived processes".into(), cpu: left, ..Default::default() })
+}
+
+/// One nettop sample, "<name>.<pid>,<bytes in>,<bytes out>," per process: totals since nettop
+/// began watching it, closed connections included. The name may hold dots; the pid is after the last.
+pub fn sample<S: AsRef<str>>(lines: &[S]) -> Bytes {
+    lines.iter().filter_map(|l| {
+        let body = l.as_ref().trim_end().strip_suffix(',')?;
+        let mut f = body.rsplitn(3, ',');
+        let (tx, rx, who) = (f.next()?.parse().ok()?, f.next()?.parse().ok()?, f.next()?);
+        Some((who.rsplit_once('.')?.1.parse().ok()?, (rx, tx)))
+    }).collect()
+}
+
+/// Bytes a second in and out. nettop lists every process with a socket, idle ones too, so one
+/// missing from the last sample opened its first socket since: all its bytes are new.
+pub fn net_rates(prev: &Bytes, cur: &Bytes, secs: f64) -> Rates {
+    if secs <= 0.0 { return Rates::new(); }
+    cur.iter().filter_map(|(pid, &(rx, tx))| {
+        let (prx, ptx) = prev.get(pid).copied().unwrap_or((0, 0));
+        (rx >= prx && tx >= ptx).then(|| (*pid, (((rx - prx) as f64 / secs).round(), ((tx - ptx) as f64 / secs).round())))
+    }).collect()
+}
+
+/// nettop, running while someone looks at the Network panel: per-process traffic on every interface
+/// but loopback, a sample a second. Through a pty, as into a pipe it holds samples back for seconds.
+/// Without delta mode (-d costs a whole core here, this about 1%): rates come from its totals.
+/// It stops 10 s after the panel last asked.
+#[derive(Default)]
+pub struct Net { st: std::sync::Arc<Mutex<NetState>> }
+
+#[derive(Default)]
+struct NetState { running: bool, asked: Option<Instant>, rates: Rates, at: Option<Instant>, failed: Option<Instant> }
+
+const MIN_WINDOW: Duration = Duration::from_secs(1);
+const NET_IDLE: Duration = Duration::from_secs(10);
+
+impl Net {
+    /// Starts nettop if it isn't running, unless it failed in the last 30 s
+    pub fn start(&self) {
+        let mut st = self.st.lock().unwrap();
+        st.asked = Some(Instant::now());
+        if st.running || st.failed.is_some_and(|f| f.elapsed() < Duration::from_secs(30)) { return; }
+        st.running = true;
+        let st = self.st.clone();
+        std::thread::spawn(move || {
+            let r = watch(&st);
+            let mut s = st.lock().unwrap();
+            // ending before it measured anything is a failure: don't respawn it every poll
+            if r.is_err() || s.at.is_none() { eprintln!("nettop: {}", r.err().map_or("ended early".into(), |e| e.to_string())); s.failed = Some(Instant::now()); }
+            (s.running, s.at) = (false, None);
+            s.rates.clear();
+        });
+    }
+
+    /// The latest rates; the first ones take two samples
+    pub async fn rates(&self) -> Rates {
+        self.start();
+        for _ in 0..30 {
+            if self.st.lock().unwrap().failed.is_some_and(|f| f.elapsed() < Duration::from_secs(30)) { break; }
+            if let Some(r) = { let st = self.st.lock().unwrap(); st.at.map(|_| st.rates.clone()) } { return r; }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        Rates::new()
+    }
+}
+
+fn watch(st: &Mutex<NetState>) -> Result<(), Box<dyn std::error::Error>> {
+    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+    let pair = native_pty_system().openpty(PtySize { rows: 24, cols: 512, ..Default::default() })?;
+    let mut cmd = CommandBuilder::new("/usr/bin/nettop");
+    cmd.args(["-P", "-L", "0", "-s", "1", "-x", "-t", "external", "-J", "bytes_in,bytes_out"]);
+    let mut child = pair.slave.spawn_command(cmd)?;
+    drop(pair.slave);
+    let r = pair.master.try_clone_reader().map_err(Into::into).and_then(|r| read(st, std::io::BufReader::new(r)));
+    // always reaped, whatever ended the reading
+    let _ = child.kill();
+    let _ = child.wait();
+    r
+}
+
+fn read(st: &Mutex<NetState>, mut out: impl std::io::BufRead) -> Result<(), Box<dyn std::error::Error>> {
+    // a header starts each sample, so a sample is whole when the next header comes
+    let (mut block, mut began, mut prev): (Vec<String>, Option<Instant>, Option<(Instant, Bytes)>) = (vec![], None, None);
+    let mut buf = vec![];
+    loop {
+        buf.clear();
+        if out.read_until(b'\n', &mut buf)? == 0 { return Ok(()); }
+        // names are cut at 15 bytes, which can split a character
+        let line = String::from_utf8_lossy(&buf).into_owned();
+        if line.trim_end() != ",bytes_in,bytes_out," { block.push(line); continue; }
+        if let Some(at) = began {
+            let cur = sample(&block);
+            let mut s = st.lock().unwrap();
+            if let Some((pat, p)) = &prev { s.rates = net_rates(p, &cur, at.duration_since(*pat).as_secs_f64()); s.at = Some(at); }
+            if s.asked.is_none_or(|a| a.elapsed() > NET_IDLE) { return Ok(()); }
+            drop(s);
+            prev = Some((at, cur));
+        }
+        block.clear();
+        began = Some(Instant::now());
+    }
 }
 
 fn pid(v: &Value) -> Option<i32> { v.as_str().and_then(|s| s.parse().ok()).or_else(|| v.as_i64().map(|n| n as i32)) }
@@ -147,18 +261,19 @@ pub fn group(rows: &[Row], ports: &[Value], agents: &[Value], apps: &[Value], by
         out.push((json!({ "key": format!("{}:{name}", &kind[..1]), "kind": kind, "pid": pids[0].to_string(), "name": name, "path": path }), pids));
     }
 
-    let val = |r: &Row| match by { "mem" => r.mem, "disk" => r.dr + r.dw, _ => r.cpu };
+    let val = |r: &Row| match by { "mem" => r.mem, "disk" => r.dr + r.dw, "net" => r.rx + r.tx, _ => r.cpu };
     let mut groups: Vec<(f64, Value)> = out.into_iter().map(|(mut g, mut pids)| {
         let rs: Vec<&Row> = pids.iter().map(|p| by_pid[p]).collect();
         let sum = |f: fn(&Row) -> f64| round1(rs.iter().map(|r| f(r)).sum());
         pids.sort_by(|a, b| val(by_pid[b]).total_cmp(&val(by_pid[a])));
         g["cpu"] = json!(sum(|r| r.cpu)); g["mem"] = json!(sum(|r| r.mem));
         g["diskR"] = json!(sum(|r| r.dr)); g["diskW"] = json!(sum(|r| r.dw));
+        g["rx"] = json!(sum(|r| r.rx)); g["tx"] = json!(sum(|r| r.tx));
         g["count"] = json!(pids.len());
         g["pids"] = json!(pids.iter().map(|p| p.to_string()).collect::<Vec<_>>());
         g["starts"] = json!(pids.iter().map(|p| by_pid[p].started).collect::<Vec<_>>()); // so a kill can't hit a reused pid
         g["procs"] = json!(pids.iter().take(8).map(|p| { let r = by_pid[p];
-            json!({ "pid": r.pid.to_string(), "started": r.started, "name": r.name, "mine": r.mine, "cpu": r.cpu, "mem": r.mem, "diskR": r.dr, "diskW": r.dw }) }).collect::<Vec<_>>());
+            json!({ "pid": r.pid.to_string(), "started": r.started, "name": r.name, "mine": r.mine, "cpu": r.cpu, "mem": r.mem, "diskR": r.dr, "diskW": r.dw, "rx": r.rx, "tx": r.tx }) }).collect::<Vec<_>>());
         (rs.iter().map(|r| val(r)).sum(), g)
     }).filter(|(v, _)| *v > 0.0).collect();
     groups.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.str_of("key").cmp(b.1.str_of("key"))));
@@ -203,6 +318,29 @@ mod tests {
         let rows = [o, m].concat();
         assert_eq!(kernel(120.0, &rows).map(|k| (k.pid, k.cpu)), Some((0, 16.0)));
         assert_eq!(kernel(104.5, &rows), None, "under one percent is noise");
+    }
+
+    #[test]
+    fn nettop_lines_and_rates() {
+        let a = sample(&["apsd.385,9012,18311,", "2.1.322.5428,100,50,", "junk", "x.y,1,2,", "Google Chrome H.7,0,0,"]);
+        assert_eq!(a, HashMap::from([(385, (9012, 18311)), (5428, (100, 50)), (7, (0, 0))]), "the name may hold dots and spaces; the pid follows the last dot");
+        let b = sample(&["apsd.385,11012,18311,", "2.1.322.5428,40,50,", "new.9,500,0,"]);
+        let r = net_rates(&a, &b, 2.0);
+        assert_eq!(r.get(&385), Some(&(1000.0, 0.0)));
+        assert_eq!(r.get(&5428), None, "a counter that went back is a reused pid: wait for the next sample");
+        assert_eq!(r.get(&9), Some(&(250.0, 0.0)), "new since the last sample: all its bytes are new");
+        assert_eq!(r.get(&7), None, "gone from this sample");
+    }
+
+    #[test]
+    fn a_name_cut_mid_character_doesnt_stop_the_reading() {
+        let st = Mutex::new(NetState { asked: Some(Instant::now()), ..Default::default() });
+        let mut out = b",bytes_in,bytes_out,\r\nCaf\xc3.7,5,6,\r\n".to_vec();
+        out.extend_from_slice(b",bytes_in,bytes_out,\r\nCaf\xc3.7,5,6,\r\n,bytes_in,bytes_out,\r\n");
+        read(&st, &out[..]).unwrap();
+        let s = st.lock().unwrap();
+        assert!(s.at.is_some(), "two whole samples make rates");
+        assert_eq!(s.rates.get(&7), Some(&(0.0, 0.0)));
     }
 
     #[test]

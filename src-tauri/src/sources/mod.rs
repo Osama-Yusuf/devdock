@@ -76,7 +76,7 @@ impl Sources {
             _ => Err(ApiErr::gone("Unknown action")),
         };
         // show the effect right away; reading what's using the Mac changes nothing
-        if !(id == "home" && matches!(name, "top" | "talkers")) { self.poke(id); }
+        if !(id == "home" && name == "top") { self.poke(id); }
         r
     }
 

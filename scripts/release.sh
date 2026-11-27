@@ -13,10 +13,11 @@
 # ad-hoc signing ties them to one build. Local Network may still ask again after an update: macOS
 # tracks that one per build (unverified). DEVDOCK_ADHOC=1 builds unsigned on purpose. With a Developer ID,
 # set APPLE_API_KEY, APPLE_API_ISSUER and APPLE_API_KEY_PATH (or APPLE_ID, APPLE_PASSWORD and
-# APPLE_TEAM_ID): Tauri notarizes and staples the app, so the updater's copy is stapled too, and
-# this script does the same for the dmg.
+# APPLE_TEAM_ID), here or in ~/.config/devdock/notary.env: Tauri notarizes and staples the app,
+# so the updater's copy is stapled too, and this script does the same for the dmg.
 set -eu
 cd "$(dirname "$0")/.."
+N=~/.config/devdock/notary.env; [ -f "$N" ] && . "$N"
 V=$(node -p "require('./package.json').version")
 OUT=dist/app
 T=src-tauri/target/release/bundle

@@ -97,19 +97,25 @@
     return items ? `<button class="actions-trigger" aria-label="Actions" onclick="event.stopPropagation();toggleActionsMenu('${id}',this)">⋯</button><div class="actions-menu" id="menu-${id}">${items}</div>` : '<span></span>';
   }
 
+  // a group's processes hold their order under the pointer too, so Quit stays on its row
+  const procOrder = {};
+  const held = (prev, list, id) => { if (!hover || !prev) return list; const at = x => { const i = prev.indexOf(id(x)); return i < 0 ? 1e9 : i; }; return [...list].sort((a, b) => at(a) - at(b)); };
   function procs(g) {
     const m = METRIC[open];
-    return `<div class="tp-procs">${g.procs.map(p => `<div class="tp-proc"><code>${esc(p.pid)}</code><span class="trunc">${esc(p.name)}</span>
-      <em>${m.show(m.of(p))}</em><span>${p.mine && g.kind !== 'system' ? `<button onclick="DevDockViews.vitals.kill('${p.pid}',false,${js(p.name)})" title="SIGTERM: ask it to stop">Quit</button><button class="danger" onclick="DevDockViews.vitals.kill('${p.pid}',true,${js(p.name)})" title="SIGKILL: stop it now">Force</button>` : ''}</span></div>`).join('')}
+    const list = held(procOrder[g.key], g.procs, p => p.pid);
+    procOrder[g.key] = list.map(p => p.pid);
+    return `<div class="tp-procs">${list.map(p => `<div class="tp-proc"><code>${esc(p.pid)}</code><span class="trunc">${esc(p.name)}</span>
+      <em>${m.show(m.of(p))}</em><span>${p.mine && g.kind !== 'system' ? `<button onclick="DevDockViews.vitals.kill('${p.pid}',false,${js(p.name)},${p.started ?? 'null'})" title="SIGTERM: ask it to stop">Quit</button><button class="danger" onclick="DevDockViews.vitals.kill('${p.pid}',true,${js(p.name)},${p.started ?? 'null'})" title="SIGKILL: stop it now">Force</button>` : ''}</span></div>`).join('')}
       ${g.count > g.procs.length ? `<div class="tp-more">and ${g.count - g.procs.length} more</div>` : ''}</div>`;
   }
 
   function summary() {
     const v = DevDock.sourceData.home?.vitals || {}, mc = v.machine || {};
-    const gs = data?.groups || [];
-    if (open === 'cpu') return mc.cpu == null ? '' : `<b>${Math.round(mc.cpu)}%</b> of ${v.cores} cores busy`;
+    // the list's own window (kernel included), so the header and the rows add up
+    const cpu = data?.total ? data.total.cpu / (v.cores || 1) : mc.cpu;
+    if (open === 'cpu') return cpu == null ? '' : `<b>${Math.round(cpu)}%</b> of ${v.cores} cores busy`;
     if (open === 'mem') return mc.mem == null ? '' : `<b>${formatMem(mc.mem)}</b> of ${formatMem(v.totalMem || 0)} in use`;
-    const r = gs.reduce((s, g) => s + g.diskR, 0), w = gs.reduce((s, g) => s + g.diskW, 0);
+    const { diskR: r = 0, diskW: w = 0 } = data?.total || {}; // every process, not just the groups listed
     return `<b>${rate(r + w)}</b> · read ${rate(r)} · write ${rate(w)}`;
   }
   const NOTE = {
@@ -123,7 +129,7 @@
     const m = METRIC[open];
     let gs = (data?.by === open ? data.groups : []).filter(g => value(g) > 0);
     // hold the order under the pointer: values move, rows don't
-    if (hover && order.length) { const at = k => { const i = order.indexOf(k); return i < 0 ? 1e9 : i; }; gs = [...gs].sort((a, b) => at(a.key) - at(b.key)); }
+    gs = held(order, gs, g => g.key);
     order = gs.map(g => g.key);
     const max = Math.max(...gs.map(value), 1e-9);
     const list = all ? gs : gs.slice(0, SHOWN);
@@ -151,7 +157,7 @@
           ${menu(g)}
         </div>${isOpen && g.kind !== 'rest' ? procs(g) : ''}`;
       }).join('')}</div>
-      ${gs.length > SHOWN ? `<button class="link-btn tp-all" onclick="DevDockViews.vitals.all()">${all ? 'Show fewer' : `Show all ${gs.length}`}</button>` : ''}`}
+      ${gs.length > SHOWN ? `<button class="link-btn tp-all" onclick="DevDockViews.vitals.all()">${all ? 'Show fewer' : data.count > gs.length ? `Show top ${gs.length} of ${data.count}` : `Show all ${gs.length}`}</button>` : ''}`}
       <p class="tp-note">${NOTE[open]}</p>`;
     // slide rows from where they were (FLIP), then grow the bars to their new size
     for (const r of el.querySelectorAll('.tp-row')) {
@@ -203,10 +209,10 @@
       after(await sourceAction('apps', action, { pid }));
     },
     async reveal(pid) { closeAllMenus(); await sourceAction('home', 'reveal', { pid }); },
-    async kill(pid, force, name) {
+    async kill(pid, force, name, started) {
       closeAllMenus();
       if (!await confirmDialog(`${force ? 'Force quit' : 'Quit'} ${name}?`, `PID ${pid}`, force ? 'Force quit' : 'Quit')) return;
-      after(await sourceAction('home', 'kill', { pid, force }));
+      after(await sourceAction('home', 'kill', { pid, force, started }));
     },
     async killGroup(key, force) {
       closeAllMenus();
@@ -215,7 +221,7 @@
       const pids = g.pids;
       if (!await confirmDialog(`${force ? 'Force quit' : 'Quit'} ${g.count > 1 ? `${g.count} ${g.name} processes` : g.name}?`, `PID${pids.length > 1 ? 's' : ''} ${pids.join(', ')}`, force ? 'Force quit' : 'Quit')) return;
       let ok = 0;
-      for (const pid of pids) if (await sourceAction('home', 'kill', { pid, force })) ok++;
+      for (const [i, pid] of pids.entries()) if (await sourceAction('home', 'kill', { pid, force, started: g.starts[i] })) ok++;
       showToast(ok === pids.length ? `Stopped ${g.name}` : `Stopped ${ok} of ${pids.length}`, ok === pids.length ? undefined : 'warn');
       after(ok);
     },

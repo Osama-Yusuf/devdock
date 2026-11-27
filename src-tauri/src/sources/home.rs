@@ -439,6 +439,8 @@ impl Home {
             return Ok(json!({}));
         }
         if pid == std::process::id() as i32 { return Err(ApiErr::bad("That's DevDock itself")); }
+        // the pid the page showed may have ended and been reused since
+        if let Some(s) = p["started"].as_i64() { if proc.started_at != Some(s) { return Err(ApiErr::gone("That process is gone")); } }
         let sig = if p["force"].as_bool().unwrap_or(false) { libc::SIGKILL } else { libc::SIGTERM };
         if unsafe { libc::kill(pid, sig) } != 0 { return Err(ApiErr::new(500, format!("Couldn't stop {pid}: {}", std::io::Error::last_os_error()))); }
         c.poke_ports();

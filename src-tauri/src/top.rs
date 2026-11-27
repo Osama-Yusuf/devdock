@@ -40,13 +40,18 @@ impl Top {
             *self.last.lock().unwrap() = Some((Instant::now(), now, t1));
         }
         let s = &c.sources;
-        json!({ "by": by, "groups": group(&rows, &c.ports(), &s.coding.last(), &s.apps.last(), by) })
+        let mut groups = group(&rows, &c.ports(), &s.coding.last(), &s.apps.last(), by);
+        let count = groups.len();
+        groups.truncate(40);
+        let sum = |f: fn(&Row) -> f64| round1(rows.iter().map(f).sum());
+        json!({ "by": by, "groups": groups, "count": count,
+            "total": { "cpu": sum(|r| r.cpu), "mem": sum(|r| r.mem), "diskR": sum(|r| r.dr), "diskW": sum(|r| r.dw) } })
     }
 }
 
 /// One process, whoever owns it
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct Row { pub pid: i32, pub ppid: i32, pub mine: bool, pub name: String, pub path: String, pub cpu: f64, pub mem: f64, pub dr: f64, pub dw: f64 }
+pub struct Row { pub pid: i32, pub ppid: i32, pub mine: bool, pub name: String, pub path: String, pub cpu: f64, pub mem: f64, pub dr: f64, pub dw: f64, pub started: Option<i64> }
 
 /// "8188:32.45" (minutes:seconds, as macOS ps prints TIME) in seconds
 pub fn cpu_time(s: &str) -> Option<f64> {
@@ -81,7 +86,7 @@ pub fn others(cur: &Ps, rates: &HashMap<i32, f64>, me: u32) -> Vec<Row> {
 pub fn mine(t: &Table, me: u32, rates: &HashMap<i32, f64>) -> Vec<Row> {
     t.values().filter(|p| p.uid == me).map(|p| Row {
         pid: p.pid, ppid: p.ppid, mine: true, name: basename(&p.comm).to_string(), path: p.comm.clone(),
-        cpu: rates.get(&p.pid).copied().unwrap_or(p.cpu), mem: p.mem_mb, dr: p.disk_r, dw: p.disk_w,
+        cpu: rates.get(&p.pid).copied().unwrap_or(p.cpu), mem: p.mem_mb, dr: p.disk_r, dw: p.disk_w, started: p.started_at,
     }).collect()
 }
 
@@ -106,6 +111,8 @@ pub fn group(rows: &[Row], ports: &[Value], agents: &[Value], apps: &[Value], by
 
     let mut servers: Vec<(i32, Vec<u64>, &Value)> = vec![];
     for p in ports {
+        // an app that listens (Spotify, Electron apps) stays an app
+        if !p["appName"].is_null() { continue; }
         let (Some(pid), Some(port)) = (pid(&p["pid"]), p["port"].as_u64()) else { continue };
         match servers.iter_mut().find(|s| s.0 == pid) { Some(s) => s.1.push(port), None => servers.push((pid, vec![port], p)) }
     }
@@ -149,12 +156,13 @@ pub fn group(rows: &[Row], ports: &[Value], agents: &[Value], apps: &[Value], by
         g["diskR"] = json!(sum(|r| r.dr)); g["diskW"] = json!(sum(|r| r.dw));
         g["count"] = json!(pids.len());
         g["pids"] = json!(pids.iter().map(|p| p.to_string()).collect::<Vec<_>>());
+        g["starts"] = json!(pids.iter().map(|p| by_pid[p].started).collect::<Vec<_>>()); // so a kill can't hit a reused pid
         g["procs"] = json!(pids.iter().take(8).map(|p| { let r = by_pid[p];
-            json!({ "pid": r.pid.to_string(), "name": r.name, "mine": r.mine, "cpu": r.cpu, "mem": r.mem, "diskR": r.dr, "diskW": r.dw }) }).collect::<Vec<_>>());
+            json!({ "pid": r.pid.to_string(), "started": r.started, "name": r.name, "mine": r.mine, "cpu": r.cpu, "mem": r.mem, "diskR": r.dr, "diskW": r.dw }) }).collect::<Vec<_>>());
         (rs.iter().map(|r| val(r)).sum(), g)
     }).filter(|(v, _)| *v > 0.0).collect();
     groups.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.str_of("key").cmp(b.1.str_of("key"))));
-    groups.into_iter().take(40).map(|(_, g)| g).collect()
+    groups.into_iter().map(|(_, g)| g).collect()
 }
 
 #[cfg(test)]
@@ -207,7 +215,7 @@ mod tests {
             row(500, 1, "idle", 0.0, 0.0),
         ];
         rows.push(Row { pid: 414, ppid: 1, mine: false, name: "WindowServer".into(), path: "/x/WindowServer".into(), cpu: 12.0, mem: 200.0, ..Default::default() });
-        let ports = vec![json!({ "pid": "100", "port": 5173, "scriptPath": "/r/shop/web/" }), json!({ "pid": "100", "port": 3000 })];
+        let ports = vec![json!({ "pid": "100", "port": 5173, "scriptPath": "/r/shop/web/" }), json!({ "pid": "100", "port": 3000 }), json!({ "pid": "300", "port": 4370, "appName": "Google Chrome" })];
         let agents = vec![json!({ "pid": "200", "agent": "Claude Code", "name": "devdock" })];
         let apps = vec![json!({ "pid": "300", "name": "Google Chrome", "bundleId": "com.google.Chrome", "path": "/Applications/Google Chrome.app",
             "processes": [{ "pid": "300", "own": true }, { "pid": "301", "own": true }, { "pid": "302", "own": false }] })];

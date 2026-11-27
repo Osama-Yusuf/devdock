@@ -75,7 +75,8 @@ impl Sources {
             "machines" => self.machines.action(c, name, p).await,
             _ => Err(ApiErr::gone("Unknown action")),
         };
-        self.poke(id); // show the effect right away
+        // show the effect right away; reading what's using the Mac changes nothing
+        if !(id == "home" && matches!(name, "top" | "talkers")) { self.poke(id); }
         r
     }
 

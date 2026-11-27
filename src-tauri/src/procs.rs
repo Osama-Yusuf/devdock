@@ -33,6 +33,8 @@ pub struct Proc {
     /// bytes
     pub footprint: Option<u64>,
     pub rss: Option<u64>,
+    /// bytes read from and written to disk since it started, like Activity Monitor's Disk tab
+    pub disk: Option<(u64, u64)>,
 }
 
 /// CPU times come in Mach ticks: 1 ns on Intel, 125/3 ns on Apple silicon
@@ -154,7 +156,7 @@ impl Reader {
             });
             return Some(Proc {
                 pid, ppid: s.pbsi_ppid as i32, uid: s.pbsi_uid, comm: f.0, name, nfiles: 0,
-                started: f.1, cpu_ns: None, footprint: None, rss: None,
+                started: f.1, cpu_ns: None, footprint: None, rss: None, disk: None,
             });
         };
         let name = cstr(&bsd.pbi_comm);
@@ -163,7 +165,7 @@ impl Reader {
         let (comm, _) = self.fixed(pid, (started, name.clone()), young, || {
             (argv0(pid).or_else(|| exe_path(pid)).unwrap_or_else(|| name.clone()), Some(started))
         });
-        // rusage carries CPU time, footprint and resident size in one call
+        // rusage carries CPU time, footprint, resident size and disk bytes in one call
         let mut ru: libc::rusage_info_v4 = unsafe { zeroed() };
         let ru_ok = unsafe { libc::proc_pid_rusage(pid, libc::RUSAGE_INFO_V4, &mut ru as *mut _ as *mut libc::rusage_info_t) } == 0;
         Some(Proc {
@@ -172,6 +174,7 @@ impl Reader {
             cpu_ns: ru_ok.then(|| ticks_to_ns(ru.ri_user_time + ru.ri_system_time)),
             footprint: ru_ok.then_some(ru.ri_phys_footprint),
             rss: ru_ok.then_some(ru.ri_resident_size),
+            disk: ru_ok.then_some((ru.ri_diskio_bytesread, ru.ri_diskio_byteswritten)),
         })
     }
 
@@ -282,6 +285,20 @@ mod tests {
         // launchd: root's, so only its parent and path
         let init = &ours[&1];
         assert_eq!((init.ppid, init.comm.as_str(), init.cpu_ns), (0, "/sbin/launchd", None));
+    }
+
+    #[test]
+    fn disk_io_counts_what_this_process_writes() {
+        let me = std::process::id() as i32;
+        let before = read(me).unwrap().disk.unwrap();
+        let f = std::env::temp_dir().join(format!("devdock-io-{me}"));
+        let mut h = std::fs::File::create(&f).unwrap();
+        std::io::Write::write_all(&mut h, &vec![7u8; 8 << 20]).unwrap();
+        h.sync_all().unwrap();
+        let after = read(me).unwrap().disk.unwrap();
+        std::fs::remove_file(&f).unwrap();
+        assert!(after.1 - before.1 >= 8 << 20, "wrote {} bytes", after.1 - before.1);
+        assert!(after.0 >= before.0);
     }
 
     #[test]

@@ -5,7 +5,7 @@ use crate::detect::{agent_of, app_from_path};
 use crate::state::Ctx;
 use crate::sys::{self, CpuTicks};
 use crate::table::Table;
-use crate::util::{basename, find_bin, now_ms, run, ApiResult, Get};
+use crate::util::{basename, find_bin, now_ms, run, ApiErr, ApiResult, Get};
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
@@ -96,7 +96,7 @@ struct State {
 }
 
 #[derive(Default)]
-pub struct Home { st: Mutex<State> }
+pub struct Home { st: Mutex<State>, top: crate::top::Top }
 
 /// What the rules found and the sums for the vitals
 struct Found { items: Vec<Value>, servers: usize, sum_cpu: f64, sum_mem: f64 }
@@ -410,13 +410,39 @@ impl Home {
         })
     }
 
-    pub async fn action(&self, c: &Ctx, name: &str, _p: &Value) -> ApiResult<Value> {
-        if name != "talkers" { return Err(crate::sources::unknown()); }
+    pub async fn action(&self, c: &Ctx, name: &str, p: &Value) -> ApiResult<Value> {
+        match name {
+            // what's using the CPU, memory or disk, for the panels under Home's vitals
+            "top" => return Ok(self.top.scan(c, match p.str_of("by") { b @ ("mem" | "disk") => b, _ => "cpu" }).await),
+            "kill" | "reveal" => return Self::process(c, name, p).await,
+            "talkers" => {}
+            _ => return Err(crate::sources::unknown()),
+        }
         // On demand only: nettop costs about a CPU second per sample.
         // External interfaces only: localhost traffic (DevDock talking to your dev servers) isn't network use.
         if c.demo { return Ok(crate::demo::get("talkers")); }
         let out = run("/usr/bin/nettop", &["-P", "-L", "2", "-d", "-s", "1", "-x", "-t", "external", "-J", "bytes_in,bytes_out"], Duration::from_secs(8)).await.stdout;
         Ok(talkers_from(&out, &c.table(), now_ms()))
+    }
+}
+
+impl Home {
+    /// A process from a panel: only yours, only one in the latest table, never DevDock
+    async fn process(c: &Ctx, name: &str, p: &Value) -> ApiResult<Value> {
+        let pid = crate::util::pid_of(&p["pid"]).ok_or_else(|| ApiErr::bad("Invalid PID"))?;
+        let t = c.table();
+        let proc = t.get(&pid).ok_or_else(|| ApiErr::gone("That process is gone"))?;
+        if proc.uid != unsafe { libc::getuid() } { return Err(ApiErr::bad("That process belongs to macOS or another user")); }
+        if name == "reveal" {
+            if !proc.comm.starts_with('/') || !std::path::Path::new(&proc.comm).exists() { return Err(ApiErr::gone("Can't tell where it lives")); }
+            run("/usr/bin/open", &["-R", &proc.comm], Duration::from_secs(10)).await;
+            return Ok(json!({}));
+        }
+        if pid == std::process::id() as i32 { return Err(ApiErr::bad("That's DevDock itself")); }
+        let sig = if p["force"].as_bool().unwrap_or(false) { libc::SIGKILL } else { libc::SIGTERM };
+        if unsafe { libc::kill(pid, sig) } != 0 { return Err(ApiErr::new(500, format!("Couldn't stop {pid}: {}", std::io::Error::last_os_error()))); }
+        c.poke_ports();
+        Ok(json!({}))
     }
 }
 
